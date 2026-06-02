@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T04 · 虛擬記憶體、MMU、分頁與 TLB</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t04-mmu-tlb">P1-T04 · 虛擬記憶體、MMU、分頁與 TLB</h1>
+<blockquote>
+<p><strong>一句話</strong>:每支程式都以為自己獨佔整個記憶體,從位址 0 開始——這是一個由硬體(MMU)+ 作業系統聯手製造的精緻幻覺。看穿這個幻覺,理解「虛擬位址其實不是真正的實體位址」,你就握住了整個 kernel 記憶體管理的鑰匙,也避開了日後 DMA 工作最大的陷阱。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這是 Phase 1 最重要的一課,值得你投入最多時間(含 lab,12–15 小時)。</p>
+<p>回顧 <a class="xlink" href="P0-T05.html">P0-T05</a>,你看過一支程式的記憶體佈局(text/data/heap/stack)。當時有個你可能沒多想的細節:在你印出的位址裡,不同程式的同一種變數,位址看起來很像——好像每支程式都活在「自己從 0 開始的記憶體」裡。<strong>沒錯,而且這正是真相:每支程式看到的位址,都是「虛擬位址」,是一個假象。</strong></p>
+<p>實情是:你的程式用的位址(虛擬位址),和記憶體條上真正的位置(實體位址),<strong>是兩回事</strong>。中間有一個硬體叫 <strong>MMU(記憶體管理單元)</strong>,在程式每次存取記憶體時,即時把虛擬位址「翻譯」成實體位址。作業系統則負責設定這個翻譯的規則(分頁表)。於是每支程式都能擁有「我獨佔整個位址空間、從 0 開始」的乾淨幻覺,彼此隔離、互不干擾。</p>
+<p>為什麼這對你是 <code>scope: direct</code>、而且是<strong>整個課程最關鍵的前置之一</strong>?兩個理由:</p>
+<ol>
+<li>
+<p><strong>這是 <span class="xlink-stub" title="待撰寫">P3</span> kernel 記憶體管理的地基</strong>。kernel 如何管理記憶體、user space 與 kernel space 如何劃分位址,全建立在虛擬記憶體上。</p>
+</li>
+<li>
+<p><strong>這是 <span class="xlink-stub" title="待撰寫">P6</span> DMA 最大陷阱的源頭</strong>,也是你那條「位址的真相」主線的關鍵高潮前奏。當你做 DMA(讓裝置直接讀寫記憶體),你會發現:<strong>裝置看到的位址,和 CPU 看到的虛擬位址、甚至和實體位址,都可能不一樣</strong>。一個指標(虛擬位址)對 CPU 有意義,但你不能把它直接交給硬體裝置——裝置不經過你程式的 MMU 翻譯。不懂虛擬/實體位址的區分,你在 DMA 會把錯的位址交給裝置,造成資料寫到錯誤的地方(對儲存產品是災難)。這一課就是這條認知鏈的起點(本課 → <a class="xlink" href="P3-T06.html">P3-T06</a> → <a class="xlink" href="P6-T01.html">P6-T01</a> → <a class="xlink" href="P6-T04.html">P6-T04</a>)。</p>
+</li>
+</ol>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T03.html">P1-T03</a>。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P0-T02.html">P0-T02</a> 的「位址 = 記憶體格子的編號」和 <a class="xlink" href="P0-T05.html">P0-T05</a> 的程式記憶體佈局嗎?這課要顛覆你對「位址」的理解——原來那些都是虛擬的。
+  2. 你能接受「同一個虛擬位址,在不同程式裡指向完全不同的實體記憶體」這個概念嗎?讀完這課你會懂為什麼。</li>
+<li>Lab:本課包含 MIT 6.1810 的 page-table lab(在教學用的 xv6 系統裡操作分頁表),這是把概念變成手感的關鍵。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 幻覺:每支程式都以為獨佔記憶體 → (2) 為什麼需要虛擬記憶體 → (3) 分頁:把記憶體切成固定大小的頁 → (4) 分頁表:虛擬→實體的對照表 → (5) MMU:硬體即時翻譯 → (6) 多級分頁:省下巨大的表 → (7) TLB:翻譯的快取 → (8) page fault 的三種成因</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 幻覺:每支程式都以為自己獨佔整個記憶體</h3>
+<p>先看這個會讓你愣住的實驗結果。同時跑兩支不同的程式,各自印出某個變數的位址——你可能會看到<strong>兩支程式印出相同的位址</strong>,但它們明明是不同的程式、用的是不同的記憶體!</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph proc_a["程式 A 眼中"]
+        VA["變數 x<br/>虛擬位址 0x5000"]
+    end
+    subgraph proc_b["程式 B 眼中"]
+        VB["變數 y<br/>虛擬位址 0x5000(竟然一樣!)"]
+    end
+    subgraph phys["真正的實體記憶體"]
+        PA["實體位址 0x12000<br/>(A 的 x 真正在這)"]
+        PB["實體位址 0x88000<br/>(B 的 y 真正在這)"]
+    end
+    VA -.“MMU 翻譯”.-> PA
+    VB -.“MMU 翻譯”.-> PB
+    NOTE["同一個虛擬位址 0x5000,<br/>在 A 和 B 裡被翻譯到<br/>完全不同的實體位址<br/>→ 互不干擾"]
+    style VA fill:#6fa8b8,color:#10100e
+    style VB fill:#6fa8b8,color:#10100e
+    style PA fill:#8a9a5b,color:#10100e
+    style PB fill:#8a9a5b,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>這就是核心真相</strong>:你程式裡的每個位址,都是「虛擬位址」——一個只在你這支程式的脈絡裡有意義的編號。它不是記憶體條上的真實位置。每支程式都有自己獨立的「虛擬位址空間」,所以兩支程式的 <code>0x5000</code> 互不相干,各自被翻譯到不同的實體位置。</p>
+<p>從現在起,你對「位址」的理解要升級:<strong>程式裡看到的 = 虛擬位址(假象);記憶體條上真實的 = 實體位址。兩者靠 MMU 翻譯連起來。</strong></p>
+<hr />
+<h3 id="2">2. 為什麼需要這個幻覺:隔離、保護、抽象</h3>
+<p>製造這個幻覺要付出硬體和軟體成本,為什麼值得?三個關鍵好處:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph why["虛擬記憶體的三大好處"]
+        ISO["① 隔離(isolation)<br/>每支程式有自己的位址空間<br/>→ A 的 bug 不會踩壞 B 的記憶體<br/>→ 一支當掉不會拖垮別人"]
+        PROT["② 保護(protection)<br/>可標記某些頁『唯讀』『不可執行』<br/>→ 防止意外/惡意改寫<br/>(回顧 P0-T05 的唯讀 text 區)"]
+        ABS["③ 抽象(abstraction)<br/>程式不必管實體記憶體多大、<br/>哪些被佔用 → 都當自己有完整空間<br/>(甚至可比實體記憶體大,靠 swap)"]
+    end
+    style ISO fill:#8a9a5b,color:#10100e
+    style PROT fill:#6fa8b8,color:#10100e
+    style ABS fill:#e8a33d,color:#10100e
+</pre></p>
+<p>對你最重要的是<strong>隔離</strong>:這正是「user space 程式」和「kernel」能分開、且一支使用者程式崩潰不會搞垮整台機器的基礎。也是為什麼你產品的 user space app 和 kernel module 之間,有一道需要 <code>copy_from_user</code> 之類機制才能跨越的邊界(<a class="xlink" href="P1-T06.html">P1-T06</a>、<span class="xlink-stub" title="待撰寫">P4</span>)——它們活在不同的位址空間保護域裡。</p>
+<hr />
+<h3 id="3">3. 分頁:把記憶體切成固定大小的「頁」</h3>
+<p>要做虛擬→實體的翻譯,如果「每個 byte 都記一條對照」,對照表會大到放不下。所以實際做法是<strong>分頁(paging)</strong>:把記憶體切成固定大小的塊,以「塊」為單位翻譯。</p>
+<ul>
+<li>虛擬位址空間切成等大的 <strong>頁(page)</strong>,常見大小 <strong>4 KB</strong>。</li>
+<li>實體記憶體切成等大的 <strong>頁框(frame)</strong>,同樣 4 KB。</li>
+<li>翻譯的單位是「<strong>哪個虛擬頁 → 哪個實體頁框</strong>」,不是逐 byte。</li>
+</ul>
+<p><pre class="mermaid">flowchart LR
+    subgraph virt["虛擬位址空間(切成頁,各 4KB)"]
+        VP0["虛擬頁 0"]
+        VP1["虛擬頁 1"]
+        VP2["虛擬頁 2"]
+    end
+    subgraph physical["實體記憶體(切成頁框,各 4KB)"]
+        PF5["頁框 5"]
+        PF2["頁框 2"]
+        PF9["頁框 9"]
+    end
+    VP0 -->|"映射到"| PF5
+    VP1 -->|"映射到"| PF2
+    VP2 -->|"映射到"| PF9
+    NOTE["翻譯以『頁』為單位;<br/>頁內的偏移(offset)直接照搬"]
+    style VP0 fill:#6fa8b8,color:#10100e
+    style PF5 fill:#8a9a5b,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>一個虛擬位址被拆成兩部分:<strong>頁號(page number)</strong>(這是第幾頁)+ <strong>頁內偏移(offset)</strong>(在這頁裡的第幾個 byte)。翻譯時只需把「虛擬頁號」換成「實體頁框號」,offset 部分原封不動照搬。</p>
+<hr />
+<h3 id="4">4. 分頁表:虛擬→實體的對照表</h3>
+<p>「哪個虛擬頁 → 哪個實體頁框」這份對照關係,記錄在一個叫<strong>分頁表(page table)</strong>的資料結構裡。每支程式有自己的分頁表(這就是為什麼每支程式的同一虛擬位址能映到不同實體位置)。</p>
+<p>翻譯一個虛擬位址的流程:</p>
+<p><pre class="mermaid">flowchart TB
+    VA["虛擬位址<br/>例:0x5004"]
+    SPLIT["拆成兩部分:<br/>頁號 = 0x5(第5頁)<br/>偏移 = 0x004(頁內第4 byte)"]
+    VA --> SPLIT
+    LOOKUP["查分頁表:<br/>第5頁 → 映射到 實體頁框 0x12"]
+    SPLIT --> LOOKUP
+    COMBINE["組合實體位址:<br/>頁框 0x12 的基底 + 偏移 0x004<br/>= 實體位址 0x12004"]
+    LOOKUP --> COMBINE
+    style SPLIT fill:#6fa8b8,color:#10100e
+    style LOOKUP fill:#e8a33d,color:#10100e
+    style COMBINE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>注意 offset(<code>0x004</code>)從頭到尾不變,只有「頁號 → 頁框號」這一步要查表。分頁表的每個條目(page table entry, PTE)除了記錄對應的實體頁框,還記錄這頁的<strong>權限位元</strong>(可讀?可寫?可執行?)——這就是第 2 節「保護」的實作,也是第 8 節 page fault 的判斷依據。</p>
+<hr />
+<h3 id="5-mmu">5. MMU:硬體即時做翻譯(不是軟體!)</h3>
+<p>一個關鍵且常被誤解的點:<strong>這個翻譯是由硬體 MMU(Memory Management Unit)即時完成的,不是作業系統用軟體一次次算的。</strong></p>
+<p><pre class="mermaid">flowchart LR
+    CPU["CPU 要存取<br/>虛擬位址 0x5004"]
+    MMU["MMU(硬體)<br/>自動查分頁表、<br/>翻成實體位址"]
+    MEM["實體記憶體<br/>0x12004"]
+    CPU -->|"送出虛擬位址"| MMU
+    MMU -->|"翻成實體位址去存取"| MEM
+    NOTE["每一次記憶體存取都經過 MMU,<br/>硬體速度完成,程式無感<br/>(OS 只負責『設定』分頁表內容,<br/>不參與每次翻譯)"]
+    style MMU fill:#e8a33d,color:#10100e
+    style NOTE fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>分工要分清:
+- <strong>作業系統(軟體)</strong>:負責<strong>建立和維護</strong>分頁表的內容(決定哪個虛擬頁映到哪個實體框、設定權限)。
+- <strong>MMU(硬體)</strong>:負責程式<strong>每次</strong>存取記憶體時,<strong>即時</strong>依分頁表把虛擬位址翻成實體位址。</p>
+<p>這個分工是效能關鍵:翻譯每秒發生數十億次,<strong>必須</strong>由硬體做才夠快;OS 只在「設定規則」和「出狀況時」(page fault)介入。<strong>誤以為「分頁表查找是軟體做的」是常見錯誤</strong>——絕大多數翻譯是純硬體,軟體只在 miss/fault 時才被叫來。</p>
+<hr />
+<h3 id="6">6. 多級分頁:不要為整個位址空間準備一張巨表</h3>
+<p>這裡有個現實問題。64 位元的虛擬位址空間極其巨大,如果用「一張平坦的大表」記錄每一頁的映射,這張表本身會大到荒謬(即使程式只用到一點點記憶體,表還是要涵蓋整個空間)。</p>
+<p>解法是<strong>多級分頁(multi-level paging)</strong>:把分頁表做成<strong>樹狀的多層結構</strong>,只有「真正用到的部分」才需要建立對應的下層表。</p>
+<p><pre class="mermaid">flowchart TB
+    VA["虛擬位址拆成多段索引<br/>[L1 索引][L2 索引][L3 索引][L4 索引][偏移]"]
+    VA --> L1["第1級表<br/>(頂層,只有一個)"]
+    L1 -->|"用 L1 索引找到"| L2["第2級表<br/>(只在用到的分支才存在)"]
+    L2 -->|"用 L2 索引"| L3["第3級表"]
+    L3 -->|"用 L3 索引"| L4["第4級表<br/>(最底層,指向實體頁框)"]
+    L4 -->|"+ 偏移"| PHYS["實體位址"]
+    NOTE["關鍵省空間:<br/>程式沒用到的位址範圍,<br/>對應的下層表『根本不必建立』<br/>→ 稀疏的位址空間只花少量表空間"]
+    style L1 fill:#6fa8b8,color:#10100e
+    style L4 fill:#8a9a5b,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>直覺:大部分程式的位址空間是<strong>稀疏</strong>的(只用了零散幾塊:code、heap、stack,中間大片空白)。多級分頁讓你「只為用到的區域建立表」,空白區域連表都不用建。這把分頁表的空間成本從「涵蓋整個 64 位元空間」降到「正比於實際使用量」。x86-64 目前用 4 級(或 5 級)分頁。</p>
+<p>代價是:一次翻譯要走好幾層表(每層查一次記憶體)。這聽起來很慢——確實,所以才需要下一節的 TLB 來救。</p>
+<hr />
+<h3 id="7-tlb">7. TLB:翻譯結果的快取</h3>
+<p>第 6 節的多級分頁有個效能問題:每翻譯一個虛擬位址,要走 4 層表,等於<strong>多次記憶體存取</strong>才換來一次翻譯。而記憶體存取很慢(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a>)。如果每次存取記憶體前都要先做 4 次記憶體存取來翻譯,那就太慢了。</p>
+<p>解法是 <strong>TLB(Translation Lookaside Buffer,翻譯後備緩衝區)</strong>:一個<strong>專門快取「最近用過的虛擬頁→實體框翻譯結果」</strong>的小型超高速硬體快取。它就是「翻譯的 cache」(概念上呼應 <a class="xlink" href="P1-T02.html">P1-T02</a> 的 cache,只是快取的是翻譯結果而非資料)。</p>
+<p><pre class="mermaid">flowchart TB
+    VA["CPU 要翻譯虛擬位址"]
+    VA --> Q{"TLB 裡有這頁的<br/>翻譯結果嗎?"}
+    Q -->|"TLB 命中(hit)"| HIT["直接拿到實體框號<br/>極快(免走分頁表)"]
+    Q -->|"TLB 失誤(miss)"| MISS["走多級分頁表翻譯<br/>(慢,多次記憶體存取)"]
+    MISS --> FILL["把這次的翻譯結果<br/>存進 TLB(下次就命中)"]
+    style HIT fill:#8a9a5b,color:#10100e
+    style MISS fill:#c2603a,color:#f4ecd8
+    style FILL fill:#e8a33d,color:#10100e
+</pre></p>
+<p>因為局部性(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a>:程式傾向反覆存取鄰近的頁),TLB 命中率通常很高,所以絕大多數翻譯都走 TLB 的快速路徑,只有少數 miss 才需要走完整的分頁表。</p>
+<p><strong>TLB 失效(flush)的成本</strong>:當切換到另一支程式(換了分頁表),原本 TLB 裡的翻譯就不再適用,要清掉(flush)。清空後 TLB 要重新「暖機」(累積新的翻譯),這段期間 miss 率高、變慢。這就是為什麼 context switch(<a class="xlink" href="P1-T06.html">P1-T06</a>)有隱藏成本之一——不只是換暫存器,還可能讓 TLB 失效。<strong>忽略 TLB flush 的成本是常見誤區。</strong></p>
+<hr />
+<h3 id="8-page-fault">8. page fault:翻譯失敗時發生什麼</h3>
+<p>當 MMU 翻譯一個虛擬位址,發現「這頁有問題」——這時硬體會觸發一個叫 <strong>page fault(分頁錯誤/缺頁)</strong>的事件,把控制權交給作業系統來處理。page fault 有三種常見成因:</p>
+<p><pre class="mermaid">flowchart TB
+    PF["MMU 翻譯時發現問題 → 觸發 page fault → OS 介入"]
+    PF --> C1["① 缺頁(not present)<br/>這頁目前不在實體記憶體<br/>(可能被換到磁碟 swap,或還沒配置)<br/>→ OS 把它載入/配置,再重試"]
+    PF --> C2["② 權限錯誤(protection)<br/>這頁存在,但你做了不被允許的事<br/>(例:寫一個唯讀頁)<br/>→ 視情況可能是合法(COW)或錯誤(segfault)"]
+    PF --> C3["③ 無效位址(invalid)<br/>這個虛擬位址根本沒映射任何東西<br/>(例:解參考野指標、NULL)<br/>→ 通常 OS 殺掉程式(segfault)"]
+    style C1 fill:#6fa8b8,color:#10100e
+    style C2 fill:#e8a33d,color:#10100e
+    style C3 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>關鍵理解:<strong>page fault 不一定是「錯誤」</strong>。成因①(缺頁)是虛擬記憶體正常運作的一部分——它讓 OS 能「按需載入」(demand paging)、能用磁碟當記憶體的延伸(swap)、能做 copy-on-write(回顧 <a class="xlink" href="P1-T05.html">P1-T05</a> 會講的 fork)。只有成因③(無效位址,像你解參考 NULL 或野指標——回顧 <a class="xlink" href="P0-T02.html">P0-T02</a>)才是真正的程式錯誤,導致 segfault。</p>
+<p>這也終於從硬體層面解釋了 <a class="xlink" href="P0-T02.html">P0-T02</a> 那個「對 NULL 解參考會崩潰」:NULL(位址 0)在分頁表裡沒有有效映射,MMU 翻譯時觸發「無效位址」page fault,OS 就殺掉你的程式。</p>
+<hr />
+<h2 id="_4">打通關:把虛擬記憶體收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    ILLUSION["核心:程式用的是『虛擬位址』(幻覺)<br/>≠ 記憶體條上的『實體位址』"]
+    ILLUSION --> WHY["為什麼:隔離 + 保護 + 抽象"]
+    ILLUSION --> HOW["怎麼做:分頁(切成 4KB 的頁/框)"]
+    HOW --> TABLE["分頁表記錄 虛擬頁→實體框 + 權限<br/>(每支程式一份)"]
+    TABLE --> MMU["MMU 硬體每次存取即時翻譯<br/>(OS 只設定表,不參與每次翻譯)"]
+    TABLE --> MULTI["多級分頁:樹狀,只為用到的區域建表(省空間)"]
+    MMU --> TLB["TLB 快取翻譯結果(避免每次走多級表)<br/>切換程式要 flush(隱藏成本)"]
+    MMU --> FAULT["翻譯出問題 → page fault<br/>(缺頁=正常按需載入;無效=segfault)"]
+    FAULT --> TRUTH["★『虛擬≠實體』是你『位址的真相』主線的關鍵<br/>→ P6 DMA:裝置看到的位址又是另一回事★"]
+    style ILLUSION fill:#e8a33d,color:#10100e
+    style MMU fill:#6fa8b8,color:#10100e
+    style TRUTH fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>一句話總結:<strong>「每支程式獨佔記憶體」是 MMU 硬體 + OS 分頁表聯手製造的幻覺;程式用虛擬位址,MMU 每次存取即時翻成實體位址,TLB 快取翻譯、page fault 處理例外。牢牢記住「虛擬位址不是實體位址」——這是 kernel 記憶體管理的地基,更是你日後 DMA 工作中『不能把 CPU 的虛擬位址直接交給裝置』那個致命陷阱的源頭。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一(最關鍵):混淆虛擬位址與實體位址。</strong>
+程式裡的指標都是虛擬位址,不是記憶體條上的真實位置。這個混淆是 P6 DMA 主題最大陷阱的開端——你不能把一個虛擬位址(指標)直接交給硬體裝置,因為裝置不經過你程式的 MMU 翻譯。</p>
+<p><strong>誤區二:以為分頁表查找是軟體做的。</strong>
+絕大多數翻譯由 MMU <strong>硬體</strong>即時完成;OS 只負責設定分頁表內容,並在 page fault(miss)時才介入。</p>
+<p><strong>誤區三:忽略 TLB flush 的成本。</strong>
+切換程式(換分頁表)會使 TLB 失效,需要重新暖機,這是 context switch 隱藏成本之一。</p>
+<p><strong>誤區四:以為 page fault 都是錯誤。</strong>
+缺頁(成因①)是虛擬記憶體正常運作(按需載入、swap、COW)。只有無效位址(成因③)才是真正的程式錯誤(segfault)。</p>
+<p><strong>誤區五:以為虛擬位址空間大小受限於實體記憶體。</strong>
+不是。虛擬空間可以遠大於實體記憶體(靠 swap 把暫時不用的頁換到磁碟)。實體記憶體是「目前真正裝得下的」,虛擬空間是「程式以為自己有的」。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:概念實驗在 Linux 使用者態(<strong>安全,不需 root</strong>);lab 在 MIT 6.1810 的 xv6 環境(教學用作業系統,在 QEMU 裡跑,<strong>不碰你的主機</strong>)。</p>
+<p><strong>任務 A — 親眼見證虛擬位址的幻覺</strong>
+寫一支極簡程式,印出一個全域變數的位址,然後<strong>同時跑兩個這支程式的實例</strong>(例如開兩個終端各跑一次,或用 fork——但 fork 的位址空間是 COW 複製,概念上仍各自獨立)。</p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+int global = 0;
+int main(void) {
+    printf(&quot;PID %d: &amp;global = %p\n&quot;, getpid(), (void*)&amp;global);
+    sleep(30);   // 暫停,讓你有時間同時跑另一個實例對照
+    return 0;
+}
+</code></pre>
+<p>觀察:兩個獨立執行的實例,可能印出<strong>相同的虛擬位址</strong>——但它們是不同的 process,用的是不同的實體記憶體。寫一句話解釋:為什麼相同的虛擬位址不會互相干擾?</p>
+<p><strong>任務 B(核心)— 完成 MIT 6.1810 page-table lab</strong>
+依 https://pdos.csail.mit.edu/6.1810/2023/labs/pgtbl.html 的指引,在 xv6 裡完成 page-table lab(操作分頁表)。這是把「分頁表」從抽象概念變成你親手碰過的東西的關鍵。完成後通過它的測試。</p>
+<p><strong>任務 C — 畫出完整翻譯流程</strong>
+不靠工具,在紙上畫出「一個虛擬位址 → 經(多級)分頁表 → 實體位址」的完整流程,<strong>包含 TLB 命中與失誤兩個分支</strong>。這是驗收點之一。</p>
+<p><strong>任務 D — 解釋 page fault 三成因</strong>
+寫一段話,說明 page fault 的三種常見成因(缺頁 / 權限 / 無效),並指出哪一種是「正常運作」、哪一種是「程式錯誤」。</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 畫出一條虛擬位址經多級分頁表轉成實體位址的完整流程(含 TLB 命中/失誤分支)。
+2. ☐ 完成 6.1810 pgtbl lab 並通過其測試。
+3. ☐ 解釋 page fault 的三種常見成因(缺頁、權限、無效),並區分哪些是正常、哪個是錯誤。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能複述虛擬→實體的轉換流程。
+- <strong>80(熟練)</strong>:能完成 lab 並解釋分頁表運作。
+- <strong>100(精通)</strong>:能說明多級分頁如何節省空間、TLB 為何必要,並預示 kernel 的位址空間設計與 DMA 的位址問題。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這是 P6 DMA(虛擬/實體/匯流排位址三者之分)與 P3 kernel 記憶體管理最重要的前置。你做 DMA 時「不能把虛擬位址直接給裝置」這個鐵則,根源就在這一課。</li>
+<li><strong>這課餵給未來的(你的「位址的真相」主線)</strong>:本課(虛擬≠實體)→ <a class="xlink" href="P3-T06.html">P3-T06</a> kernel 的位址空間與各種位址轉換函式 → <a class="xlink" href="P6-T01.html">P6-T01</a> DMA 位址(<code>dma_addr_t</code>,裝置看的位址,CPU 不能解參考)→ <a class="xlink" href="P6-T04.html">P6-T04</a> 高潮。分頁/保護 → <a class="xlink" href="P1-T06.html">P1-T06</a> user/kernel 邊界、<span class="xlink-stub" title="待撰寫">P4</span> <code>copy_from_user</code>。</li>
+<li><strong>下一步 → <a class="xlink" href="P1-T05.html">P1-T05</a> 行程 vs 執行緒</strong>:你已經懂「每支程式有自己的虛擬位址空間」。下一課用這個基礎,精準切開兩個你列為核心缺口的概念——<strong>行程(process)與執行緒(thread)</strong>:行程是「擁有獨立位址空間的資源容器」,執行緒是「共享位址空間的排程單位」。理解它們共享什麼、不共享什麼,直接決定了你產品裡「哪些地方需要加鎖同步」。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T03.html">← P1-T03 快取一致性與對齊的硬體意義</a><a class="pn next" href="P1-T05.html">P1-T05 行程 vs 執行緒 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

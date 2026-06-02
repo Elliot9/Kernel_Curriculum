@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T11 · 【環境里程碑】建置 QEMU/KVM kernel 開發環境</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t11-qemukvm-kernel">P1-T11 ·【環境里程碑】建置 QEMU/KVM kernel 開發環境</h1>
+<blockquote>
+<p><strong>一句話</strong>:從原始碼編譯一個 Linux kernel、在 QEMU 虛擬機裡開機、接上 GDB 在 <code>start_kernel</code> 設中斷點——這條鏈是你日後開發與除錯自家 kernel module <strong>每天都會用</strong>的工作迴圈,也是你能<strong>安全</strong>測試 module 的隔離環境。絕不在你的主機上測試 module。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這是 Phase 1 的收尾,也是一個<strong>里程碑</strong>:你要親手搭建日後的「kernel 開發實驗室」。</p>
+<p>到目前為止,你寫的程式都跑在使用者態(回顧 <a class="xlink" href="P1-T06.html">P1-T06</a> 的使用者/核心邊界)。從 Phase 3 開始,你要寫<strong>真正進入核心態的程式碼</strong>——kernel module。但核心態程式碼有個可怕的特性:<strong>它沒有使用者態那層保護網</strong>(回顧 <a class="xlink" href="P0-T06.html">P0-T06</a>、<a class="xlink" href="P1-T04.html">P1-T04</a> 的隔離只保護「行程之間」,不保護核心本身)。一個 module 裡的 bug——野指標、記憶體錯誤——不會只是讓你的程式 segfault,而是可能<strong>直接搞垮整台機器、損毀檔案系統、甚至造成資料遺失</strong>。</p>
+<p>所以你<strong>絕對不能在你日常用的主機上載入(<code>insmod</code>)自己寫的 module</strong>。你需要一個<strong>拋棄式的隔離環境</strong>:一個跑在虛擬機(QEMU)裡的 Linux,在裡面載入 module、測試、就算搞當了也只是重啟那個虛擬機,你的主機毫髮無傷。這就是本課要建的東西。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為:
+1. <strong>這是你 Phase 3+ 的日常工作環境</strong>。你之後寫的每一個 module、做的每一次除錯,都在這個環境裡進行。
+2. <strong>這是安全底線</strong>。你公司產品的 module,也應該在這類隔離環境裡開發測試,而不是直接上生產機器。
+3. <strong>GDB 源碼級除錯</strong>讓你能像除錯一般程式那樣(回顧 <a class="xlink" href="P0-T01.html">P0-T01</a> 的 gdb),在 kernel 程式碼裡設中斷點、單步、看變數——這是排查 kernel 問題的利器。</p>
+<p>這一課比較「工程實作」導向,但每一步背後的原理,你前面都學過了。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T04.html">P1-T04</a>(理解分頁有助於理解開機過程中記憶體如何被設置)。也用到 <a class="xlink" href="P0-T01.html">P0-T01</a>(編譯、Makefile、gdb)的一切。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P0-T01.html">P0-T01</a> 怎麼用 gdb 設中斷點、單步、看變數嗎?這課把同樣的 gdb 動作用在 kernel 上。
+  2. 你還記得 <a class="xlink" href="P0-T01.html">P0-T01</a> 的 Makefile / 編譯流程嗎?編譯 kernel 是它的工業級放大版(用 Kbuild)。</li>
+<li>心態:這課步驟多、第一次做容易卡關(設定缺項、版本問題)。卡住是正常的,耐心查文件。一旦搭好,你就有了長期可用的環境。</li>
+<li><strong>最重要的安全前提</strong>:本課所有「載入 module」「測試核心程式碼」的動作,<strong>只在 QEMU 虛擬機裡做,絕不在你的主機</strong>。這不是建議,是鐵則。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 全局藍圖:這條鏈在做什麼 → (2) 取得 kernel 原始碼 → (3) 設定 .config → (4) 編譯 → (5) initramfs:最小根檔案系統 → (6) QEMU 開機 → (7) 接上 GDB 源碼級除錯</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 全局藍圖:從原始碼到可除錯的虛擬機</h3>
+<p>先看整條鏈,再逐站實作。你要做的,是把「一堆 kernel 原始碼」變成「一個能在 QEMU 裡開機、且能被 GDB 從外面除錯的系統」:</p>
+<p><pre class="mermaid">flowchart TB
+    SRC["① 取得 kernel 原始碼<br/>(6.x LTS)"]
+    CONFIG["② 設定 .config<br/>(決定編譯哪些功能,<br/>含 QEMU 需要的裝置 + 除錯資訊)"]
+    BUILD["③ 編譯<br/>(make → 產出 vmlinux 與 bzImage)"]
+    ROOTFS["④ 做最小根檔案系統<br/>(initramfs + BusyBox,<br/>讓開機後有個 shell 可用)"]
+    BOOT["⑤ QEMU 開機<br/>(用編好的 kernel + initramfs 啟動虛擬機)"]
+    GDB["⑥ 接上 GDB<br/>(qemu -s -S 開除錯埠,<br/>gdb 連上設中斷點)"]
+    SRC --> CONFIG --> BUILD --> ROOTFS --> BOOT --> GDB
+    style SRC fill:#6fa8b8,color:#10100e
+    style BUILD fill:#e8a33d,color:#10100e
+    style BOOT fill:#8a9a5b,color:#10100e
+    style GDB fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>兩個產物名詞先認識:
+- <strong><code>vmlinux</code></strong>:編譯出的未壓縮 kernel,<strong>含符號資訊</strong>(給 GDB 用,讓它知道「這個位址對應哪個函式/變數」)。
+- <strong><code>bzImage</code></strong>:壓縮過的、可開機的 kernel 映像(QEMU 拿它來開機)。</p>
+<p>下面逐站做。</p>
+<hr />
+<h3 id="2-kernel-lts">2. 取得 kernel 原始碼:選一個 LTS 版本</h3>
+<p>從 https://www.kernel.org/ 下載一個 <strong>LTS(長期支援)</strong> 的 6.x 版本。為什麼選 LTS?因為它穩定、修補維護期長,適合學習與產品基礎(不像最新版可能有未穩定的東西)。</p>
+<p><pre class="mermaid">flowchart LR
+    A["kernel.org<br/>選一個 6.x LTS"]
+    B["下載原始碼壓縮檔<br/>(tar.xz)"]
+    C["解壓<br/>得到一大棵原始碼樹<br/>(幾萬個檔案)"]
+    A --> B --> C
+    NOTE["LTS = 長期支援版,<br/>穩定、維護久,<br/>適合學習與產品基礎"]
+    C --> NOTE
+    style A fill:#6fa8b8,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>解壓後你會看到 kernel 龐大的原始碼樹(<code>kernel/</code>、<code>mm/</code>、<code>drivers/</code>、<code>fs/</code>、<code>block/</code> 等子目錄——你未來會在這些目錄裡讀程式碼、寫東西)。</p>
+<hr />
+<h3 id="3-config">3. 設定 <code>.config</code>:決定編譯哪些功能</h3>
+<p>kernel 有<strong>成千上萬個可開關的設定選項</strong>(支援哪些硬體、哪些檔案系統、哪些功能)。這些選項記錄在一個叫 <code>.config</code> 的檔案裡。你不可能手動一個個設,所以從一個合理的預設開始,再調整:</p>
+<p><pre class="mermaid">flowchart TB
+    DEFCONFIG["make defconfig<br/>產生一個合理的預設 .config<br/>(針對你的架構,如 x86-64)"]
+    MENUCONFIG["make menuconfig<br/>(選用)用選單介面微調<br/>開關特定選項"]
+    KEY["關鍵:確認這幾類選項有開:<br/>① QEMU 用得到的虛擬裝置 + 檔案系統<br/>(否則開不了機 / 掛載不了根)<br/>② CONFIG_DEBUG_INFO<br/>(編入除錯符號,GDB 才能源碼級除錯)<br/>③ 必要時關閉位址隨機化相關,<br/>讓 GDB 符號對得上"]
+    DEFCONFIG --> MENUCONFIG --> KEY
+    style DEFCONFIG fill:#6fa8b8,color:#10100e
+    style KEY fill:#e8a33d,color:#10100e
+</pre></p>
+<p><code>.config</code> 是整個 build 的「設定真相」。<strong>最常見的卡關點就在這裡</strong>(誤區會詳述):
+- 缺了 QEMU 對應的虛擬裝置驅動或檔案系統支援 → kernel 開機後找不到裝置、掛載不了根檔案系統 → 開不了機。
+- 沒開 <code>CONFIG_DEBUG_INFO</code> → 編出的 kernel 沒有除錯符號 → GDB 連上了卻看不到函式名、設不了源碼中斷點。</p>
+<p>(<code>.config</code> 本質上就是一大堆 <code>CONFIG_XXX=y/m/n</code> 的開關,<code>y</code>=編進 kernel、<code>m</code>=編成可載入模組、<code>n</code>=不編。這是 <a class="xlink" href="P0-T08.html">P0-T08</a> 前處理器 <code>#ifdef</code> 的大規模應用——kernel 用這些設定在編譯時決定包含哪些程式碼。)</p>
+<hr />
+<h3 id="4-make">4. 編譯:make 的工業級放大版</h3>
+<p>設定好 <code>.config</code>,就可以編譯了。這是 <a class="xlink" href="P0-T01.html">P0-T01</a> 那個編譯流程 + Makefile 的<strong>工業級放大版</strong>(kernel 的 build 系統叫 <strong>Kbuild</strong>):</p>
+<p><pre class="mermaid">flowchart LR
+    A["make -j$(nproc)<br/>(用所有 CPU 核心平行編譯,加速)"]
+    B["Kbuild 依 .config<br/>編譯需要的數千個檔案<br/>(回顧 P0-T01:只編需要的,靠相依關係)"]
+    C["產出:<br/>vmlinux(含符號,給 GDB)<br/>bzImage(壓縮,給 QEMU 開機)"]
+    A --> B --> C
+    style A fill:#6fa8b8,color:#10100e
+    style C fill:#e8a33d,color:#10100e
+</pre></p>
+<p>第一次編譯整個 kernel 會花不少時間(幾分鐘到幾十分鐘,看機器)。但之後若只改少數檔案,Kbuild 只重編改動的部分(回顧 <a class="xlink" href="P0-T01.html">P0-T01</a> 的增量編譯)——這就是為什麼當年要學 Makefile 的相依關係。</p>
+<blockquote>
+<p><strong>回顧連結</strong>:還記得 <a class="xlink" href="P0-T01.html">P0-T01</a> 那個 8 行的小 Makefile 嗎?當時說它是「那座大山的第一塊石頭」。現在你就站在那座大山(Kbuild)前面了。原理一樣:目標依賴來源、看時間戳記決定重建範圍,只是規模從一個檔案變成幾萬個。</p>
+</blockquote>
+<hr />
+<h3 id="5-initramfs-kernel">5. initramfs:給 kernel 一個最小的根檔案系統</h3>
+<p>編好 kernel 還不夠——kernel 開機後需要一個<strong>根檔案系統(root filesystem)</strong>,裡面至少要有一個能執行的程式(否則開機到一半發現「沒有任何程式可跑」就會 panic)。最輕量的做法是用 <strong>initramfs</strong>(一個被打包、開機時載入記憶體的最小檔案系統)配上 <strong>BusyBox</strong>(一個把幾百個常用命令塞進單一執行檔的迷你工具箱)。</p>
+<p><pre class="mermaid">flowchart TB
+    WHY["kernel 開機後需要:<br/>一個根檔案系統 + 至少一個可執行程式<br/>(否則 panic:沒東西可跑)"]
+    WHY --> BUSYBOX["BusyBox:<br/>一個執行檔提供 shell + 幾百個命令<br/>(ls/cat/mount...),極小巧"]
+    BUSYBOX --> INITRAMFS["打包成 initramfs:<br/>一個壓縮檔,開機時被載入記憶體<br/>當作最初的根檔案系統"]
+    INITRAMFS --> RESULT["開機後你就有一個<br/>可互動的 shell<br/>(能在裡面 insmod 你的 module 測試)"]
+    style WHY fill:#c2603a,color:#f4ecd8
+    style INITRAMFS fill:#e8a33d,color:#10100e
+    style RESULT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>initramfs 在開機中的角色</strong>:開機時,kernel 把 initramfs 解壓到記憶體,當作最初的根檔案系統,並執行裡面約定的初始程式(通常是個 <code>/init</code> 腳本,最終給你一個 shell)。對你的用途,這個最小環境就夠了——你只需要一個能 <code>insmod</code> module、能看 <code>dmesg</code> 輸出的 shell。(真實系統開機後會再從 initramfs 切換到磁碟上的正式根檔案系統,但學習/測試用的最小環境,停在 initramfs 的 shell 就夠。)</p>
+<hr />
+<h3 id="6-qemu-kernel">6. QEMU 開機:在虛擬機裡跑你的 kernel</h3>
+<p>現在把編好的 kernel(<code>bzImage</code>)和 initramfs 交給 <strong>QEMU</strong>(一個虛擬機軟體),讓它啟動一個虛擬機來跑你的 kernel:</p>
+<p><pre class="mermaid">flowchart LR
+    QEMU["qemu-system-x86_64<br/>-kernel bzImage<br/>-initrd initramfs<br/>-append 開機參數<br/>(+ 視需要的虛擬裝置)"]
+    BOOT["QEMU 啟動虛擬機<br/>→ 載入你的 kernel<br/>→ kernel 初始化<br/>→ 載入 initramfs<br/>→ 給你 shell"]
+    SAFE["★ 一切在虛擬機內 ★<br/>就算 module 搞當機,<br/>只是重啟這個 VM,<br/>主機毫髮無傷"]
+    QEMU --> BOOT --> SAFE
+    style QEMU fill:#6fa8b8,color:#10100e
+    style BOOT fill:#8a9a5b,color:#10100e
+    style SAFE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>(可選的 <strong>KVM</strong> 加速:如果你的主機 CPU 支援虛擬化,加上 KVM 能讓虛擬機接近原生速度;沒有也能跑,只是慢些。)</p>
+<p>成功的話,你會在終端機看到 kernel 開機訊息一行行刷過,最後出現一個 shell 提示符——<strong>這就是你的 kernel 開機成功了</strong>。這個 shell 跑在你剛編的 kernel 上,在一個完全隔離的虛擬機裡。<strong>這就是你日後測試 module 的安全沙盒</strong>:在這個 shell 裡 <code>insmod your_module.ko</code>,測試,看 <code>dmesg</code>,搞當了就重啟 QEMU。</p>
+<hr />
+<h3 id="7-gdb-kernel">7. 接上 GDB:對 kernel 做源碼級除錯</h3>
+<p>最後一塊,也是最強大的:讓 <strong>GDB</strong> 連上 QEMU 裡的 kernel,像除錯一般程式那樣除錯 kernel(回顧 <a class="xlink" href="P0-T01.html">P0-T01</a> 的 gdb 基本動作)。</p>
+<p>QEMU 提供一個「GDB stub」——用 <code>-s -S</code> 參數開啟:
+- <code>-s</code>:開一個 GDB 可連的除錯埠。
+- <code>-S</code>:<strong>開機時先暫停</strong>,等 GDB 連上、下指令才開始跑(這樣你能在 kernel 最早期就設中斷點)。</p>
+<p><pre class="mermaid">flowchart TB
+    Q["qemu ... -s -S<br/>(-s 開除錯埠;-S 開機先凍結等待)"]
+    G["另一個終端:<br/>gdb vmlinux<br/>(載入含符號的 vmlinux,<br/>GDB 才認得函式名)"]
+    CONNECT["在 gdb 裡:<br/>target remote :1234<br/>(連上 QEMU 的除錯埠)"]
+    BP["break start_kernel<br/>(在 kernel 的進入點之一設中斷點)"]
+    CONT["continue<br/>→ QEMU 開始跑,<br/>命中中斷點時停下"]
+    INSPECT["此時可:<br/>單步、print 變數、看 backtrace<br/>(就像 P0-T01 除錯一般程式)"]
+    Q --> G --> CONNECT --> BP --> CONT --> INSPECT
+    style Q fill:#6fa8b8,color:#10100e
+    style BP fill:#e8a33d,color:#10100e
+    style INSPECT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>關鍵點:
+- <strong>必須用含符號的 <code>vmlinux</code></strong>(不是 <code>bzImage</code>)——GDB 靠它把記憶體位址對應回「<code>start_kernel</code> 這個函式、第幾行、哪個變數」。沒符號(沒開 <code>CONFIG_DEBUG_INFO</code>),GDB 只能給你冷冰冰的位址(呼應 <a class="xlink" href="P0-T01.html">P0-T01</a>「沒有 <code>-g</code> 就看不到行號變數」)。
+- <strong><code>vmlinux</code> 要和 QEMU 跑的 kernel 完全一致</strong>——否則符號對不上(GDB 以為某函式在某位址,實際不是)。
+- <strong>位址隨機化(KASLR)</strong> 可能讓符號位址對不上,除錯時通常要關閉它(透過開機參數),GDB 才能正確定位。</p>
+<p>能在 <code>start_kernel</code> 停下、印出一個變數,代表你的源碼級 kernel 除錯環境<strong>完全打通</strong>——這是本課的最高成就,也是你日後排查自家 module 疑難雜症的終極武器。</p>
+<hr />
+<h2 id="_4">打通關:把開發環境收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    GOAL["目標:一個可重複、可除錯、隔離安全的 kernel 實驗室"]
+    GOAL --> CHAIN["核心鏈:原始碼→.config→編譯→initramfs→QEMU 開機→GDB"]
+    CHAIN --> CONFIG_KEY["★ .config 是最常卡關處:<br/>需含 QEMU 裝置/檔案系統 + CONFIG_DEBUG_INFO ★"]
+    CHAIN --> ARTIFACTS["兩產物:vmlinux(含符號,給 GDB)<br/>bzImage(壓縮,給 QEMU 開機)"]
+    CHAIN --> DEBUG["GDB 源碼級除錯:<br/>qemu -s -S + gdb vmlinux + break + 看變數<br/>(需符號相符、常關 KASLR)"]
+    GOAL --> SAFETY["★ 鐵則:module 只在這個 VM 裡測,絕不上主機 ★<br/>(搞當了只重啟 VM,主機無事)"]
+    GOAL --> SCRIPT["把整套寫成一鍵腳本 → 可重複(100 分要求)"]
+    style CONFIG_KEY fill:#e8a33d,color:#10100e
+    style DEBUG fill:#8a9a5b,color:#10100e
+    style SAFETY fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>一句話總結:<strong>這條「原始碼→設定→編譯→initramfs→QEMU→GDB」的鏈,給你一個隔離、可重複、可源碼級除錯的 kernel 實驗室;<code>.config</code>(含除錯符號與 QEMU 裝置支援)是成敗關鍵,而最重要的鐵則是——自寫 module 永遠只在這個虛擬機裡測試,絕不碰你的主機。這是你 Phase 3 之後的日常工作環境,也是安全開發產品 module 的基礎。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一(最危險的鐵則):在主機上直接 <code>insmod</code> 自寫 module。</strong>
+極度危險——module 的 bug 可能搞垮整台機器、損毀檔案系統、遺失資料。<strong>自寫 module 務必只在 QEMU 虛擬機裡測試。</strong> 這是不可妥協的安全底線,也適用於你公司產品的 module 開發。</p>
+<p><strong>誤區二:<code>.config</code> 缺少 QEMU 對應的裝置/檔案系統選項。</strong>
+導致 kernel 開機後找不到裝置、掛載不了根檔案系統 → 開不了機。確認虛擬裝置驅動與所需檔案系統有編進去。</p>
+<p><strong>誤區三:忘記開 <code>CONFIG_DEBUG_INFO</code>。</strong>
+沒有除錯符號,GDB 連上了也看不到函式名、設不了源碼中斷點(呼應 <a class="xlink" href="P0-T01.html">P0-T01</a> 沒 <code>-g</code> 的窘境)。</p>
+<p><strong>誤區四:GDB 用的 <code>vmlinux</code> 與運行的 kernel 不符,或沒關位址隨機化。</strong>
+符號會對不上(GDB 定位錯誤)。確保 <code>vmlinux</code> 與 QEMU 跑的 kernel 完全一致,並視需要關閉 KASLR。</p>
+<p><strong>誤區五:用 <code>bzImage</code> 給 GDB 載入符號。</strong>
+<code>bzImage</code> 是壓縮的開機映像,GDB 要的是含符號的 <code>vmlinux</code>。兩者用途不同,別搞混。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:你的開發主機(用來編譯與跑 QEMU)。<strong>所有 kernel 測試都在 QEMU 虛擬機內,絕不在主機核心上做。</strong> 編譯與跑 QEMU 本身不需特殊權限。</p>
+<p><strong>任務 A — 編譯一個 6.x LTS 並在 QEMU 開機到 shell</strong>
+1. 從 kernel.org 下載一個 6.x LTS,解壓。
+2. <code>make defconfig</code>(x86-64),<code>make -j$(nproc)</code> 編譯。
+3. 用 BusyBox 做一個最小 initramfs(網路上有許多現成步驟,參考 admin-guide:https://docs.kernel.org/admin-guide/ 與 Kbuild 文件 https://docs.kernel.org/kbuild/ )。
+4. 用 <code>qemu-system-x86_64 -kernel &lt;bzImage&gt; -initrd &lt;initramfs&gt; -append "console=ttyS0" -nographic</code> 開機。
+驗收:<strong>看到 kernel 開機訊息,最後進入一個可互動的 shell。</strong></p>
+<p><strong>任務 B — 接上 GDB,在 <code>start_kernel</code> 設中斷點</strong>
+1. 確認編譯時開了 <code>CONFIG_DEBUG_INFO</code>(否則重新設定 <code>.config</code> 再編)。
+2. QEMU 加上 <code>-s -S</code> 啟動(開機凍結等待)。
+3. 另開終端:<code>gdb vmlinux</code> → <code>target remote :1234</code> → <code>break start_kernel</code> → <code>continue</code>。
+4. 命中中斷點後,<code>print</code> 至少一個變數(例如某個全域),用 <code>backtrace</code> 看呼叫堆疊。
+驗收:<strong>GDB 在 <code>start_kernel</code> 停下,並能印出至少一個變數。</strong>(若符號對不上,檢查是否關閉 KASLR、<code>vmlinux</code> 是否相符。)</p>
+<p><strong>任務 C — 寫成一鍵腳本(衝 100 分)</strong>
+把「編譯(若需要)→ 啟動 QEMU → (另開)連 GDB」的流程寫成一個可重複執行的腳本。並在腳本註解裡用一兩句話說明 <strong>initramfs 在開機中扮演的角色</strong>。
+驗收:腳本可重複跑起整套環境。</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 成功編譯指定 6.x LTS 並在 QEMU 開機到 shell。
+2. ☐ 以 <code>qemu -s -S</code> + <code>gdb vmlinux</code> 連上,在 <code>start_kernel</code> 設中斷點、命中後印出至少一個變數。
+3. ☐ 將整套流程寫成一鍵腳本可重複執行。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能讓自編的 kernel 在 QEMU 開機。
+- <strong>80(熟練)</strong>:能用 GDB 連上做源碼級除錯(設中斷點、看變數)。
+- <strong>100(精通)</strong>:能寫成可重複的腳本,並說明 initramfs 在開機中的角色。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這是你日後開發/除錯自家 kernel module 的標準工作環境;公司產品的 module 也應在此類隔離環境測試。這個環境會陪伴你整個 Phase 3 之後的旅程。</li>
+<li><strong>這課餵給未來的</strong>:整個開發/除錯環境 → <span class="xlink-stub" title="待撰寫">P3</span> 開始的所有 kernel module 開發與除錯;「只在 VM 測試」的紀律 → 你產品 module 開發的安全規範;GDB 源碼級除錯 → 排查 kernel panic、追 bug。</li>
+<li><strong>下一步 → <a class="xlink" href="P2-T01.html">P2-T01</a> 進入 Phase 2</strong>:恭喜你完成 Phase 1!你現在既有了 CPU/OS 的完整心智模型(計算結構、虛擬記憶體、行程執行緒、並行同步),又有了能實際動手的 kernel 開發環境。<strong>Phase 2 是進入 kernel 原始碼世界的橋樑</strong>——你會開始讀懂 kernel 的核心慣用法與資料結構(像那個無所不在的 <code>list_head</code>、神奇的 <code>container_of</code> 巨集),學會在龐大的 kernel 原始碼裡導航。你在 Phase 0/1 打下的 C 功底與系統觀念,從這裡開始會直接套用在真實的 kernel 程式碼上。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T10.html">← P1-T10 原子操作、memory ordering 與 memory barrier</a><a class="pn next" href="P2-T01.html">P2-T01 Big-O 與資料結構選型思維 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

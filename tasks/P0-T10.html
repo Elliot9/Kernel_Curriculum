@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P0-T10 · 未定義行為(UB)與編譯器最佳化的互動</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P0 · 深度 C、記憶體與未定義行為</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p0-t10-ub">P0-T10 · 未定義行為(UB)與編譯器最佳化</h1>
+<blockquote>
+<p><strong>一句話</strong>:「未定義行為(UB)」不是「結果隨機」,而是「你向編譯器做了一個它信以為真的承諾——一旦你違背,它基於那個承諾做的最佳化,會把你的程式碼變成你完全認不出的樣子,包括刪掉你以為一定會執行的檢查」。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這是 C 最反直覺、也最危險的概念,而它在 kernel 裡是真實的當機與安全漏洞來源。</p>
+<p>在 JS/PHP 裡,幾乎每個操作都有「確定會發生的事」。除以零?得到 <code>Infinity</code>。陣列越界?得到 <code>undefined</code>。語言替每種情況都定義了行為,你不會踩到「沒有定義」的地帶。</p>
+<p>C 不是這樣。C 為了極致的效能,<strong>故意留下一堆「未定義行為(undefined behavior, UB)」的地帶</strong>——這些操作,C 標準明白宣告「我不規定會發生什麼」。常見的 UB 包括:對 NULL 解參考、陣列越界存取、帶號整數溢位(回顧 <a class="xlink" href="P0-T09.html">P0-T09</a>)、use-after-free(回顧 <a class="xlink" href="P0-T06.html">P0-T06</a>)、讀取未初始化的變數……</p>
+<p>新手最大的誤解是:「UB 就是結果不確定嘛,大不了算錯一個值。」<strong>錯得離譜。</strong> UB 真正可怕的地方在於它和<strong>編譯器最佳化</strong>的交互作用:編譯器會<strong>假設「UB 永遠不會發生」</strong>,並基於這個假設去改寫、刪除你的程式碼。結果可能是:你寫的一個明明白白的 NULL 檢查,被編譯器整段刪掉;你的迴圈邊界檢查消失;程式在 <code>-O0</code>(不優化)時正常,一開 <code>-O2</code>(優化)就詭異崩潰。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為 kernel <strong>一定是開最佳化編譯的</strong>(<code>-O2</code> 起跳)。你在使用者態用 <code>-O0</code> 測試「看起來沒事」的 UB,進到 kernel 開了優化就會爆。而且 <a class="xlink" href="P0-T09.html">P0-T09</a> 講的帶號溢位、你在儲存領域處理的各種邊界,都是 UB 的高發區。看懂 UB,你才知道為什麼 kernel 程式碼對這些事如此戰戰兢兢。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P0-T09.html">P0-T09</a>(帶號溢位是 UB 的一個例子,這課把它一般化)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P0-T06.html">P0-T06</a> 的 use-after-free、<a class="xlink" href="P0-T02.html">P0-T02</a> 的 NULL 解參考嗎?這些都是 UB,這課解釋它們「為何不只是崩潰那麼簡單」。
+  2. 你能用 <code>gcc -O0</code> 和 <code>gcc -O2</code> 編譯同一支程式嗎?這課靠對比這兩者來展示 UB 的威力。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 三種「不確定」要分清 → (2) UB 的真正定義:你給編譯器的承諾 → (3) 招牌案例:編譯器刪掉你的 NULL 檢查 → (4) 為什麼 -O0 正常、-O2 爆炸 → (5) strict aliasing 這個隱形 UB → (6) UBSan:抓 UB 的工具</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-implementation-defined-unspecified-undefined">1. 三種「不確定」:implementation-defined / unspecified / undefined</h3>
+<p>C 標準其實把「不是百分百固定」的行為分成三個嚴重程度,先分清楚,別混為一談:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph three["三種『不完全固定』的行為,嚴重度遞增"]
+        ID["implementation-defined<br/>(實作定義)<br/>編譯器自己決定,但必須有定義且文件化<br/>例:int 是幾 bytes、char 帶不帶號"]
+        UNS["unspecified<br/>(未指定)<br/>標準允許幾種可能,編譯器選一種,不必告訴你<br/>例:函式參數的求值順序"]
+        UB["undefined behavior(UB)<br/>(未定義行為)<br/>★標準完全放手,什麼都可能發生★<br/>例:NULL 解參考、越界、帶號溢位"]
+    end
+    style ID fill:#8a9a5b,color:#10100e
+    style UNS fill:#e8a33d,color:#10100e
+    style UB fill:#c2603a,color:#f4ecd8
+</pre></p>
+<ul>
+<li><strong>implementation-defined</strong>:編譯器決定,但<strong>保證有個確定行為且寫在文件裡</strong>。例如 <code>sizeof(int)</code>、<code>char</code> 的帶號性。你查文件就知道結果。相對安全。</li>
+<li><strong>unspecified</strong>:標準允許幾種做法,編譯器選一種,但<strong>不保證告訴你選哪種</strong>,也可能每次不同。例如一個運算式裡多個函式呼叫的求值順序。</li>
+<li><strong>undefined behavior(UB)</strong>:<strong>標準完全不規定</strong>。這是最危險的一級,本課的主角。「什麼都可能發生」是字面意思——包括程式看似正常、算出怪值、崩潰、或編譯器把你的程式碼改得面目全非。</li>
+</ul>
+<p><strong>這課聚焦最危險的 UB。</strong> 記住:UB 不是「編譯器選一個結果」(那是 unspecified),而是「編譯器假設它不會發生,並據此重寫你的程式」。</p>
+<hr />
+<h3 id="2-ub">2. UB 的真正定義:一個你對編譯器許下的承諾</h3>
+<p>理解 UB 的關鍵心法,是把它想成<strong>契約</strong>:</p>
+<blockquote>
+<p>當你寫下一段「只要不觸發 UB 就正確」的程式碼,你等於向編譯器<strong>承諾</strong>:「我保證這裡永遠不會發生 UB。」編譯器<strong>完全信任</strong>這個承諾,並在最佳化時<strong>理直氣壯地利用</strong>它。</p>
+</blockquote>
+<p><pre class="mermaid">flowchart TB
+    YOU["你寫了會解參考 p 的程式碼:*p"]
+    PROMISE["你對編譯器的『隱含承諾』:<br/>『p 永遠不是 NULL』<br/>(因為對 NULL 解參考是 UB,<br/>而你保證不觸發 UB)"]
+    OPT["編譯器最佳化時推論:<br/>『既然他保證 p 不是 NULL,<br/>那後面任何 if(p==NULL) 的檢查<br/>都是多餘的 → 刪掉』"]
+    YOU --> PROMISE --> OPT
+    style PROMISE fill:#e8a33d,color:#10100e
+    style OPT fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>這就是 UB 的全部祕密</strong>:你「使用」了某個只有在「無 UB」前提下才合法的東西,就等於向編譯器擔保那個前提成立。編譯器拿這個擔保去做推論和優化。如果你的擔保是假的(實際上 p 真的可能是 NULL),編譯器基於假前提做的優化,就會做出災難性的事——下一節給你看最經典的一幕。</p>
+<hr />
+<h3 id="3-null">3. 招牌案例:編譯器刪掉你的 NULL 檢查</h3>
+<p>這是 UB 最惡名昭彰的演出,真實發生過(包括在 Linux kernel 引發過安全漏洞)。看這段:</p>
+<pre><code class="language-c">void process(int *p) {
+    int value = *p;          // (1) 解參考 p
+    if (p == NULL) {         // (2) 然後才檢查 p 是不是 NULL
+        return;              //     想在 p 為 NULL 時提早返回
+    }
+    use(value);
+}
+</code></pre>
+<p>你的意圖:如果 p 是 NULL 就提早返回,保護後面的程式碼。但看編譯器怎麼想:</p>
+<p><pre class="mermaid">flowchart TB
+    S1["編譯器看到第(1)行 *p<br/>(解參考 p)"]
+    S2["推論:既然這裡解參考了 p,<br/>而對 NULL 解參考是 UB,<br/>程式設計師保證不觸發 UB<br/>→ 所以執行到這裡時 p 一定不是 NULL"]
+    S3["看到第(2)行 if (p == NULL)<br/>推論:p 已經保證不是 NULL,<br/>這個條件永遠為假"]
+    S4["最佳化:永遠為假的 if<br/>是 dead code → 整段刪除!"]
+    S5["結果:你的 NULL 檢查消失了<br/>若 p 真的是 NULL,<br/>第(1)行就崩潰,<br/>而『保護用的 return』根本不存在"]
+    S1 --> S2 --> S3 --> S4 --> S5
+    style S2 fill:#e8a33d,color:#10100e
+    style S4 fill:#c2603a,color:#f4ecd8
+    style S5 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>讀懂這個因果鏈,你就懂了 UB 的恐怖</strong>:不是「<code>*p</code> 算出怪值」這麼簡單,而是<strong>你的安全檢查被合法地刪除了</strong>。編譯器沒有 bug——它完全按照「程式設計師保證不觸發 UB」這個規則在推論。錯在你「先解參考、後檢查」,這個順序本身就向編譯器擔保了「p 不可能是 NULL」。</p>
+<p><strong>正解</strong>:<strong>先檢查,後使用</strong>。</p>
+<pre><code class="language-c">void process(int *p) {
+    if (p == NULL) return;   // 先檢查
+    int value = *p;          // 確定非 NULL 才解參考
+    use(value);
+}
+</code></pre>
+<p>這樣編譯器在 <code>*p</code> 之前看到的是「已經排除 NULL」,推論就正確了。<strong>這正是為什麼 kernel 程式碼總是「檢查在前、使用在後」</strong>——不只是風格,是為了不向編譯器許下假承諾。</p>
+<p>把兩種順序並排,看編譯器在每種情況下「決定保留什麼」,差異一目了然:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph wrong["✗ 先用後檢查:int v=*p; if(p==NULL)..."]
+        W1["編譯器見 *p<br/>→ 推論 p 必非 NULL"]
+        W2["於是認定 if(p==NULL) 恆假<br/>→ 刪掉整段檢查"]
+        W3["保留下來的程式:<br/>沒有任何 NULL 保護<br/>p 真為 NULL 時直接崩在 *p"]
+        W1 --> W2 --> W3
+    end
+    subgraph right["✓ 先檢查後用:if(p==NULL) return; int v=*p;"]
+        R1["編譯器見檢查在 *p 之前<br/>→ 知道 *p 時 p 已排除 NULL"]
+        R2["檢查有意義,予以保留"]
+        R3["保留下來的程式:<br/>NULL 時安全 return<br/>非 NULL 時才解參考"]
+        R1 --> R2 --> R3
+    end
+    style W2 fill:#c2603a,color:#f4ecd8
+    style W3 fill:#c2603a,color:#f4ecd8
+    style R2 fill:#8a9a5b,color:#10100e
+    style R3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>同一個 NULL 檢查,只因相對於 <code>*p</code> 的位置不同,一個被編譯器刪掉、一個被保留。順序就是一切。</p>
+<hr />
+<h3 id="4-o0-o2">4. 為什麼 <code>-O0</code> 正常、<code>-O2</code> 一開就爆</h3>
+<p>UB 的災難常常以這種形式出現:「我的程式在開發時好好的,一上正式環境就崩潰。」根源往往是優化等級不同。</p>
+<p><pre class="mermaid">flowchart TB
+    CODE["一段含 UB 的程式碼"]
+    CODE --> O0["用 -O0 編譯(不優化)<br/>編譯器幾乎照你寫的直譯<br/>→ 沒做基於 UB 的推論<br/>→ 看起來『正常』(運氣)"]
+    CODE --> O2["用 -O2 編譯(優化)<br/>編譯器積極推論、刪程式碼<br/>→ 基於 UB 的優化生效<br/>→ NULL 檢查被刪、行為崩壞"]
+    O0 -.“同一段碼,只因優化等級不同<br/>就有天壤之別的行為”.-> O2
+    style O0 fill:#8a9a5b,color:#10100e
+    style O2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>關鍵教訓:UB 在 <code>-O0</code> 下「看起來沒事」完全不代表它沒事</strong>——只是優化器還沒來得及利用它。一旦提高優化等級(或換個編譯器版本),潛伏的 UB 就會爆發。</p>
+<p><strong>這對你是直接的警告</strong>:<strong>kernel 永遠是開優化編譯的(<code>-O2</code> 或更高)</strong>。你不能用「我在使用者態 <code>-O0</code> 測過沒問題」來保證 kernel 程式碼安全。UB 必須從根本上避免,而不是「測起來沒事就好」。</p>
+<hr />
+<h3 id="5-strict-aliasing-ub">5. strict aliasing:一個你看不見的 UB</h3>
+<p>這是個比較隱晦、但在系統程式設計常踩的 UB,值得單獨拉出來。</p>
+<p>C 有一條「<strong>嚴格別名規則(strict aliasing rule)</strong>」:<strong>編譯器假設,兩個不同型別的指標,不會指向同一塊記憶體</strong>(<code>char*</code> 是例外,它可以別名任何東西)。基於這個假設,編譯器會做優化。如果你違反它(用一個 <code>float*</code> 和一個 <code>int*</code> 指向同一塊記憶體並交錯讀寫),就是 UB。</p>
+<pre><code class="language-c">float f = 1.0f;
+int *p = (int*)&amp;f;    // 用 int* 指向一個 float —— 違反 strict aliasing
+*p = 42;              // 透過 int* 改寫 float 的記憶體 → UB
+// 編譯器可能假設 f 和 *p 無關,優化後行為不可預測
+</code></pre>
+<p><pre class="mermaid">flowchart TB
+    MEM["一塊記憶體(原本是 float f)"]
+    FP["float* 指向它"]
+    IP["int* 也指向它(違規)"]
+    FP --> MEM
+    IP --> MEM
+    OPT["編譯器假設:<br/>『float* 和 int* 不會指向同一塊』<br/>→ 可能把對 f 和對 *p 的讀寫<br/>重排或快取,因為它認定兩者無關"]
+    MEM --> OPT
+    RESULT["實際它們是同一塊<br/>→ 優化導致行為不可預測(UB)"]
+    OPT --> RESULT
+    style IP fill:#c2603a,color:#f4ecd8
+    style RESULT fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>正解</strong>:要「重新解讀一塊記憶體的位元」,別用「不同型別指標互指」這種違規手段。合法的做法是用 <code>memcpy</code>(它以 <code>char</code> 層級複製,不違反規則),或用 union(回顧 <a class="xlink" href="P0-T04.html">P0-T04</a> 的 union——它是 C 允許的「同記憶體多解讀」方式)。</p>
+<blockquote>
+<p><strong>跟你的工作的關聯</strong>:解析硬體結構、磁碟格式時,常會想「把這塊 bytes 當成另一個型別來看」。要做這件事,用 <code>memcpy</code> 或 union,<strong>不要</strong>用型別不符的指標硬轉,否則就踩進 strict aliasing 的 UB。kernel 程式碼對此有明確規範(且常用 <code>-fno-strict-aliasing</code> 編譯來放寬,但你不該依賴這點)。</p>
+</blockquote>
+<hr />
+<h3 id="6-ubsan-ub">6. UBSan:讓 UB 在執行時現形</h3>
+<p>你不必只靠肉眼和恐懼來防 UB。GCC/Clang 內建 <strong>UndefinedBehaviorSanitizer(UBSan)</strong>,能在程式執行時偵測許多種 UB(帶號溢位、越界、NULL 解參考等),並印出「在哪一行、什麼 UB」。</p>
+<p><pre class="mermaid">flowchart LR
+    A["gcc -fsanitize=undefined -g prog.c -o prog<br/>(開啟 UBSan)"] --> B["執行 ./prog"]
+    B --> C["UBSan 在執行時監控"]
+    C --> D["一旦觸發 UB,立刻報告:<br/>『第 N 行:signed integer overflow』<br/>等明確訊息"]
+    style A fill:#8a9a5b,color:#10100e
+    style D fill:#e8a33d,color:#10100e
+</pre></p>
+<pre><code class="language-bash">gcc -fsanitize=undefined -g prog.c -o prog
+./prog    # 跑到 UB 時印出明確的診斷
+</code></pre>
+<p>這是繼 <a class="xlink" href="P0-T06.html">P0-T06</a> 的 valgrind 之後,你工具箱裡的第二件利器。它和 kernel 的 <strong>UBSAN</strong>(kernel 也有同名機制)精神一致——讓潛伏的 UB 在測試時就現形,而不是在正式環境隨機爆炸。</p>
+<hr />
+<h2 id="ub">打通關:把 UB 收攏成一個心智模型</h2>
+<p>UB 的一切恐怖,都源自一個機制:<strong>「使用即承諾」+「編譯器信任並利用承諾」</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    USE["你使用了某個『僅在無 UB 前提下合法』的操作<br/>(解參考 p、帶號運算可能溢位、型別互指…)"]
+    USE --> PROMISE["= 你向編譯器隱含承諾<br/>『這裡的 UB 前提成立』<br/>(p 非 NULL、不會溢位、指標不別名…)"]
+    PROMISE --> TRUST["編譯器完全信任此承諾,<br/>並在最佳化時據此推論、刪碼、重排"]
+    TRUST --> GOOD["承諾為真 → 優化正確,程式飛快"]
+    TRUST --> BAD["承諾為假 → 優化基於謊言<br/>→ 刪掉你的檢查、行為崩壞<br/>(且 -O0 看不出,-O2 才爆)"]
+    DEFENSE["防身:<br/>① 先檢查後使用(NULL、邊界)<br/>② 不依賴帶號溢位等 UB<br/>③ 重解讀記憶體用 memcpy/union,不硬轉指標<br/>④ 用 UBSan 讓 UB 現形"]
+    BAD --> DEFENSE
+    style PROMISE fill:#e8a33d,color:#10100e
+    style BAD fill:#c2603a,color:#f4ecd8
+    style DEFENSE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>UB 不是「結果隨機」,而是「你對編譯器許下的、它信以為真的承諾」;違背承諾時,編譯器會合法地把你的程式碼優化成災難。在永遠開優化的 kernel 裡,避免 UB 不是潔癖,是生存技能——而『先檢查後使用』與 UBSan 是你最重要的兩道防線。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一(最核心):以為「UB = 結果不確定,頂多算錯一個值」。</strong>
+UB 真正的危險是編譯器會假設它不發生、據此<strong>刪除或重寫你的程式碼</strong>(包括安全檢查)。它的影響範圍遠超「那一個運算」。</p>
+<p><strong>誤區二:先解參考指標、後檢查 NULL。</strong>
+<code>int v = *p; if (p == NULL)...</code> 會讓編譯器推論「p 必非 NULL」進而刪掉檢查。永遠<strong>先檢查、後使用</strong>。</p>
+<p><strong>誤區三:用 <code>-O0</code> 測試 UB「沒問題」就放心。</strong>
+<code>-O0</code> 只是還沒利用 UB。kernel 開 <code>-O2</code>,潛伏的 UB 會爆。UB 要根除,不能靠「測起來沒事」。</p>
+<p><strong>誤區四:用型別不符的指標互指來「重新解讀記憶體」。</strong>
+違反 strict aliasing,是 UB。改用 <code>memcpy</code> 或 union。</p>
+<p><strong>誤區五:依賴帶號整數溢位的「結果」。</strong>
+帶號溢位是 UB(回顧 <a class="xlink" href="P0-T09.html">P0-T09</a>),不是繞回。需要繞回語意時用無號型別(但小心 <a class="xlink" href="P0-T09.html">P0-T09</a> 的無號陷阱)。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。</p>
+<p><strong>任務 A — 親眼看「-O0 vs -O2」對 UB 的不同反應</strong>
+寫第 3 節那個「先解參考、後檢查 NULL」的 <code>process</code> 函式,在 <code>main</code> 裡故意傳 NULL 給它。分別編譯執行:</p>
+<pre><code class="language-bash">gcc -O0 prog.c -o prog_O0 &amp;&amp; ./prog_O0      # 觀察行為
+gcc -O2 prog.c -o prog_O2 &amp;&amp; ./prog_O2      # 觀察行為(可能不同)
+</code></pre>
+<p>觀察兩者行為差異(視編譯器版本,<code>-O2</code> 可能直接崩潰於解參考,因為保護用的檢查被優化掉)。然後把程式改成「先檢查後使用」,確認兩個優化等級都安全。寫一句話總結你看到什麼。</p>
+<p><strong>任務 B — 用 UBSan 抓帶號溢位</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;limits.h&gt;
+int main(void) {
+    int x = INT_MAX;
+    int y = x + 1;     // 帶號溢位 → UB
+    printf(&quot;%d\n&quot;, y);
+    return 0;
+}
+</code></pre>
+<pre><code class="language-bash">gcc -fsanitize=undefined -g prog.c -o prog
+./prog
+</code></pre>
+<p>觀察 UBSan 印出類似「signed integer overflow」的明確診斷,<strong>指出是哪一行</strong>。</p>
+<p><strong>任務 C — strict aliasing 的正確做法</strong>
+你想把一個 <code>float</code> 的位元當成 <code>uint32_t</code> 來看(例如檢查它的位元表示)。<strong>錯的方式</strong>是 <code>*(uint32_t*)&amp;f</code>(違反 strict aliasing)。寫出<strong>對的方式</strong>:用 <code>memcpy</code>:</p>
+<pre><code class="language-c">#include &lt;string.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdio.h&gt;
+int main(void) {
+    float f = 1.0f;
+    uint32_t bits;
+    memcpy(&amp;bits, &amp;f, sizeof(bits));   // 合法:以 byte 層級複製
+    printf(&quot;float 1.0 的位元 = 0x%08X\n&quot;, bits);   // 0x3F800000
+    return 0;
+}
+</code></pre>
+<p>確認它印出 <code>0x3F800000</code>(1.0f 的 IEEE-754 表示)。寫一句話:為什麼 <code>memcpy</code> 是合法的,而指標硬轉不是?</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 能用「先解參考後檢查 NULL」的範例,解釋編譯器為何可能刪除 NULL 檢查(連結到「使用即承諾」)。
+2. ☐ 用 UBSan 抓出一個帶號溢位,並讀懂它指出的行號與錯誤類型。
+3. ☐ 用 <code>memcpy</code> 正確地重新解讀一塊記憶體的位元,並能說明為何指標硬轉違反 strict aliasing。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:知道 UB 的存在與幾個常見例子。
+- <strong>80(熟練)</strong>:理解「UB = 對編譯器的承諾」,能避開常見 UB,會用 UBSan,堅持「先檢查後使用」。
+- <strong>100(精通)</strong>:能解釋 UB 與優化的交互作用如何刪除安全檢查、為何 <code>-O0</code>/<code>-O2</code> 行為不同,並把這些連結到 kernel 永遠開優化的現實。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>。kernel 一律開最佳化編譯,UB 會直接導致當機或安全漏洞;歷史上 kernel 真的發生過「NULL 檢查被優化掉」的漏洞。你寫 kernel 程式碼必須從根本避免 UB。</li>
+<li><strong>這課餵給未來的</strong>:「先檢查後使用」的紀律 → 貫穿所有 kernel 程式設計;UBSan → kernel 的 UBSAN;strict aliasing → 解析硬體/磁碟結構時的正確手法。</li>
+<li><strong>下一步 → <a class="xlink" href="P0-T11.html">P0-T11</a> 位元操作</strong>:離開 UB 這個沉重主題,下一課進入明亮實用的位元運算(<code>&amp; | ^ ~ &lt;&lt; &gt;&gt;</code>)。它不只是基礎技巧——XOR 運算正是 <strong>RAID-5 同位元(parity)計算的數學核心</strong>,而「逐位元獨立」的特性,正是你產品把同位元計算丟給 GPU 平行處理的種子。這是你那條「XOR → parity → GPU 平行」主線的起點。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P0-T09.html">← P0-T09 C 型別系統、整數提升與帶號陷阱</a><a class="pn next" href="P0-T11.html">P0-T11 位元操作(bitwise operations) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

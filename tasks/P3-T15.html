@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T15 · 整合驗收 + 第一個 patch — 寫一個含並行與除錯的完整 module</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  <span class="gate-pill">🚪 出關門檻</span>
+</nav>
+<article class="paper">
+<h1 id="p3-t15-patch-module">P3-T15 · 整合驗收 + 第一個 patch — 寫一個含並行與除錯的完整 module</h1>
+<blockquote>
+<p><strong>一句話</strong>:把整個 Phase 3 學的——module 骨架、slab 配置、spinlock/atomic、workqueue、正確的 GFP/context——綜合成一個<strong>真正完整的 module</strong>,並用 KASAN + lockdep 驗證到零報告;再走完一次真實的 kernel patch 流程。這是你日後在公司開發 production module 的縮影。</p>
+</blockquote>
+<hr />
+<h2 id="phase-3">🚪 這是 Phase 3 出關門檻</h2>
+<p>這是 Phase 3 的<strong>關卡(gate)</strong>,也是整個課程目前最重的整合驗收。本 task 達 <strong>80 分</strong>——能<strong>獨立寫出並除錯一個正確處理同步與 context 的 module</strong>——才算真正掌握了核心 kernel 開發能力,方可進入 Phase 4(裝置驅動)。</p>
+<p>為什麼這道關這麼重要?因為 Phase 3 是「成為通用型 kernel developer」的核心。前面 14 課你分別學了架構、module、記憶體、同步、中斷、除錯——但「分開學會」和「綜合起來獨立做出一個正確的並行 module」是兩回事。真實的 kernel 開發(包括你的產品)要求你<strong>同時</strong>正確處理所有這些面向:配對的資源管理、正確的鎖選型、正確的 GFP/context、用工具驗證無 bug。這道關確保你具備這個綜合能力。</p>
+<hr />
+<h2 id="module-patch">為什麼是「完整 module + 第一個 patch」(導讀)</h2>
+<p>這一課有兩個產出,都直接對應你的職涯:</p>
+<p><strong>產出一:一個完整的並行 module。</strong> 不是 hello-world,而是一個<strong>麻雀雖小五臟俱全</strong>的真實 module:
+- 一個 <strong>misc 裝置</strong>(一種簡單的字元裝置,讓使用者態能跟它互動——<span class="xlink-stub" title="待撰寫">P4</span> 會深入裝置,這裡先用最簡單的形式)。
+- 內部用 <strong>workqueue</strong> 處理請求(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a>:可睡眠的下半部)。
+- 用 <strong>spinlock / atomic</strong> 保護共享狀態(回顧 <a class="xlink" href="P3-T08.html">P3-T08</a>/<a class="xlink" href="P3-T09.html">P3-T09</a>)。
+- 全程<strong>正確的 GFP/context 使用</strong>(回顧 <a class="xlink" href="P3-T07.html">P3-T07</a>/<a class="xlink" href="P3-T08.html">P3-T08</a>)。
+- 用 <strong>KASAN + lockdep 驗證到零報告</strong>(回顧 <a class="xlink" href="P3-T14.html">P3-T14</a>)。</p>
+<p><strong>這正是你公司 production module 的縮影</strong>——它綜合了並行、延後工作、記憶體配置、正確的 context 處理,並經過嚴格驗證。</p>
+<p><strong>產出二:走完一次真實的 kernel patch 流程。</strong> 對 kernel 樹做一個<strong>微小但真實的改進</strong>(例如修一個 checkpatch 警告、拼字、文件問題),用 <code>git format-patch</code> 產出合規的 patch、寫合規的 commit message(回收 <a class="xlink" href="P3-T05.html">P3-T05</a>)。<strong>這讓你具備向 upstream 貢獻的流程能力</strong>——即使這裡只是練習產出(不必真寄),流程本身是你日後回饋社群、或在公司用 patch 協作的基礎。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為<strong>這是你日後在公司開發 production module 的縮影,也讓你具備向 upstream 貢獻的流程能力</strong>。</p>
+<hr />
+<h2 id="_1">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<strong>整個 Phase 3(P3-T03 ~ P3-T14)</strong>。動手前確認你能:
+  1. 寫 module 骨架、Makefile、處理載入/卸載(<a class="xlink" href="P3-T03.html">P3-T03</a>/<a class="xlink" href="P3-T04.html">P3-T04</a>)。
+  2. 用 <code>kmalloc</code>/slab 配置,選對 GFP flag(<a class="xlink" href="P3-T07.html">P3-T07</a>)。
+  3. 選對鎖(spinlock vs mutex)、正確 context(<a class="xlink" href="P3-T08.html">P3-T08</a>);用 atomic/refcount(<a class="xlink" href="P3-T09.html">P3-T09</a>)。
+  4. 用 workqueue 做可睡眠的下半部(<a class="xlink" href="P3-T10.html">P3-T10</a>)。
+  5. 開 KASAN + lockdep 驗證、判讀報告(<a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a>)。
+  6. 用 checkpatch、寫合規 commit message(<a class="xlink" href="P3-T05.html">P3-T05</a>)。</li>
+<li>環境:<strong>QEMU 虛擬機(module 測試只在 VM)+ 一份 kernel git 樹(做 patch 練習)。</strong> 開 KASAN + lockdep 的 debug kernel。</li>
+</ul>
+<hr />
+<h2 id="_2">核心內容:整合的藍圖</h2>
+<p>這一課的「核心內容」是<strong>怎麼把所有東西正確地組起來</strong>。拆成:<strong>(1) 整合藍圖 → (2) module 結構與資源配對 → (3) 並行設計:鎖與 context → (4) workqueue:延後處理 → (5) KASAN+lockdep 驗證 → (6) git format-patch 流程</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-module">1. 整合藍圖:這個 module 長什麼樣</h3>
+<p>先看整個 module 的結構,它把 Phase 3 的元件組起來:</p>
+<p><pre class="mermaid">flowchart TB
+    USER["使用者態:對 misc 裝置 write/ioctl 送一個『請求』"]
+    USER --> ENTRY["module 的進入點(misc device 的處理函式,行程 context)"]
+    ENTRY --> ALLOC["配置一個請求物件(kmalloc/slab,GFP_KERNEL,行程 context 可睡眠)"]
+    ALLOC --> LOCK["用 spinlock 保護:把請求加入共享佇列、更新共享計數(atomic/refcount)"]
+    LOCK --> SCHEDULE["schedule_work():把實際處理排入 workqueue"]
+    SCHEDULE --> RETURN["進入點返回(快)"]
+    SCHEDULE -.-> WORKER["workqueue worker(行程 context,可睡眠):<br/>取出請求、做實際處理(可睡眠操作)、<br/>釋放請求物件、更新狀態"]
+    style ENTRY fill:#6fa8b8,color:#10100e
+    style LOCK fill:#e8a33d,color:#10100e
+    style WORKER fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>這個結構是真實 module 的縮影:使用者態送請求進來 → 行程 context 配置請求物件、用鎖保護共享狀態、把重活排入 workqueue → worker 在可睡眠的 context 從容處理。它<strong>同時用到</strong> module 骨架、slab/GFP、spinlock/atomic、workqueue、資源配對——這正是整合的意義。(注意:這個結構也正是你產品 I/O 路徑的雛形——請求進來、保護共享狀態、延後重活到可睡眠 context。)</p>
+<p>把這個 module 用到的 Phase 3 元件,標在對應的環節上——一眼看出「整合」整合了什麼:</p>
+<p><pre class="mermaid">flowchart TB
+    S1["misc 裝置進入點(P3-T03 骨架 / P4 裝置雛形)"]
+    S1 --> S2["配置請求物件:kmalloc/slab + GFP_KERNEL(P3-T07,行程 context 可睡眠)"]
+    S2 --> S3["spinlock 護佇列 + atomic/refcount 計數(P3-T08/T09)"]
+    S3 --> S4["schedule_work 排入 workqueue(P3-T10)"]
+    S4 --> S5["worker 處理(可睡眠)+ 完成後 refcount 釋放(P3-T09)"]
+    S5 --> S6["卸載:正確關閉順序避免 UAF(P3-T03 配對)"]
+    S6 --> S7["★ 全程 KASAN + lockdep 驗證零報告(P3-T14)★"]
+    style S3 fill:#e8a33d,color:#10100e
+    style S4 fill:#8a9a5b,color:#10100e
+    style S7 fill:#6fa8b8,color:#10100e
+</pre></p>
+<hr />
+<h3 id="2-module">2. module 結構與資源配對</h3>
+<p>第一個正確性面向:<strong>資源配對</strong>(回顧 <a class="xlink" href="P0-T06.html">P0-T06</a> malloc/free、<a class="xlink" href="P3-T03.html">P3-T03</a> init/exit 配對)。module 可反覆載入/卸載,每次都要乾淨。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph init["module_init:配置/註冊(依序)"]
+        I1["建 slab 快取(kmem_cache_create)"]
+        I2["初始化 spinlock、共享佇列、atomic"]
+        I3["初始化 workqueue(或用系統 workqueue)"]
+        I4["註冊 misc 裝置"]
+        I1 --> I2 --> I3 --> I4
+    end
+    subgraph exit["module_exit:反序釋放/註銷(對應)"]
+        E1["註銷 misc 裝置(先停止新請求進來)"]
+        E2["flush/cancel workqueue(等所有 work 做完)"]
+        E3["釋放佇列裡剩餘的請求物件"]
+        E4["銷毀 slab 快取(kmem_cache_destroy)"]
+        E1 --> E2 --> E3 --> E4
+    end
+    NOTE["★ 紀律:exit 要反序、完整地釋放 init 配的一切 ★<br/>尤其:先停新請求 → 等 work 做完 → 才釋放它們用的資源<br/>(否則 work 還在跑、資源被釋放 → use-after-free,KASAN 會抓)"]
+    init --> NOTE
+    exit --> NOTE
+    style init fill:#6fa8b8,color:#10100e
+    style exit fill:#8a9a5b,color:#10100e
+    style NOTE fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>關鍵紀律:<strong>exit 要反序、完整地釋放 init 配置的一切</strong>。尤其在有 workqueue 時有個微妙的順序問題:<strong>卸載時要先停止新請求進來、flush/cancel 所有 work(等它們做完)、才釋放 work 會用到的資源</strong>——否則「work 還在跑、它用的資源已被釋放」就是 use-after-free(KASAN 會抓到,回顧 <a class="xlink" href="P3-T14.html">P3-T14</a>)。這個「正確的關閉順序」是真實 module 的常見難點,也是整合驗收的重點。</p>
+<hr />
+<h3 id="3-context">3. 並行設計:鎖與 context 的正確選擇</h3>
+<p>第二個正確性面向:<strong>並行</strong>(回顧 <a class="xlink" href="P3-T08.html">P3-T08</a>/<a class="xlink" href="P3-T09.html">P3-T09</a>)。這個 module 有共享狀態(請求佇列、計數),要正確保護。</p>
+<p><pre class="mermaid">flowchart TB
+    SHARED["共享狀態:請求佇列、in-flight 計數等"]
+    SHARED --> CHOICE{"怎麼保護?(回顧 P3-T08 選型)"}
+    CHOICE --> SPIN["佇列的增刪 → spinlock<br/>(短臨界區;若 work 在中斷類 context 也碰它,<br/>考慮 spin_lock_irqsave)"]
+    CHOICE --> ATOMIC2["計數 → atomic_t / refcount_t<br/>(免鎖,refcount 管請求物件生命週期 P3-T09)"]
+    SPIN --> RULE2["★ 鐵則(P3-T07/T08):持 spinlock 期間不可睡眠 ★<br/>→ 持鎖時不可 kmalloc(GFP_KERNEL)、不可 mutex<br/>→ 配置請求物件要在『進臨界區之前』做好"]
+    style SPIN fill:#e8a33d,color:#10100e
+    style ATOMIC2 fill:#6fa8b8,color:#10100e
+    style RULE2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>並行設計的要點:
+- <strong>佇列的增刪</strong>用 spinlock(短臨界區)。若處理也在中斷類 context 碰佇列,行程端用 <code>spin_lock_irqsave</code>(<a class="xlink" href="P3-T08.html">P3-T08</a>)。
+- <strong>計數</strong>用 <code>atomic_t</code>;<strong>請求物件的生命週期</strong>用 <code>refcount_t</code>(<a class="xlink" href="P3-T09.html">P3-T09</a>),確保「還有人用就不釋放」。
+- <strong>鐵則(回顧 <a class="xlink" href="P3-T07.html">P3-T07</a>/<a class="xlink" href="P3-T08.html">P3-T08</a>):持 spinlock 期間絕不可睡眠</strong>——所以「配置請求物件(<code>kmalloc(GFP_KERNEL)</code>,會睡眠)」要在<strong>進臨界區之前</strong>做好,不能在持 spinlock 時配置。這是 GFP/context 正確性的具體體現,lockdep 會幫你抓違規(<a class="xlink" href="P3-T14.html">P3-T14</a>)。</p>
+<p>正確的鎖選型 + 正確的 GFP/context,是這個 module 通過 lockdep 零報告的關鍵。</p>
+<hr />
+<h3 id="4-workqueue-context">4. workqueue:把重活延後到可睡眠 context</h3>
+<p>第三個面向:<strong>延後處理</strong>(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a>)。實際的請求處理(可能耗時、可能要睡眠)放 workqueue。</p>
+<p><pre class="mermaid">flowchart TB
+    SUBMIT["進入點(行程 context):<br/>配好請求、加入佇列後,schedule_work() 排入"]
+    SUBMIT --> WORKER2["workqueue worker(行程 context,★可睡眠★):"]
+    WORKER2 --> W1["① 用 spinlock 從佇列取出請求(短臨界區)"]
+    W1 --> W2["② 釋放鎖後,做實際處理<br/>(可睡眠的操作:msleep 模擬、或真實 I/O)"]
+    W2 --> W3["③ 處理完,refcount_dec 釋放請求物件<br/>(歸零才真的 kfree/kmem_cache_free)"]
+    NOTE2["為什麼用 workqueue:<br/>實際處理可能睡眠 → 不能在中斷/持鎖 context 做<br/>→ workqueue 的行程 context 可睡眠(P3-T10)<br/>(取佇列那一小步用鎖,處理那一大步不持鎖)"]
+    W3 --> NOTE2
+    style WORKER2 fill:#8a9a5b,color:#10100e
+    style NOTE2 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>workqueue 的設計要點:
+- worker 在<strong>行程 context</strong>(可睡眠),所以實際處理可以做會睡眠的事(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a>)。
+- <strong>「取佇列」用鎖(短),「處理」不持鎖(長、可能睡眠)</strong>——別持著 spinlock 做耗時/睡眠的處理(那違反鐵則、且讓別人空轉)。先在臨界區裡快速取出請求、釋放鎖,再從容處理。
+- 這正是你產品的模式:I/O 完成的重活(parity、GPU)在 workqueue 處理,而非中斷 context。</p>
+<hr />
+<h3 id="5-kasan-lockdep">5. KASAN + lockdep 驗證:零報告</h3>
+<p>第四個面向:<strong>用工具驗證</strong>(回顧 <a class="xlink" href="P3-T14.html">P3-T14</a>)。寫完不代表正確——要用 KASAN + lockdep 主動驗證。</p>
+<p><pre class="mermaid">flowchart TB
+    BUILD["重編開啟 CONFIG_KASAN + CONFIG_PROVE_LOCKING 的 kernel"]
+    BUILD --> RUN["在 QEMU 載入 module,跑功能測試<br/>(從使用者態送多個並行請求,反覆載入/卸載)"]
+    RUN --> KASAN3["KASAN 檢查:<br/>有沒有 use-after-free / 越界?<br/>(尤其卸載時的關閉順序、refcount 管理)"]
+    RUN --> LOCKDEP3["lockdep 檢查:<br/>有沒有鎖順序問題 / 持鎖睡眠 / context 違規?"]
+    KASAN3 --> GOAL["★ 目標:KASAN + lockdep 都 0 報告 ★<br/>(驗收門檻;有報告就回去修,直到乾淨)"]
+    LOCKDEP3 --> GOAL
+    style BUILD fill:#6fa8b8,color:#10100e
+    style GOAL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>驗證流程:
+- 重編開 <strong><code>CONFIG_KASAN</code> + <code>CONFIG_PROVE_LOCKING</code></strong> 的 kernel。
+- 載入 module,跑功能測試:從使用者態送多個並行請求、反覆載入/卸載(壓測關閉順序與並行)。
+- <strong>KASAN</strong> 檢查記憶體錯誤(尤其卸載時的關閉順序、refcount 是否正確)。
+- <strong>lockdep</strong> 檢查鎖順序、持鎖睡眠、context 違規。
+- <strong>目標:兩者都 0 報告</strong>(驗收門檻)。有報告就回去修(KASAN 給你三個堆疊定位、lockdep 指出鎖順序問題——回顧 <a class="xlink" href="P3-T14.html">P3-T14</a>),直到乾淨。</p>
+<p>「KASAN + lockdep 零報告」是這個 module 正確性的客觀證明——這也是你日後驗證 production module 的標準做法。</p>
+<hr />
+<h3 id="6-git-format-patch-patch">6. git format-patch 流程:你的第一個 patch</h3>
+<p>第二個產出:走完一次真實的 kernel patch 流程。對 kernel 樹做一個<strong>微小、真實</strong>的改進,產出合規 patch。</p>
+<p><pre class="mermaid">flowchart TB
+    PICK["① 找一個微小真實的改進:<br/>修一個 checkpatch 警告、拼字、文件問題<br/>(用 checkpatch.pl 在某檔案找,P3-T05)"]
+    PICK --> COMMIT["② git commit:<br/>寫合規 commit message(主旨行 + 解釋『為什麼』,P3-T05)<br/>含子系統前綴"]
+    COMMIT --> FORMAT["③ git format-patch:<br/>產出一個 .patch 檔(inline、純文字格式)<br/>★ 不是附件、不被郵件客戶端改壞 ★"]
+    FORMAT --> CHECK2["④ 用 checkpatch.pl <patch> 檢查 patch 合規"]
+    CHECK2 --> NOTE3["(練習用:不必真的 git send-email 寄出;<br/>真要寄須先讀 MAINTAINERS 找對收件者)<br/>★ 重點是產出一個通過 checkpatch 的合規 patch ★"]
+    style PICK fill:#6fa8b8,color:#10100e
+    style FORMAT fill:#e8a33d,color:#10100e
+    style NOTE3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>流程:
+1. <strong>找改進</strong>:用 <code>checkpatch.pl</code>(<a class="xlink" href="P3-T05.html">P3-T05</a>)在某檔案找一個真實的小問題(checkpatch 警告、拼字、文件)。
+2. <strong>commit</strong>:改好後 <code>git commit</code>,寫<strong>合規 commit message</strong>(主旨行 + 解釋「為什麼改」,回收 <a class="xlink" href="P3-T05.html">P3-T05</a>;帶子系統前綴)。
+3. <strong><code>git format-patch</code></strong>:產出一個 <code>.patch</code> 檔——<strong>inline、純文字格式</strong>(常見誤區:<strong>用附件而非 inline、或被郵件客戶端改壞格式</strong>——真寄要用 <code>git send-email</code>;這裡產出檔案即可)。
+4. <strong>checkpatch 檢查 patch</strong>:<code>checkpatch.pl &lt;patch&gt;</code> 確認 patch 合規。</p>
+<p><strong>練習用,不必真寄</strong>(常見誤區:未先讀 <code>MAINTAINERS</code> 找對收件者——真要寄才需要)。重點是<strong>產出一個通過 <code>checkpatch</code> 的合規 <code>git format-patch</code> 檔 + 合規 commit message</strong>(驗收點)。這個流程是你日後向 upstream 貢獻、或在公司用 patch 協作的基礎。</p>
+<hr />
+<h2 id="capstone">打通關:把整合 capstone 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    GOAL2["出關目標:獨立做出一個正確處理同步與 context 的完整 module + 走完 patch 流程"]
+    GOAL2 --> MODULE["產出一:完整 module(misc 裝置)"]
+    MODULE --> M1["骨架 + 資源配對(P3-T03):init 配/exit 反序釋放<br/>★ 關閉順序:先停請求→flush work→釋放資源(否則 UAF)★"]
+    MODULE --> M2["並行(P3-T08/T09):spinlock 護佇列 + atomic/refcount<br/>★ 持 spinlock 不睡眠 → 配置在進臨界區前 ★"]
+    MODULE --> M3["延後(P3-T10):重活放 workqueue(可睡眠);取佇列用鎖、處理不持鎖"]
+    MODULE --> M4["★ 驗證(P3-T14):KASAN + lockdep 零報告 ★"]
+    GOAL2 --> PATCH["產出二:第一個 patch"]
+    PATCH --> P_1["微小真實改進 → 合規 commit message(P3-T05)<br/>→ git format-patch → checkpatch 通過"]
+    style MODULE fill:#6fa8b8,color:#10100e
+    style M4 fill:#8a9a5b,color:#10100e
+    style PATCH fill:#e8a33d,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>Phase 3 的出關,是把整個階段綜合成一個正確的並行 module——module 骨架與資源配對(尤其 workqueue 的關閉順序避免 UAF)、spinlock/atomic/refcount 的正確並行(持鎖不睡眠)、workqueue 延後重活,並用 KASAN + lockdep 驗證到零報告;再走完一次合規的 git format-patch 流程。這個 module 是你 production 工作的縮影,patch 流程是你貢獻 upstream 的基礎。</strong></p>
+<hr />
+<h2 id="_3">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:context/GFP/鎖規則綜合踩雷。</strong>
+回顧 <a class="xlink" href="P3-T07.html">P3-T07</a>/<a class="xlink" href="P3-T08.html">P3-T08</a>/<a class="xlink" href="P3-T10.html">P3-T10</a>:持 spinlock 不可睡眠(配置要在臨界區前)、中斷 context 不可用 mutex、重活放可睡眠的 workqueue。綜合起來別錯。lockdep 會幫你抓。</p>
+<p><strong>誤區二:卸載時關閉順序錯誤 → use-after-free。</strong>
+要先停新請求進來、flush/cancel work(等做完)、才釋放 work 用的資源。否則 work 還在跑、資源被釋放,KASAN 會報 UAF。</p>
+<p><strong>誤區三:patch 用附件而非 inline、或被郵件客戶端改壞格式。</strong>
+真寄要用 <code>git send-email</code>(純文字 inline)。練習產出 <code>git format-patch</code> 檔即可。</p>
+<p><strong>誤區四:commit message 不合規。</strong>
+主旨行 + 內文解釋「為什麼改」(回收 <a class="xlink" href="P3-T05.html">P3-T05</a>),不是流水帳。</p>
+<p><strong>誤區五:未先讀 <code>MAINTAINERS</code> 找對收件者。</strong>
+真要寄 patch 時須先找對 maintainer(讀 <code>MAINTAINERS</code> 檔)。此處僅練習產出,不必真寄。</p>
+<hr />
+<h2 id="_4">動手實作(這就是出關驗收任務)</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機(開 KASAN + lockdep 的 debug kernel)+ 一份 kernel git 樹。module 只在 VM 測試。</strong></p>
+<p><strong>任務(出關門檻):完整 module + 第一個 patch</strong></p>
+<p><strong>Part 1 — 寫一個完整的並行 module(驗收點 1、2)</strong>
+寫一個 misc 裝置 module:
+- 註冊一個 misc 裝置,使用者態能對它送請求(用 write 或 ioctl)。
+- 收到請求時(行程 context):配置一個請求物件(<code>kmalloc</code>/slab,<code>GFP_KERNEL</code>),用 <strong>spinlock</strong> 加入共享佇列、用 <strong>atomic/refcount</strong> 更新計數,然後 <strong><code>schedule_work()</code></strong> 把處理排入 workqueue。
+- workqueue worker(行程 context):用鎖取出請求、釋放鎖後做處理(放個 <code>msleep</code> 模擬可睡眠工作)、<code>refcount_dec</code> 釋放請求。
+- 正確的關閉順序(exit:先停請求 → flush work → 釋放資源 → 銷毀 slab)。
+驗收:
+- <strong>module 通過功能測試</strong>(送多個請求都正確處理)。
+- <strong>正確使用至少一種鎖 + workqueue,且 GFP/context 選擇全部正確。</strong></p>
+<p><strong>Part 2 — KASAN + lockdep 驗證(驗收點 1)</strong>
+在開 <code>CONFIG_KASAN</code> + <code>CONFIG_PROVE_LOCKING</code> 的 kernel 上,跑你的 module(並行送請求、反覆載入/卸載)。
+驗收:<strong>KASAN + lockdep 開啟下 0 報告。</strong>(有報告就修到乾淨。)</p>
+<p><strong>Part 3 — 第一個 patch(驗收點 3)</strong>
+對 kernel 樹找一個微小真實的改進(用 <code>checkpatch.pl</code> 找一個 checkpatch/拼字/文件問題),改好、<code>git commit</code>(合規 commit message)、<code>git format-patch</code> 產出 patch、<code>checkpatch.pl &lt;patch&gt;</code> 驗證。
+驗收:<strong>產出一個通過 <code>checkpatch.pl</code> 的 <code>git format-patch</code> 檔,含合規 commit message。</strong>(練習用,不必真寄。)</p>
+<hr />
+<h2 id="_5">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ module 通過功能測試,且在 KASAN + lockdep 開啟下 0 報告。
+2. ☐ 正確使用至少一種鎖 + workqueue,且 GFP/context 選擇全部正確。
+3. ☐ 產出一個通過 <code>checkpatch.pl</code> 的 <code>git format-patch</code> 檔,含合規 commit message。</p>
+<p><strong>評分量表(出關門檻,需達 80)</strong>:
+- <strong>60</strong>:module 可運作。
+- <strong>80(出關門檻 🚪)</strong>:module 通過 KASAN/lockdep 且 patch 合規。達此分數方可進入 Phase 4。
+- <strong>100</strong>:module 設計乾淨可維護,能解釋每個同步/context 決策,patch 達可送 upstream 水準。</p>
+<hr />
+<h2 id="_6">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這是你日後在公司開發 production module 的縮影,也讓你具備向 upstream 貢獻的流程能力。</li>
+<li><strong>這課收束了</strong>:整個 Phase 3——架構、module、記憶體、同步、中斷、排程、除錯——綜合成「獨立做出一個正確的並行 module」的能力。</li>
+<li><strong>下一步 → <a class="xlink" href="P4-T01.html">P4-T01</a> 進入 Phase 4(裝置驅動與 Device Model)</strong>:恭喜你通過 Phase 3,成為能獨立開發、除錯並行 module 的 kernel developer!你在這裡寫的 misc 裝置,只是裝置的最簡單形式。<strong>Phase 4 深入「裝置驅動」</strong>:Linux 如何抽象裝置與匯流排(Device Model)、怎麼寫<strong>字元裝置</strong>和<strong>區塊裝置</strong>驅動、以及 <strong>PCI 子系統</strong>(你的 NVMe SSD、GPU 都掛在 PCI 上)。這是你產品「自寫 kernel module 操作硬體」的正式起點——從這裡開始,你的 module 要真正跟硬體裝置打交道了。</li>
+</ul>
+<hr />
+<blockquote>
+<p><strong>🚪 出關提醒</strong>:確認你能獨立寫出一個 misc 裝置 module(workqueue + spinlock/atomic + 正確 GFP/context),在 KASAN + lockdep 下零報告,並產出一個合規的 git format-patch(80 分門檻),再進入 Phase 4。這個「綜合所有 Phase 3 能力、做出正確的並行 module」的本事,是後面裝置驅動、block layer、DMA 工作的根基——你已經是真正的 kernel developer 了。</p>
+</blockquote>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T14.html">← P3-T14 kernel 除錯(二)—— KASAN、KCSAN、lockdep、kgdb、crash/kdump</a><a class="pn next" href="P4-T01.html">P4-T01 Linux Device Model(device / driver / bus / class / kobject / sysfs) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

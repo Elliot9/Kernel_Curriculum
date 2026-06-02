@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T12 · 行程排程器內部(EEVDF,CFS 為歷史脈絡)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill indirect">間接相關</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p3-t12-eevdfcfs">P3-T12 · 行程排程器內部(EEVDF,CFS 為歷史脈絡)</h1>
+<blockquote>
+<p><strong>一句話</strong>:Linux 現行的預設排程器是 <strong>EEVDF</strong>(自 6.6 起取代了用了十幾年的 CFS)——它用「virtual deadline + lag」決定誰先跑,在公平之外更照顧延遲。理解它和 <code>task_struct</code>、runqueue、搶佔,你才知道你的 kthread/workqueue 何時被排到、I/O 延遲受什麼影響。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>回顧 <a class="xlink" href="P1-T07.html">P1-T07</a>:你學過排程的<strong>概念</strong>(目標、演算法、RR/MLFQ、搶佔)。這一課看 Linux <strong>實際</strong>的排程器內部——而這裡有個重要的「現況」:<strong>Linux 的預設排程器已經不是 CFS 了</strong>。</p>
+<p>很多資料(包括一些書)還在講 <strong>CFS(Completely Fair Scheduler)</strong>,它從 2007 年起當了十幾年的預設 fair-class 排程器。但<strong>自 Linux 6.6 起,EEVDF(Earliest Eligible Virtual Deadline First)取代了 CFS</strong>,成為 fair class 的預設排程器。所以這一課<strong>以 EEVDF 為現況教,CFS 作為歷史脈絡</strong>理解(它的很多概念被 EEVDF 沿用或改進)。</p>
+<p>這一課要建立的:
+- <strong><code>task_struct</code></strong>:kernel 裡代表一個 task(行程/執行緒,回顧 <a class="xlink" href="P1-T05.html">P1-T05</a>)的描述子——排程器排的就是它。
+- <strong>排程類別(scheduling classes)</strong>:kernel 不只一個排程器,而是分「類別」(即時 rt、fair、idle 等),各有策略,有優先順序。
+- <strong>EEVDF</strong>:現行 fair class 的演算法——用 virtual deadline 和 lag 決定誰先跑。
+- <strong>runqueue</strong>:每個 CPU 的「可執行 task 佇列」。
+- <strong>搶佔(preemption)</strong>:何時一個 task 被換下、由 <code>CONFIG_PREEMPT*</code> 決定。</p>
+<p>為什麼這對你是 <code>scope: indirect</code>(間接對應)?因為理解排程器,你才知道<strong>你的 kthread / workqueue(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a>)何時被排到執行、優先權如何影響你 I/O 與 parity 工作的延遲</strong>。例如:你的 parity 計算 work 在 workqueue 裡,它何時被排到 CPU 跑、會不會被別的 task 搶佔、延遲多少——這些受排程器影響。雖然不像鎖/DMA 那樣每天直接寫,但理解它幫你推理 I/O 延遲。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T07.html">P1-T07</a>(排程概念:目標、RR/MLFQ、搶佔、time slice)、<a class="xlink" href="P3-T09.html">P3-T09</a>(並行原語)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P1-T07.html">P1-T07</a> 的搶佔、time slice、公平 vs 延遲的權衡嗎?EEVDF 就是這些概念的真實實作與演進。
+  2. 你還記得 <a class="xlink" href="P1-T05.html">P1-T05</a> 的「task 是排程單位」嗎?這課的 <code>task_struct</code> 就是那個 task 在 kernel 裡的樣子。</li>
+<li>環境:Linux(觀察工具)+ <strong>QEMU 虛擬機(module 實驗只在 VM)</strong>。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) task_struct:被排程的東西 → (2) 排程類別的階層 → (3) CFS 的核心想法(歷史脈絡)→ (4) EEVDF:現況與它的改進 → (5) runqueue 與搶佔 → (6) nice 是比例分配,不是嚴格優先權</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-task_structkernel">1. <code>task_struct</code>:kernel 裡被排程的那個東西</h3>
+<p>回顧 <a class="xlink" href="P1-T05.html">P1-T05</a>:在 Linux,行程和執行緒統一是 <strong>task</strong>。在 kernel 裡,每個 task 由一個 <strong><code>task_struct</code></strong> 結構描述——這是 kernel 最核心的結構之一,記錄了一個 task 的一切。</p>
+<p><pre class="mermaid">flowchart TB
+    TASK["struct task_struct(每個 task 一個)"]
+    TASK --> WHAT["記錄這個 task 的:<br/>① 身份:pid、comm(程式名)<br/>② 狀態:執行中/睡眠/...<br/>③ 排程資訊:屬於哪個排程類別、優先權/nice、<br/>&nbsp;&nbsp;&nbsp;EEVDF 的 virtual time/lag 等<br/>④ 記憶體:指向它的位址空間(P1-T05)<br/>⑤ 開啟的檔案、信號... 等等"]
+    WHAT --> CURRENT["在 kernel 程式碼裡,『current』指向<br/>『當前正在這個 CPU 上執行的 task 的 task_struct』<br/>→ current->pid、current->comm 取得當前 task 資訊"]
+    style TASK fill:#6fa8b8,color:#10100e
+    style CURRENT fill:#e8a33d,color:#10100e
+</pre></p>
+<p><code>task_struct</code> 是排程器操作的對象——排程器就是在決定「下一個讓哪個 <code>task_struct</code> 上 CPU」。其中和排程相關的欄位包括:屬於哪個排程類別、優先權/nice 值、以及 EEVDF 用的 virtual time/lag 等。</p>
+<p>一個你會直接用到的:<strong><code>current</code></strong>——在 kernel 程式碼裡,<code>current</code> 是個特殊的東西,指向「<strong>當前正在這個 CPU 上執行的 task 的 <code>task_struct</code></strong>」。你在 module 裡可以用 <code>current-&gt;pid</code>、<code>current-&gt;comm</code> 取得「現在是誰在執行我這段程式碼」(驗收點:在 module 印出 <code>current-&gt;comm</code> 與 <code>current-&gt;pid</code>)。</p>
+<hr />
+<h3 id="2">2. 排程類別的階層:不只一個排程器</h3>
+<p>關鍵概念:Linux <strong>不是只有一個排程器</strong>,而是有多個<strong>排程類別(scheduling classes)</strong>,各管不同優先程度的 task,且<strong>有嚴格的優先順序</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph classes["排程類別(由高到低優先,高的先被考慮)"]
+        STOP["stop class(最高,系統內部用,如 CPU 熱插拔)"]
+        DEADLINE["deadline class(SCHED_DEADLINE,有截止期限的即時)"]
+        RT["rt class(即時 SCHED_FIFO/SCHED_RR,固定優先權)"]
+        FAIR["fair class(SCHED_NORMAL,一般 task)<br/>★ 這裡用 EEVDF(原本 CFS)★"]
+        IDLE["idle class(最低,系統閒置時)"]
+    end
+    NOTE["排程器先看最高優先的類別有沒有可跑的 task;<br/>有就跑它,沒有才往下一個類別看<br/>→ 即時 task(rt/deadline)永遠優先於一般 task(fair)"]
+    classes --> NOTE
+    style FAIR fill:#e8a33d,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>階層(由高到低):<strong>stop → deadline → rt → fair → idle</strong>。排程器<strong>先看最高優先的類別</strong>有沒有可跑的 task,有就跑、沒有才往下看。所以即時類別(rt/deadline)的 task 永遠優先於一般類別(fair)的 task。</p>
+<p><strong>大多數一般 task(你的程式、kthread、workqueue 的工作)在 fair class</strong>(<code>SCHED_NORMAL</code>)——而 <strong>fair class 的演算法,就是這一課的主角:原本是 CFS,現在是 EEVDF</strong>。(即時類別 rt/deadline 用於有嚴格時間要求的場景;<strong>混淆 real-time class 與 fair class 是常見誤區</strong>——它們是不同類別、不同策略。)</p>
+<hr />
+<h3 id="3-cfs">3. CFS 的核心想法(歷史脈絡)</h3>
+<p>要理解 EEVDF,先懂它取代的 CFS(這是歷史脈絡,幫助理解演進)。<strong>CFS(Completely Fair Scheduler)</strong> 從 2007 年起當了十幾年的 fair class 排程器,核心想法是「<strong>完全公平</strong>」:</p>
+<p><pre class="mermaid">flowchart TB
+    CFS["CFS(2007–6.6,現為歷史):模擬『理想的完全公平 CPU』"]
+    CFS --> IDEA["核心想法:<br/>記錄每個 task 累積的『virtual runtime(vruntime)』<br/>= 它已經用了多少 CPU 時間(經權重調整)<br/>→ 永遠挑 vruntime 最小的(用得最少的)先跑<br/>→ 追求大家用的 CPU 時間趨於相等(公平)"]
+    IDEA --> LIMIT["CFS 的不足:<br/>對『公平』做得好,但對『延遲需求』表達不夠<br/>(有些 task 不要多少 CPU,但需要『快速回應』)<br/>→ 要靠額外的 latency-nice 補丁等手段"]
+    style CFS fill:#6fa8b8,color:#10100e
+    style LIMIT fill:#e8a33d,color:#10100e
+</pre></p>
+<p>CFS 的精神:記錄每個 task 的 <strong>virtual runtime(vruntime)</strong>——它累積用了多少 CPU 時間(經 nice 權重調整),然後<strong>永遠挑 vruntime 最小的(用得最少的)先跑</strong>,讓大家用的 CPU 時間趨於相等(回顧 <a class="xlink" href="P1-T07.html">P1-T07</a> 的公平目標)。它用紅黑樹(<a class="xlink" href="P2-T05.html">P2-T05</a>)按 vruntime 排序 task。</p>
+<p>但 CFS 有個不足:它把「<strong>公平</strong>」做得很好,但對「<strong>延遲需求</strong>」表達不夠——有些 task 不需要多少 CPU 總量,但需要「需要時能快速被排到」(低延遲),CFS 只能靠額外的補丁(latency-nice)勉強處理。這個不足,正是 EEVDF 要改進的。</p>
+<hr />
+<h3 id="4-eevdf">4. EEVDF:現況與它的改進</h3>
+<p><strong>EEVDF(Earliest Eligible Virtual Deadline First)</strong> 自 <strong>Linux 6.6</strong> 起取代 CFS,成為 fair class 的預設排程器。它仍追求公平(沿用 vruntime/lag 的精神),但<strong>多了「virtual deadline」來處理延遲</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    EEVDF["EEVDF(6.6 起,現行 fair class 預設)"]
+    EEVDF --> LAG["① lag(落後量):<br/>每個 task『應得的 CPU 時間』減去『實際拿到的』<br/>→ lag 為正 = 它拿少了、『有資格(eligible)』該補<br/>(這是公平的衡量,沿用 CFS 的精神)"]
+    EEVDF --> DEADLINE2["② virtual deadline(虛擬截止期):<br/>依 task 的 time slice 算一個『虛擬截止時間』<br/>→ 在『有資格』的 task 中,挑 virtual deadline 最早的先跑"]
+    LAG --> RESULT["結果:<br/>既保證公平(靠 lag/eligibility),<br/>又能讓『需要低延遲』的 task(較短 time slice → 較早的 deadline)<br/>更快被排到 → 比 CFS 更好地兼顧公平與延遲"]
+    DEADLINE2 --> RESULT
+    style EEVDF fill:#e8a33d,color:#10100e
+    style RESULT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>EEVDF 的兩個關鍵概念(驗收點:說明 EEVDF 相對 CFS 的差異重點):
+- <strong>lag(落後量)</strong>:一個 task「應得的 CPU 時間」減「實際拿到的」。lag 為正代表它拿少了、「<strong>有資格(eligible)</strong>」優先補上——這是公平的衡量(沿用 CFS 精神)。
+- <strong>virtual deadline(虛擬截止期)</strong>:依 task 的 time slice 算一個虛擬截止時間。EEVDF 在「<strong>有資格</strong>的 task」中,挑 <strong>virtual deadline 最早的</strong>先跑。</p>
+<p>效果:<strong>既保證公平(靠 lag/eligibility),又能讓需要低延遲的 task 更快被排到</strong>(低延遲需求 → 較短 time slice → 較早的 deadline → 更快被選中)。這正是 EEVDF 相對 CFS 的改進——把「延遲」內建進演算法,不再需要 CFS 那些 latency 補丁。</p>
+<p><strong>重要的現況提醒(常見誤區:仍以為預設排程器是 CFS)</strong>:6.6 起預設已是 EEVDF。你看舊書/舊資料會講 CFS,要知道那是前一代,現況是 EEVDF。(這呼應整個課程「以現況為準」的原則;CFS 文件仍有價值,因為很多基礎概念 EEVDF 沿用。)</p>
+<hr />
+<h3 id="5-runqueue">5. runqueue 與搶佔</h3>
+<p>兩個配套概念。<strong>runqueue</strong>:每個 CPU 有自己的「可執行 task 佇列」,排程器從本 CPU 的 runqueue 挑下一個跑。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph runqueues["每個 CPU 一個 runqueue"]
+        RQ0["CPU 0 的 runqueue:它的可執行 task<br/>(各排程類別的 task 結構)"]
+        RQ1["CPU 1 的 runqueue:..."]
+    end
+    PICK["排程器在本 CPU 的 runqueue 上,<br/>按類別階層 + EEVDF 規則挑下一個 task 跑"]
+    runqueues --> PICK
+    PREEMPT["搶佔(preemption):<br/>何時把當前 task 換下、讓別的上?<br/>由 CONFIG_PREEMPT* 設定決定:<br/>不同設定 → kernel 可被搶佔的程度不同"]
+    PICK --> PREEMPT
+    style PICK fill:#6fa8b8,color:#10100e
+    style PREEMPT fill:#e8a33d,color:#10100e
+</pre></p>
+<ul>
+<li><strong>runqueue</strong>:每 CPU 一個可執行 task 佇列(per-CPU,呼應 <a class="xlink" href="P3-T09.html">P3-T09</a> per-CPU 的精神——避免多核爭搶同一佇列)。排程器在本 CPU 的 runqueue 上挑 task。</li>
+<li><strong>搶佔(preemption)</strong>:何時把當前 task 換下(回顧 <a class="xlink" href="P1-T07.html">P1-T07</a>)。<strong>kernel 能不能被搶佔、何時搶佔,由 <code>CONFIG_PREEMPT*</code> 設定決定</strong>——有「不可搶佔」「自願搶佔」「完全可搶佔」「即時(PREEMPT_RT)」等不同設定。<strong>常見誤區:以為 kernel 一定可搶佔</strong>——其實取決於 <code>CONFIG_PREEMPT*</code>。搶佔程度影響延遲:可搶佔性高 → 高優先 task 能更快插隊(低延遲),但有額外開銷。</li>
+</ul>
+<p><strong>對你的意義</strong>:搶佔設定影響你 I/O/parity 工作的延遲。例如可搶佔的 kernel 讓你的高優先工作能更快被排到,但若你的工作在不可搶佔的區段(如持 spinlock),它就不會被搶佔。</p>
+<hr />
+<h3 id="6-nice">6. nice 是比例分配,不是嚴格優先權</h3>
+<p>最後一個重要釐清,關於 <strong>nice 值</strong>。nice 是調整 fair class task 優先程度的傳統手段(範圍約 -20 到 +19,越低越「不謙讓」、越優先)。但它的語意常被誤解:</p>
+<p><pre class="mermaid">flowchart TB
+    NICE["nice 值(fair class):-20(最優先)~ +19(最謙讓)"]
+    NICE --> WRONG["✗ 誤解:把 nice 當『嚴格優先權』<br/>(以為 nice 低的會完全壓制 nice 高的)"]
+    NICE --> RIGHT["✓ 正確:fair class 是『比例分配』<br/>nice 影響的是『拿到 CPU 時間的比例權重』<br/>→ nice 低的拿『較大比例』的 CPU,<br/>但 nice 高的仍會分到一些(不會完全餓死)"]
+    CONTRAST["對比:真正的『嚴格優先權』在 rt class<br/>(高優先 rt task 會完全壓制低優先的)<br/>→ 別把 fair 的 nice 和 rt 的優先權混為一談"]
+    RIGHT --> CONTRAST
+    style WRONG fill:#c2603a,color:#f4ecd8
+    style RIGHT fill:#8a9a5b,color:#10100e
+    style CONTRAST fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>關鍵(常見誤區:把 nice 值當成嚴格優先權)</strong>:fair class(EEVDF/CFS)是<strong>比例分配</strong>——nice 影響的是「拿到 CPU 時間的<strong>比例權重</strong>」,不是「絕對的先後」。nice 低的 task 拿<strong>較大比例</strong>的 CPU,但 nice 高的仍會分到一些,<strong>不會被完全餓死</strong>。</p>
+<p>對比:<strong>真正的「嚴格優先權」在 rt class</strong>(即時)——高優先的 rt task 會完全壓制低優先的。所以別把「fair class 的 nice」和「rt class 的優先權」混為一談(這也回到第 2 節:不同排程類別,不同策略)。</p>
+<p><strong>對你的意義</strong>:如果你想讓某個 I/O/parity 工作「絕對優先」,調 nice(fair class)只是調比例,不保證絕對優先;真要嚴格優先得用 rt class(但 rt 有其風險,例如餓死別的 task,要謹慎)。</p>
+<p>把「比例分配 vs 嚴格優先」用一個直覺對比畫出來:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph fair3["fair class(nice):比例分配"]
+        F3["nice 低的拿較大『比例』的 CPU,<br/>但 nice 高的仍分到一些<br/>(例:三個 task 大致 60% / 30% / 10%,<br/>沒有誰被完全餓死)"]
+    end
+    subgraph rt3["rt class:嚴格優先"]
+        R3["高優先的 rt task 會『完全壓制』低優先的<br/>(高優先有得跑,低優先就一點都拿不到<br/>→ 可能餓死,要謹慎)"]
+    end
+    fair3 -.“nice 不是嚴格優先;真要絕對優先在 rt”.-> rt3
+    style F3 fill:#8a9a5b,color:#10100e
+    style R3 fill:#e8a33d,color:#10100e
+</pre></p>
+<hr />
+<h2 id="_4">打通關:把排程器內部收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    TASK2["task_struct:每個 task 的描述子(current = 當前 task)"]
+    TASK2 --> CLASSES2["排程類別階層:stop>deadline>rt>fair>idle<br/>(高優先類別先被考慮;一般 task 在 fair)"]
+    CLASSES2 --> FAIR2["fair class 的演算法:<br/>CFS(2007–6.6,歷史:vruntime 求公平)<br/>→ ★ EEVDF(6.6 起現況)★"]
+    FAIR2 --> EEVDF3["EEVDF:lag(公平/資格)+ virtual deadline(延遲)<br/>→ 兼顧公平與低延遲(改進 CFS)"]
+    CLASSES2 --> RQ["runqueue(每 CPU 一個)+ 搶佔(CONFIG_PREEMPT* 決定)"]
+    FAIR2 --> NICE2["nice 是『比例分配權重』,非嚴格優先權<br/>(嚴格優先在 rt class)"]
+    EEVDF3 --> WORK["→ 影響你的 kthread/workqueue 何時被排到、<br/>I/O/parity 工作的延遲"]
+    style FAIR2 fill:#e8a33d,color:#10100e
+    style EEVDF3 fill:#8a9a5b,color:#10100e
+    style WORK fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>Linux 排程分類別(stop&gt;deadline&gt;rt&gt;fair&gt;idle),一般 task 在 fair class——其演算法已從 CFS(歷史,vruntime 求公平)換成 EEVDF(6.6 起,用 lag+virtual deadline 兼顧公平與延遲);配上每 CPU 的 runqueue、由 <code>CONFIG_PREEMPT*</code> 決定的搶佔、以及「比例分配而非嚴格優先」的 nice。理解這些,你能推理 kthread/workqueue 何時被排到、I/O 延遲受什麼影響。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:仍以為預設排程器是 CFS。</strong>
+自 6.6 起 fair class 預設是 EEVDF。舊書/資料講 CFS 是前一代;現況是 EEVDF(沿用部分 CFS 概念)。</p>
+<p><strong>誤區二:把 nice 值當成嚴格優先權。</strong>
+fair class 是比例分配——nice 影響 CPU 時間的比例權重,nice 高的仍分到一些(不會完全餓死)。嚴格優先在 rt class。</p>
+<p><strong>誤區三:混淆 real-time class 與 fair class。</strong>
+它們是不同排程類別、不同策略(rt 固定優先權、會壓制;fair 比例分配)。一般 task 在 fair;rt 用於嚴格時間需求。</p>
+<p><strong>誤區四:以為 kernel 一定可搶佔。</strong>
+取決於 <code>CONFIG_PREEMPT*</code> 設定(不可搶佔/自願/完全/即時)。搶佔程度影響延遲與開銷。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:Linux(觀察工具,使用者態,<strong>安全</strong>)+ <strong>QEMU(module 實驗只在 VM)</strong>。</p>
+<p><strong>任務 A — 在 module 印出 current(驗收點)</strong>
+寫一個 module,在 <code>init</code> 裡用 <code>pr_info</code> 印出 <code>current-&gt;comm</code>(當前執行緒名)和 <code>current-&gt;pid</code>。<strong>驗收:正確印出當前行程的 comm 與 pid。</strong>(觀察:<code>insmod</code> 時 <code>current</code> 通常是執行 insmod 的那個行程。)</p>
+<p><strong>任務 B — 說明 EEVDF vs CFS(驗收點)</strong>
+用一段話說明 EEVDF 相對 CFS 的差異重點(以官方文件為據:lag/eligibility + virtual deadline,兼顧公平與延遲)。<strong>驗收:能說出 EEVDF 的差異重點。</strong>(參考 https://docs.kernel.org/scheduler/sched-eevdf.html ）</p>
+<p><strong>任務 C — 觀察排程類別與優先權(驗收點)</strong>
+在 Linux 上用 <code>ps -eLf</code> 看執行緒、用 <code>chrt -p &lt;pid&gt;</code> 看某行程的排程類別與優先權、看 <code>/proc/&lt;pid&gt;/sched</code>。用 <code>nice</code>/<code>chrt</code> 改變一個測試程式的 nice 或排程策略,描述觀察到的 CPU 分配變化。<strong>驗收:能用 chrt/nice 觀察並描述優先權/nice 對 CPU 分配的影響。</strong></p>
+<p><strong>任務 D(連結)— 你的工作延遲</strong>
+寫一兩句話:你的 parity 計算 work 在 workqueue 裡(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a>),它在 fair class、由 EEVDF 排程。如果你想讓它延遲更低,調整 nice 有用嗎?(提示:nice 只調比例;且要考慮它和系統其他工作的權衡。)</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 在 module 中正確印出當前行程的 <code>comm</code> 與 <code>pid</code>。
+2. ☐ 用一段話說明 EEVDF 相對 CFS 的差異重點(以官方文件為據)。
+3. ☐ 用 <code>chrt</code>/nice 觀察並描述優先權/nice 對 CPU 分配的影響。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能讀 task 資訊。
+- <strong>80(熟練)</strong>:能說明 EEVDF 基本理念與 runqueue。
+- <strong>100(精通)</strong>:能解釋排程類別階層與搶佔對 I/O 延遲的影響。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>間接對應</strong>——理解你的 kthread/workqueue 何時被排到、優先權如何影響 I/O 與 parity 工作的延遲。</li>
+<li><strong>這課餵給未來的</strong>:排程類別/搶佔/延遲 → 推理你 I/O 路徑(<span class="xlink-stub" title="待撰寫">P5</span>)與 parity/GPU 工作(<span class="xlink-stub" title="待撰寫">P7</span>)的延遲;<code>task_struct</code>/<code>current</code> → 你在 module 裡取得執行脈絡;per-CPU runqueue → 回收 <a class="xlink" href="P3-T09.html">P3-T09</a> per-CPU。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T13.html">P3-T13</a> kernel 除錯(一)——printk/動態除錯、Oops/panic 判讀、ftrace</strong>:你已經理解了 kernel 的架構、module、記憶體、同步、中斷、排程。接下來兩課是<strong>除錯</strong>——這是你日後 debug 自家 module 的日常工具。下一課:用 printk/動態除錯輸出診斷、<strong>判讀 Oops/panic 的 call trace</strong>(當你的 module 出錯崩潰時,怎麼從那串 dump 定位到出錯的程式碼行)、用 ftrace 追蹤函式呼叫。判讀 call trace 是 kernel 開發的基本功——回顧 <a class="xlink" href="P1-T01.html">P1-T01</a> 的暫存器/stack,現在你要在真實的 kernel 崩潰中用上它。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T11.html">← P3-T11 memory barrier 與 Linux Kernel Memory Model(LKMM)</a><a class="pn next" href="P3-T13.html">P3-T13 kernel 除錯(一)—— printk/動態除錯、Oops/panic 判讀、ftrace →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

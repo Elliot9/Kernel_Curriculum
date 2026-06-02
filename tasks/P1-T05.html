@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T05 · 行程 vs 執行緒</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t05-vs">P1-T05 · 行程 vs 執行緒</h1>
+<blockquote>
+<p><strong>一句話</strong>:行程是「擁有獨立位址空間的資源容器」,執行緒是「共享那個位址空間的排程單位」。差別的關鍵不在「輕重」,而在<strong>是否共享記憶體</strong>——而這一點,直接決定了你產品裡哪些地方需要加鎖。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這是你親口列出的核心缺口之一,而它的混淆會直接導致並行 bug。</p>
+<p>很多人對 process(行程)和 thread(執行緒)的理解停在「thread 比較輕、process 比較重」。這個說法不算錯,但抓錯了重點。<strong>真正的關鍵差異是:行程之間不共享記憶體(各有獨立的虛擬位址空間),而同一行程內的多個執行緒共享記憶體(共用同一個位址空間)。</strong></p>
+<p>這個區別建立在上一課 <a class="xlink" href="P1-T04.html">P1-T04</a> 的虛擬記憶體上:每個<strong>行程</strong>有自己的分頁表、自己的虛擬位址空間,所以行程 A 的指標在行程 B 裡毫無意義、踩不到 B 的資料(隔離)。但同一行程內的<strong>執行緒</strong>,共用同一份分頁表、同一個位址空間,所以它們能直接讀寫同一塊記憶體——這既是執行緒強大之處(輕鬆共享資料),也是危險之處(共享就可能 race,見 <a class="xlink" href="P1-T08.html">P1-T08</a>)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為:
+- 你的 <strong>user space app 是多執行緒的</strong>——多個執行緒共享記憶體並行處理 I/O 與 parity。理解「它們共享什麼」決定了你哪裡必須同步。
+- kernel 內部也有執行緒(<strong>kthread</strong>)。
+- 「哪裡需要加鎖」這個貫穿你整個並行設計的問題,答案的起點就是「這些執行單位有沒有共享記憶體」。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T04.html">P1-T04</a>(你已懂每個行程有自己的虛擬位址空間)。這一課完全建立在此之上。</li>
+<li>自我檢測:
+  1. 你能用一句話說明「為什麼行程 A 的指標在行程 B 裡無意義」嗎?(各有獨立位址空間,同一虛擬位址映到不同實體記憶體。)
+  2. 你寫過多執行緒程式(pthread)嗎?這課要對比 fork(造行程)和 pthread(造執行緒)。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 行程是什麼:資源容器 → (2) 執行緒是什麼:排程單位 → (3) 共享 vs 不共享(關鍵對照)→ (4) fork:複製出一個行程(與 COW)→ (5) exec:換掉行程的內容 → (6) Linux 的統一觀點:thread 其實是共享資源的 task</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-process">1. 行程(process):一個資源容器</h3>
+<p>一個<strong>行程</strong>,是「一支執行中的程式」加上它擁有的所有資源。最核心的資源是它的<strong>虛擬位址空間</strong>(回顧 <a class="xlink" href="P1-T04.html">P1-T04</a>),此外還有開啟的檔案、各種 OS 資源等。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph proc["一個行程(資源容器)"]
+        AS["獨立的虛擬位址空間<br/>(自己的 text/data/heap/stack,<br/>自己的分頁表)"]
+        FILES["開啟的檔案<br/>(file descriptors)"]
+        OTHER["其他資源<br/>(信號處理、權限...)"]
+    end
+    style AS fill:#8a9a5b,color:#10100e
+    style FILES fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>關鍵特性:<strong>行程之間是隔離的</strong>。行程 A 看不到也碰不到行程 B 的記憶體(因為各有獨立位址空間)。這是 <a class="xlink" href="P1-T04.html">P1-T04</a> 虛擬記憶體帶來的隔離——一支行程崩潰,不會搞壞別的行程。</p>
+<blockquote>
+<p><strong>比喻</strong>:行程像一間獨立的公寓,有自己的門牌、自己的家具、自己的鑰匙。你在你家做什麼,不會直接影響隔壁那戶——牆壁(位址空間隔離)把你們分開。</p>
+</blockquote>
+<hr />
+<h3 id="2-thread">2. 執行緒(thread):一個排程單位</h3>
+<p>一個<strong>執行緒</strong>,是「CPU 排程的最小單位」——也就是 <a class="xlink" href="P1-T01.html">P1-T01</a> 那個「取指-解碼-執行」迴圈實際在跑的東西。一個行程裡可以有<strong>多個執行緒</strong>,它們<strong>共享這個行程的位址空間和資源</strong>,但各自有獨立的執行狀態。</p>
+<p>每個執行緒獨立擁有的,主要是「執行所需的私有狀態」:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph proc["一個行程"]
+        SHARED["共享的位址空間<br/>(text/data/heap + 開啟的檔案)<br/>★ 所有執行緒共用 ★"]
+        subgraph threads["行程內的多個執行緒"]
+            T1["執行緒1<br/>私有:自己的 stack、<br/>暫存器狀態、PC"]
+            T2["執行緒2<br/>私有:自己的 stack、<br/>暫存器狀態、PC"]
+        end
+    end
+    T1 -.共用.-> SHARED
+    T2 -.共用.-> SHARED
+    style SHARED fill:#e8a33d,color:#10100e
+    style T1 fill:#6fa8b8,color:#10100e
+    style T2 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>所以一個執行緒<strong>私有</strong>的東西很少:主要是它自己的 <strong>stack</strong>(每個執行緒一個獨立的呼叫堆疊,因為它們各自呼叫各自的函式)和<strong>暫存器/PC 狀態</strong>(各自執行到不同地方)。其餘——程式碼、全域變數、heap、開啟的檔案——<strong>全部共享</strong>。</p>
+<blockquote>
+<p><strong>比喻</strong>:如果行程是一間公寓,執行緒就像「住在同一間公寓裡的室友」。他們共用客廳、廚房、冰箱(共享的位址空間和資源),但各自有自己的房間和私人行程(私有的 stack 和執行狀態)。</p>
+</blockquote>
+<hr />
+<h3 id="3-vs">3. 共享 vs 不共享:最關鍵的一張對照</h3>
+<p>把行程與執行緒的差異,濃縮成這張對照——這是整課的核心,也是你判斷「哪裡要加鎖」的依據:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph procs["兩個不同行程"]
+        direction LR
+        PA["行程 A<br/>位址空間 A"]
+        PB["行程 B<br/>位址空間 B"]
+        PA -.“互不可見,隔離”.- PB
+    end
+    subgraph thrs["同一行程的兩個執行緒"]
+        direction LR
+        TA["執行緒 1"]
+        TB["執行緒 2"]
+        TA ---|"共享同一位址空間<br/>(全域變數、heap 都看得到對方的修改)"| TB
+    end
+    style PA fill:#8a9a5b,color:#10100e
+    style PB fill:#8a9a5b,color:#10100e
+    style TA fill:#e8a33d,color:#10100e
+    style TB fill:#e8a33d,color:#10100e
+</pre></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>行程之間</th>
+<th>同一行程的執行緒之間</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>位址空間</td>
+<td><strong>獨立</strong>(各有分頁表)</td>
+<td><strong>共享</strong>(同一份)</td>
+</tr>
+<tr>
+<td>全域變數</td>
+<td>各自一份,互不影響</td>
+<td>同一份,改了對方看得到</td>
+</tr>
+<tr>
+<td>heap</td>
+<td>各自的</td>
+<td>共享</td>
+</tr>
+<tr>
+<td>一方修改記憶體</td>
+<td>另一方看不到</td>
+<td>另一方<strong>直接看到</strong></td>
+</tr>
+<tr>
+<td>建立/切換成本</td>
+<td>較高(要建整個位址空間)</td>
+<td>較低(共用位址空間)</td>
+</tr>
+<tr>
+<td>需要同步嗎?</td>
+<td>通常不必(沒共享)</td>
+<td><strong>必須</strong>(有共享就有 race)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>最後一列是這課的實用結論</strong>:執行緒共享記憶體,所以多執行緒同時讀寫同一個變數,就會發生 race condition(<a class="xlink" href="P1-T08.html">P1-T08</a>),<strong>必須</strong>加鎖(<a class="xlink" href="P1-T09.html">P1-T09</a>)。行程之間沒共享,通常不需要這層擔心(它們要通訊得透過特別的 IPC 機制)。<strong>你產品的多執行緒 app,凡是執行緒間共享的狀態,都是必須同步的點。</strong></p>
+<hr />
+<h3 id="4-fork-copy-on-write">4. fork:複製出一個行程(以及 copy-on-write 的真相)</h3>
+<p>在 Linux/Unix,建立新行程的經典方式是 <strong><code>fork()</code></strong>。它的行為很特別:<strong>複製出一個幾乎一模一樣的子行程</strong>——子行程得到父行程位址空間的一份「副本」。</p>
+<p><pre class="mermaid">flowchart TB
+    PARENT["父行程<br/>(global = 5, heap 上有資料)"]
+    PARENT -->|"fork()"| RESULT
+    subgraph RESULT["fork 之後:兩個獨立行程"]
+        direction LR
+        P["父行程<br/>global = 5"]
+        C["子行程<br/>global = 5(自己的副本)"]
+    end
+    NOTE["fork 回傳值區分父子:<br/>父行程收到子行程的 PID(>0)<br/>子行程收到 0"]
+    RESULT --> NOTE
+    style P fill:#8a9a5b,color:#10100e
+    style C fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>關鍵:子行程的位址空間是<strong>獨立的副本</strong>。父行程改 <code>global</code>,子行程的 <code>global</code> <strong>不變</strong>(反之亦然)——因為它們是兩個行程,各有位址空間。這和執行緒完全相反(執行緒共享,fork 出的行程不共享)。</p>
+<p><strong>但這裡有個重要的效率細節:copy-on-write(寫時複製,COW)。</strong> 如果 fork 真的把整個位址空間立刻完整複製一份,會很慢且浪費(尤其若子行程馬上要 exec 換掉內容)。所以實際上:</p>
+<p><pre class="mermaid">flowchart TB
+    S1["fork():不立刻複製記憶體,<br/>父子『共享』同一批實體頁<br/>(但都標記為唯讀)"]
+    S2["父或子任一方『讀』:<br/>沒問題,讀共享的頁"]
+    S3["父或子任一方『寫』某頁:<br/>觸發 page fault(寫唯讀頁,回顧 P1-T04)"]
+    S4["OS 這時才真正複製那一頁,<br/>讓寫的人改自己的副本<br/>(copy-on-write)"]
+    S5["結果:只有被改動的頁才真正複製,<br/>沒改的頁繼續共享 → 省時省記憶體"]
+    S1 --> S2
+    S1 --> S3 --> S4 --> S5
+    style S3 fill:#e8a33d,color:#10100e
+    style S4 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>這就是為什麼「<strong><code>fork</code> 後父子共享變數</strong>」是個誤解需要澄清:它們<strong>邏輯上是各自獨立的副本</strong>(一方改不影響另一方),只是底層用 COW 優化,在「真正被寫之前」物理上共享同一份實體頁。對你程式而言,行為就是「各自獨立」;COW 只是 OS 在底下省資源的手段。(注意這裡又用到 <a class="xlink" href="P1-T04.html">P1-T04</a> 的 page fault——寫唯讀頁觸發 fault,OS 才複製。)</p>
+<hr />
+<h3 id="5-exec">5. exec:換掉行程的內容</h3>
+<p><code>fork</code> 複製出一個和父行程一樣的子行程,但通常你 fork 是為了讓子行程跑<strong>別的程式</strong>(例如 shell 執行一個命令)。這就需要 <strong><code>exec</code></strong> 系列函式:<strong>把當前行程的內容,整個換成另一支程式</strong>。</p>
+<p><pre class="mermaid">flowchart LR
+    BEFORE["行程(正在跑程式 A)<br/>位址空間裝著 A 的 code/data"]
+    EXEC["exec(程式 B)"]
+    AFTER["同一個行程(PID 不變)<br/>位址空間整個換成 B 的 code/data<br/>→ 從此開始跑 B"]
+    BEFORE --> EXEC --> AFTER
+    NOTE["exec 不建立新行程,<br/>而是『換腦』——<br/>同一個行程外殼,換掉裡面跑的程式"]
+    style EXEC fill:#e8a33d,color:#10100e
+    style AFTER fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>經典組合是 <strong>fork + exec</strong>:fork 出一個子行程,子行程立刻 exec 換成要跑的新程式。這就是 shell 執行命令的標準模式(fork 一個子行程,exec 成 <code>ls</code> 之類)。這也解釋了為什麼 COW 對 fork 很重要——子行程往往 fork 完馬上 exec,把位址空間整個換掉,如果 fork 時就完整複製,那複製的功就全白費了。</p>
+<hr />
+<h3 id="6-linux-thread-task">6. Linux 的統一觀點:thread 其實是「共享資源的 task」</h3>
+<p>最後一個關鍵洞察,會讓前面一切融會貫通。在 Linux kernel 的實作裡,<strong>行程和執行緒並沒有兩套完全不同的機制</strong>。kernel 內部用一個統一的結構叫 <strong><code>task_struct</code></strong> 來代表「一個可被排程的執行實體」——不管你叫它行程還是執行緒,在 kernel 眼中都是一個 task。</p>
+<p><pre class="mermaid">flowchart TB
+    TASK["kernel 的 task_struct<br/>(一個可排程的執行實體)"]
+    TASK --> CASE1["建立新 task 時<br/>『不共享』位址空間等資源<br/>→ 我們稱它為『行程』"]
+    TASK --> CASE2["建立新 task 時<br/>『共享』位址空間等資源<br/>→ 我們稱它為『執行緒』"]
+    NOTE["差別只在『建立時選擇共享哪些資源』<br/>(底層用 clone() 系統呼叫,<br/>用旗標決定共享位址空間/檔案/信號等與否)<br/>→ 行程 vs 執行緒只是『共享程度』的兩端"]
+    CASE1 --> NOTE
+    CASE2 --> NOTE
+    style TASK fill:#e8a33d,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>換句話說:<strong>在 Linux,「執行緒」本質上就是「一個和別人共享位址空間(及其他資源)的 task」</strong>。行程和執行緒不是兩種不同的東西,而是「同一種東西(task)在『共享多少資源』這個光譜上的兩端」:完全不共享 → 我們叫行程;共享位址空間 → 我們叫執行緒。底層都是 <code>clone()</code> 這個系統呼叫,用旗標決定要共享哪些。</p>
+<p><strong>這個統一觀點為什麼重要?</strong> 它讓你不再把行程和執行緒當成割裂的兩套概念去背,而是理解成「一個連續光譜」。你日後在 kernel 看到 <code>task_struct</code>、看到 kthread(kernel 裡的執行緒),就知道它們都是 task,差別只在共享什麼。這也呼應你產品:你的多執行緒 app,在 kernel 眼中就是一組共享位址空間的 task。</p>
+<hr />
+<h2 id="_4">打通關:把行程與執行緒收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    VM["地基(P1-T04):每個行程有獨立虛擬位址空間"]
+    VM --> PROC["行程 = 資源容器<br/>(獨立位址空間 → 彼此隔離)"]
+    VM --> THREAD["執行緒 = 排程單位<br/>(同行程內共享位址空間,各有私有 stack)"]
+    PROC --> KEY["關鍵差異 = 是否共享記憶體"]
+    THREAD --> KEY
+    KEY --> LOCK["★ 共享 → 需要同步(race→鎖)★<br/>= 你產品『哪裡要加鎖』的判準"]
+    PROC --> FORK["fork:複製行程(COW 優化,邏輯上各自獨立)<br/>+ exec:換掉行程內容"]
+    KEY --> UNIFY["Linux 統一觀點:都是 task_struct<br/>thread = 共享資源的 task(光譜兩端)"]
+    style KEY fill:#e8a33d,color:#10100e
+    style LOCK fill:#c2603a,color:#f4ecd8
+    style UNIFY fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>行程與執行緒的本質差異不是「輕重」而是「是否共享位址空間」;行程隔離、執行緒共享,而『共享』正是 race 與加鎖需求的來源;在 Linux 眼中兩者都是 task,只是共享資源的程度不同——記住這個,你就能判斷自己產品裡每一處共享狀態是否需要同步。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為行程和執行緒只是「輕重之分」。</strong>
+關鍵差異是<strong>是否共享位址空間</strong>(執行緒共享、行程不共享),不只是建立成本。這個區別決定了同步需求。</p>
+<p><strong>誤區二:以為 <code>fork</code> 後父子共享變數。</strong>
+父子是各自獨立的副本(一方改不影響另一方)。底層的 copy-on-write 只是優化(寫前物理共享),邏輯上完全獨立。</p>
+<p><strong>誤區三:多執行緒共享全域變數卻不加鎖。</strong>
+執行緒共享位址空間,多執行緒同時讀寫同一變數會 race(<a class="xlink" href="P1-T08.html">P1-T08</a>),結果不可預測。共享的可變狀態<strong>必須</strong>同步。</p>
+<p><strong>誤區四:以為每個執行緒有自己的全域變數/heap。</strong>
+不。執行緒只有 stack 和執行狀態是私有的;全域變數、heap、開啟的檔案全部共享。要每執行緒一份,得用特別的機制(thread-local storage)。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。需要 pthread。</p>
+<p><strong>任務 A — fork:證明行程位址空間獨立</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+int global = 100;
+int main(void) {
+    pid_t pid = fork();
+    if (pid == 0) {              // 子行程
+        global += 1;
+        printf(&quot;子行程:global = %d (PID %d)\n&quot;, global, getpid());
+    } else {                     // 父行程
+        sleep(1);                // 讓子行程先改
+        printf(&quot;父行程:global = %d (PID %d)\n&quot;, global, getpid());
+        wait(NULL);
+    }
+    return 0;
+}
+</code></pre>
+<p>觀察:子行程把 <code>global</code> 改成 101,但<strong>父行程的 <code>global</code> 仍是 100</strong>——證明兩個行程位址空間獨立。寫一句話解釋。</p>
+<p><strong>任務 B — pthread:證明執行緒共享記憶體</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+int global = 100;
+void *worker(void *_) {
+    global += 1;                 // 改的是共享的 global
+    printf(&quot;執行緒:global = %d\n&quot;, global);
+    return NULL;
+}
+int main(void) {
+    pthread_t t;
+    pthread_create(&amp;t, NULL, worker, NULL);
+    pthread_join(t, NULL);       // 等執行緒做完
+    printf(&quot;主執行緒:global = %d\n&quot;, global);   // 會看到 101!
+    return 0;
+}
+</code></pre>
+<p>觀察:執行緒改了 <code>global</code>,<strong>主執行緒也看到變成 101</strong>——證明同行程的執行緒共享記憶體。對比任務 A,寫一句話總結兩者的根本差異。</p>
+<p><strong>任務 C(思考)— 連到你的產品</strong>
+你的 user space app 用多執行緒並行處理 I/O。寫一兩句話:根據這課,為什麼「多個執行緒同時更新一個共享的統計計數器」會是個必須加鎖的點,而「兩個獨立行程各自的計數器」則不必?</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ <code>fork</code> 後父子各印出對同一全域變數修改的結果,證明互不影響(位址空間獨立)。
+2. ☐ 兩個 pthread 對同一全域變數修改,證明彼此可見(共享位址空間)。
+3. ☐ 用一句話說明「Linux 中 thread 本質是共享資源的 task」。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能說出行程與執行緒的定義差異。
+- <strong>80(熟練)</strong>:能用 fork/pthread 實驗佐證共享與否。
+- <strong>100(精通)</strong>:能解釋 Linux「thread 其實是共享資源的 task」的統一觀點,並據此判斷哪些狀態需要同步。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——你的 user space app 是多執行緒的;kernel 內亦有 kthread;理解共享與否決定了哪裡需要同步。</li>
+<li><strong>這課餵給未來的</strong>:「共享 → 需同步」→ <a class="xlink" href="P1-T08.html">P1-T08</a> race condition、<a class="xlink" href="P1-T09.html">P1-T09</a> 鎖;<code>task_struct</code>/COW/page fault → kernel 行程管理、<span class="xlink-stub" title="待撰寫">P3</span>;fork/exec → 理解程式如何被啟動。</li>
+<li><strong>下一步 → <a class="xlink" href="P1-T06.html">P1-T06</a> context switch 與系統呼叫、使用者/核心邊界</strong>:你已經懂行程與執行緒是排程單位。下一課看 CPU 如何在它們之間<strong>切換</strong>(context switch),以及一個對你產品至關重要的邊界——<strong>使用者態與核心態</strong>:你的 app(user space)如何透過系統呼叫(syscall)跨越邊界進入 kernel?這個邊界的本質與成本,正是你產品「user space app + kernel module」架構的核心,也是設計零拷貝資料路徑的關鍵。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T04.html">← P1-T04 虛擬記憶體、MMU、分頁與 TLB</a><a class="pn next" href="P1-T06.html">P1-T06 context switch 與系統呼叫、使用者/核心邊界 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

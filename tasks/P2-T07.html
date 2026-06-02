@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2-T07 · bitmap 與點陣圖在 kernel 的應用</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P2 · kernel 工作所需資料結構</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p2-t07-bitmap-kernel">P2-T07 · bitmap 與點陣圖在 kernel 的應用</h1>
+<blockquote>
+<p><strong>一句話</strong>:用一個 bit 代表一個資源的「已用/空閒」,一塊小小的點陣圖就能高效管理成千上萬個資源的配置狀態。kernel 用它做 CPU 遮罩、區塊配置——而 blk-mq 的 tag(sbitmap)正是用它管理你產品的 in-flight I/O 請求。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這一課把你在 <a class="xlink" href="P0-T11.html">P0-T11</a> 學的位元操作,提升成一個 kernel 天天用的實用工具——<strong>bitmap(點陣圖)</strong>。</p>
+<p>核心想法極簡單:<strong>用每一個 bit 代表「一個資源」的狀態</strong>(1 = 已用,0 = 空閒,或反過來)。要管理 1000 個資源的「哪些被用了、哪些還空著」,你不需要 1000 個 bool(那要 1000 bytes),只要 1000 個 bit(125 bytes)就夠——而且檢查、設定、清除某個資源的狀態,都是飛快的位元操作(回顧 <a class="xlink" href="P0-T11.html">P0-T11</a> 的 set/clear/test bit)。</p>
+<p>kernel 大量使用 bitmap:
+- <strong>cpumask</strong>:用一個 bitmap 表示「哪些 CPU 核心」(每個 bit 對應一個核心),用於 CPU 親和性(這個工作該在哪些核心上跑)。
+- <strong>區塊配置</strong>:用 bitmap 記錄「哪些區塊/槽位被配置了」。
+- <strong>find first/next bit</strong>:在 bitmap 裡快速找「第一個是 0 的 bit」(第一個空閒資源)或「下一個是 1 的 bit」。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為 <strong>blk-mq(你產品依賴的多佇列區塊層框架)用「tag」管理 in-flight 的 I/O request,而 tag 的底層是 sbitmap(scalable bitmap,可擴展點陣圖)</strong>。每個正在處理的 I/O 請求佔一個 tag(一個 bit),完成就釋放。NVMe 的佇列深度也靠類似機制。這一課的 bitmap 配置器,正是理解 <span class="xlink-stub" title="待撰寫">P5</span> tag 機制的前置——你會看到「配置一個 tag = 在 bitmap 找第一個空閒 bit 並設為 1」。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P0-T11.html">P0-T11</a>(位元操作——set/clear/test bit、遮罩),這課是它的 kernel 實用化。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P0-T11.html">P0-T11</a> 怎麼用 <code>flags |= (1&lt;&lt;n)</code> 設定第 n 位、<code>flags &amp; (1&lt;&lt;n)</code> 檢查第 n 位嗎?bitmap 就是這些操作的大規模、多字版本。
+  2. 你還記得 <a class="xlink" href="P1-T08.html">P1-T08</a>/<a class="xlink" href="P1-T10.html">P1-T10</a> 的原子操作嗎?這課的 <code>set_bit</code>(原子)vs <code>__set_bit</code>(非原子)直接用到。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 核心想法:一個 bit 一個資源 → (2) 多字 bitmap 與為何用 kernel API → (3) find first/next bit → (4) cpumask:bitmap 的招牌應用 → (5) set_bit(原子)vs __set_bit(非原子)→ (6) 實作一個 bitmap 配置器</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-bit">1. 核心想法:用一個 bit 代表一個資源的狀態</h3>
+<p>最基本的概念:你有 N 個資源(槽位、ID、CPU 核心……),用一塊有 N 個 bit 的記憶體,<strong>第 i 個 bit 代表第 i 個資源的狀態</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph bitmap["一塊 bitmap(每個 bit = 一個資源)"]
+        BITS["bit:  0 1 2 3 4 5 6 7<br/>值:&nbsp;&nbsp; 1 1 0 1 0 0 1 0<br/>(1=已用,0=空閒)"]
+    end
+    MEANING["解讀:<br/>資源 0,1,3,6 已用<br/>資源 2,4,5,7 空閒"]
+    bitmap --> MEANING
+    EFFICIENCY["效率:管理 N 個資源只要 N bits<br/>(1000 資源 = 125 bytes)<br/>檢查/設定/清除 = 飛快的位元操作(P0-T11)"]
+    MEANING --> EFFICIENCY
+    style BITS fill:#e8a33d,color:#10100e
+    style EFFICIENCY fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>操作直接對應 <a class="xlink" href="P0-T11.html">P0-T11</a> 的四招(只是現在「第 n 位」代表「第 n 個資源」):
+- <strong>配置資源 i</strong>:把 bit i 設為 1(<code>set_bit</code>)。
+- <strong>釋放資源 i</strong>:把 bit i 清為 0(<code>clear_bit</code>)。
+- <strong>檢查資源 i 是否已用</strong>:測 bit i(<code>test_bit</code>)。</p>
+<p>這個表示法<strong>省空間又快速</strong>,所以 kernel 用它管理大量同類資源的配置狀態。</p>
+<hr />
+<h3 id="2-bitmap-kernel-api">2. 多字 bitmap:為什麼要用 kernel API,別自己操作</h3>
+<p><a class="xlink" href="P0-T11.html">P0-T11</a> 你操作的是「一個整數內的位元」(例如一個 <code>unsigned int</code> 的 32 個 bit)。但 kernel 的 bitmap 常常<strong>遠超一個整數的位元數</strong>(例如 1000 個 bit,需要好幾個 64-bit 字來裝)。這種「跨多個字(word)」的 bitmap,手動操作很容易出錯。</p>
+<p><pre class="mermaid">flowchart TB
+    MULTIWORD["大 bitmap:1000 bits<br/>= 跨越多個 64-bit 字<br/>word0(bit 0-63)| word1(bit 64-127)| ..."]
+    PROBLEM["手動操作的陷阱:<br/>要算『第 N 個 bit 在哪個字、字內第幾位』<br/>(N/64 是哪個字,N%64 是字內位置)<br/>→ 容易算錯、容易越界"]
+    MULTIWORD --> PROBLEM
+    SOLUTION["解法:用 kernel 的 bitmap API<br/>set_bit(n, map)、clear_bit(n, map)、<br/>test_bit(n, map)、find_first_zero_bit(map, size)...<br/>→ 你只給『第幾個 bit』,API 處理跨字細節"]
+    PROBLEM --> SOLUTION
+    style PROBLEM fill:#c2603a,color:#f4ecd8
+    style SOLUTION fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>kernel 提供完整的 bitmap API(在 <code>include/linux/bitmap.h</code> 與 <code>bitops.h</code>):<code>set_bit(n, map)</code>、<code>clear_bit(n, map)</code>、<code>test_bit(n, map)</code>、以及第 3 節的 find 系列。<strong>你只需給「第幾個 bit」,API 自動處理「那是哪個字的哪一位」的細節</strong>(它幫你算 <code>n / 64</code> 是哪個字、<code>n % 64</code> 是字內哪位)。</p>
+<p><strong>「手動用 <code>&lt;&lt;</code>/<code>&amp;</code> 操作多字 bitmap 而非用 kernel API」是常見誤區</strong>——對單一整數的位元用 <a class="xlink" href="P0-T11.html">P0-T11</a> 的手法沒問題,但跨多字的 bitmap 一定要用 API,否則極易出錯(算錯字、越界)。</p>
+<hr />
+<h3 id="3-find-firstnext-bit">3. find first/next bit:快速找空閒資源</h3>
+<p>bitmap 最重要的「進階」操作,是<strong>快速掃描</strong>:在一大塊 bitmap 裡找「第一個 0」(第一個空閒資源)或「第一個 1」(第一個已用資源),或從某位置開始找「下一個」。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph ops["kernel 的 find 系列(高度優化)"]
+        FFZ["find_first_zero_bit(map, size)<br/>找第一個是 0 的 bit<br/>= 找第一個空閒資源(配置時用)"]
+        FFS["find_first_bit(map, size)<br/>找第一個是 1 的 bit<br/>= 找第一個已用資源"]
+        FNB["find_next_bit / find_next_zero_bit<br/>從某位置開始找下一個<br/>(用於走訪所有已用/空閒資源)"]
+    end
+    NOTE["這些函式高度優化(用 CPU 指令一次檢查一整個字),<br/>比你自己逐 bit 迴圈快得多"]
+    ops --> NOTE
+    style FFZ fill:#e8a33d,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>最常用的是 <strong><code>find_first_zero_bit</code></strong>:配置資源時,你要找「第一個空閒的」,就是找第一個 0 的 bit,把它設為 1,回傳它的索引。這些 find 函式是<strong>高度優化</strong>的(底層用 CPU 指令一次掃一整個字,跳過全 1 或全 0 的字),比你自己寫「逐 bit 檢查」的迴圈快得多。</p>
+<blockquote>
+<p><strong>連到你的工作</strong>:blk-mq 配置一個 tag,核心動作就是「在 tag 的 bitmap 裡 <code>find_first_zero_bit</code> 找一個空閒 tag,設為已用,回傳 tag 編號」。釋放就是 <code>clear_bit</code>。你現在懂了 tag 配置的底層機制(第 6 節會親手實作一個簡化版)。</p>
+</blockquote>
+<hr />
+<h3 id="4-cpumaskbitmap">4. cpumask:bitmap 的招牌應用</h3>
+<p>kernel 最常見的 bitmap 應用之一是 <strong>cpumask</strong>——用一個 bitmap 表示「一組 CPU 核心」,每個 bit 對應一個核心(bit i = 1 代表「包含 CPU i」)。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph cpumask["cpumask:每個 bit 對應一個 CPU 核心"]
+        CM["bit:  0 1 2 3 4 5 6 7<br/>值:&nbsp;&nbsp; 1 0 1 1 0 0 0 0<br/>→ 這個遮罩代表『CPU 0,2,3』"]
+    end
+    USE["用途:CPU 親和性(affinity)<br/>『這個工作/中斷只能在哪些 CPU 上跑』<br/>= 用一個 cpumask 指定允許的核心集合"]
+    cpumask --> USE
+    EXAMPLE["例:把某個 I/O 處理綁定到特定核心<br/>(回顧 P1-T03:per-CPU、NVMe 多佇列<br/>每核一隊,正需要指定核心)"]
+    USE --> EXAMPLE
+    style CM fill:#e8a33d,color:#10100e
+    style EXAMPLE fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>cpumask 用 bitmap 表示「一組核心」,常用於 <strong>CPU 親和性</strong>——指定「某個工作、某個中斷、某條 I/O 佇列」可以在哪些 CPU 上執行。這直接呼應 <a class="xlink" href="P1-T03.html">P1-T03</a>:NVMe 多佇列「每個核心一條佇列」、per-CPU 設計,都需要用 cpumask 來指定「這條佇列綁哪個核心」。kernel 有專門的 cpumask API(在 <code>include/linux/cpumask.h</code>),本質上是 bitmap API 的特化版,加上「CPU 數量」的語意。</p>
+<p>理解 cpumask = 一個「CPU 集合的 bitmap」,你就能讀懂 kernel 裡大量「這個東西在哪些 CPU 上」的程式碼,包括你產品 I/O 佇列與核心綁定的部分。</p>
+<hr />
+<h3 id="5-set_bitvs-__set_bit">5. <code>set_bit</code>(原子)vs <code>__set_bit</code>(非原子):何時用哪個</h3>
+<p>這是一個直接關係正確性的關鍵區分,呼應你 Phase 1 的並行知識(<a class="xlink" href="P1-T08.html">P1-T08</a> race、<a class="xlink" href="P1-T10.html">P1-T10</a> 原子操作)。</p>
+<p>kernel 的位元操作有<strong>兩個版本</strong>:有底線前綴的(<code>__set_bit</code>)和沒有的(<code>set_bit</code>)。差別在<strong>原子性</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph versions["兩個版本的差異"]
+        ATOMIC["set_bit(n, map)(無底線)<br/>★ 原子操作 ★<br/>保證『讀-改-寫』不可分割<br/>→ 多核心/中斷下並行設定同一 bitmap 安全<br/>(代價:略慢,要原子指令)"]
+        NONATOMIC["__set_bit(n, map)(有底線)<br/>非原子操作<br/>就是普通的讀-改-寫(P1-T08)<br/>→ 並行下會 race!<br/>(好處:快,無原子開銷)"]
+    end
+    style ATOMIC fill:#8a9a5b,color:#10100e
+    style NONATOMIC fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>怎麼選(驗收點):</p>
+<p><pre class="mermaid">flowchart TB
+    Q{"這個 bitmap 會被多個執行流<br/>(多核心 / 中斷 / 搶佔)<br/>同時修改嗎?"}
+    Q -->|"會(有並行存取)"| USE_ATOMIC["用 set_bit(原子版)<br/>否則 race:回顧 P1-T08,<br/>兩個核心同時設不同 bit,<br/>讀-改-寫交錯會互相覆蓋<br/>(它們在同一個字裡!)"]
+    Q -->|"不會(已有外部鎖保護,<br/>或確定單一執行流存取)"| USE_NONATOMIC["用 __set_bit(非原子版)<br/>更快,省原子開銷"]
+    style USE_ATOMIC fill:#8a9a5b,color:#10100e
+    style USE_NONATOMIC fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>關鍵理解:<strong>為什麼非原子版在並行下會 race?</strong> 因為「設定一個 bit」底層是「讀出那個字 → 改一個 bit → 寫回」(回顧 <a class="xlink" href="P1-T08.html">P1-T08</a> 的讀-改-寫!)。如果兩個核心同時設定<strong>同一個字裡的不同 bit</strong>,它們的讀-改-寫會交錯,一個的修改可能覆蓋另一個——即使它們設的是不同 bit(因為它們讀寫的是同一個字)。這跟 <a class="xlink" href="P1-T08.html">P1-T08</a> 的 <code>count++</code> race 是同一個道理。</p>
+<p><strong>所以規則是</strong>:bitmap 若會被並行修改(多核心、中斷處理常式),用<strong>原子版 <code>set_bit</code>/<code>clear_bit</code></strong>;若你已經用其他鎖保護了、或確定只有單一執行流碰它,用<strong>非原子版 <code>__set_bit</code></strong> 省開銷。<strong>「忽略並行下需要原子位元操作」是常見且危險的誤區</strong>——選錯版本,bitmap 會悄悄損壞(回顧 <a class="xlink" href="P1-T08.html">P1-T08</a> race 的「時有時無、難 debug」)。</p>
+<hr />
+<h3 id="6-bitmap">6. 實作一個 bitmap 配置器</h3>
+<p>把前面所有東西組起來,實作一個簡單的資源配置器——這正是 blk-mq tag 配置的簡化原型。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph allocator["bitmap 配置器(模擬 tag 配置)"]
+        ALLOC["alloc():<br/>① find_first_zero_bit 找第一個空閒(0)的 bit<br/>② 把它 set 為 1(標記已用)<br/>③ 回傳那個 bit 的索引(= 配到的資源編號)"]
+        FREE["free(i):<br/>把 bit i clear 為 0(標記空閒)<br/>→ 之後 alloc 可重用這個索引"]
+    end
+    BEHAVIOR["行為:<br/>連續 alloc → 回傳遞增的最小空閒索引(0,1,2,...)<br/>free 一個 → 那個索引變空閒<br/>再 alloc → 用 find-first-zero 重用它"]
+    allocator --> BEHAVIOR
+    TAG["= blk-mq tag 配置的原型:<br/>每個 in-flight I/O 請求佔一個 tag(bit),<br/>送出時 alloc 一個 tag,完成時 free 它"]
+    BEHAVIOR --> TAG
+    style ALLOC fill:#e8a33d,color:#10100e
+    style TAG fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>配置器的邏輯:
+- <strong><code>alloc()</code></strong>:用 <code>find_first_zero_bit</code> 找第一個空閒(0)的 bit → 設為 1 → 回傳索引。因為總是找「第一個」空閒的,連續配置會回傳遞增的最小空閒索引。
+- <strong><code>free(i)</code></strong>:把 bit i 清為 0。之後再 <code>alloc</code>,<code>find_first_zero_bit</code> 會找到這個剛釋放的(若它是最小的空閒),達成<strong>重用</strong>。</p>
+<p><strong>這就是 blk-mq tag 配置的原型</strong>:把「資源」換成「tag」(代表一個 in-flight I/O 請求的槽位),<code>alloc</code> 就是「為一個新 I/O 請求分配一個 tag」,<code>free</code> 就是「I/O 完成、釋放 tag」。NVMe 的佇列深度上限,本質就是「tag bitmap 有多少個 bit」(同時最多多少個 in-flight 請求)。你親手做這個配置器,就摸到了 <span class="xlink-stub" title="待撰寫">P5</span> tag 機制的核心。</p>
+<p>(真實的 blk-mq 用的是 <strong>sbitmap</strong>——一個為了在多核心下減少競爭而做的「可擴展 bitmap」,它把大 bitmap 切成多塊、配合 per-CPU 等技巧來避免 false sharing,呼應 <a class="xlink" href="P1-T03.html">P1-T03</a>。但核心概念就是你做的這個 bitmap 配置器,sbitmap 是它的多核優化版。)</p>
+<hr />
+<h2 id="bitmap">打通關:把 bitmap 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    CORE["核心:一個 bit 代表一個資源的已用/空閒<br/>(N 資源只要 N bits,操作是飛快的位元運算 P0-T11)"]
+    CORE --> API["多字 bitmap 用 kernel API<br/>(set_bit/clear_bit/test_bit,別手動算跨字)"]
+    API --> FIND["find_first_zero_bit 等:快速找空閒/已用<br/>(高度優化,配置資源的核心)"]
+    CORE --> CPUMASK["招牌應用:cpumask(一組 CPU 的 bitmap)<br/>→ CPU 親和性(呼應 P1-T03 每核一隊)"]
+    API --> ATOMIC["★ 並行下:set_bit(原子)vs __set_bit(非原子)★<br/>會被並行改 → 用原子版(否則讀-改-寫 race,P1-T08)"]
+    FIND --> ALLOCATOR["bitmap 配置器:find-first-zero + set = alloc;clear = free"]
+    ALLOCATOR --> BLKMQ["= blk-mq tag(sbitmap)原型<br/>(你產品 in-flight I/O 管理,P5 前置)"]
+    style CORE fill:#e8a33d,color:#10100e
+    style ATOMIC fill:#c2603a,color:#f4ecd8
+    style BLKMQ fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>bitmap 用一個 bit 代表一個資源的狀態,省空間又能用飛快的位元操作管理大量資源;kernel 用它做 cpumask(CPU 親和性)、區塊配置,並提供 find-first-zero 等優化函式;並行下務必用原子版 <code>set_bit</code>(否則讀-改-寫 race);而「find-first-zero + set」的配置器,正是你產品 blk-mq tag(sbitmap)管理 in-flight I/O 的原型——這是 P5 tag 機制的前置。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:手動用 <code>&lt;&lt;</code>/<code>&amp;</code> 操作多字 bitmap 而非用 kernel API。</strong>
+單一整數的位元用 <a class="xlink" href="P0-T11.html">P0-T11</a> 手法沒問題;但跨多字的 bitmap 要用 <code>set_bit</code>/<code>find_first_zero_bit</code> 等 API,否則容易算錯「哪個字、字內第幾位」或越界。</p>
+<p><strong>誤區二:忽略並行下需要原子位元操作。</strong>
+bitmap 若被多核心/中斷並行修改,要用原子版 <code>set_bit</code>/<code>clear_bit</code>;用非原子的 <code>__set_bit</code> 會 race(讀-改-寫交錯,回顧 <a class="xlink" href="P1-T08.html">P1-T08</a>),bitmap 悄悄損壞。</p>
+<p><strong>誤區三:越界存取超出 bitmap 宣告的位元數。</strong>
+bitmap 有固定的 bit 數;存取超過範圍的 bit 是未定義行為(回顧 <a class="xlink" href="P0-T10.html">P0-T10</a>)。用 API 時傳對 size,別超界。</p>
+<p><strong>誤區四:以為 <code>__set_bit</code>(非原子)永遠該避免。</strong>
+不是。在「已有外部鎖保護」或「確定單一執行流存取」時,非原子版更快、是正確選擇。關鍵是判斷有沒有並行存取。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。(可用 <a class="xlink" href="P0-T11.html">P0-T11</a> 的位元操作自己實作 bitmap,或用 user space 的 bitmap 概念。)</p>
+<p><strong>任務 A — 實作 bitmap 配置器(驗收點)</strong>
+用一塊 bitmap(可以是一個 <code>unsigned long</code> 陣列,或先用單一整數簡化)實作:
+- <code>alloc()</code>:找第一個是 0 的 bit(第一個空閒),設為 1,回傳索引。
+- <code>free(i)</code>:把 bit i 清為 0。
+測試:<strong>連續 alloc N 次,確認回傳遞增的最小空閒索引</strong>(0, 1, 2, ...)。(找第一個 0 的 bit,可先用 <a class="xlink" href="P0-T11.html">P0-T11</a> 的 test bit 逐位檢查,理解原理;再了解 kernel 有優化的 <code>find_first_zero_bit</code>。)</p>
+<p><strong>任務 B — 驗證重用(驗收點)</strong>
+承任務 A:alloc 幾個(例如得到 0,1,2),然後 <strong>free 中間一個</strong>(例如 free(1)),再 <strong>alloc 一次</strong>——確認它<strong>重用了剛釋放的索引 1</strong>(因為 find-first-zero 會找到它)。<strong>驗收:釋放後再配置能重用該索引。</strong></p>
+<p><strong>任務 C — 說明原子 vs 非原子(驗收點)</strong>
+用一句話說明:<code>set_bit</code>(原子)和 <code>__set_bit</code>(非原子)各該在什麼情況用?為什麼非原子版在並行下會出錯?(提示:設 bit 是讀-改-寫,回顧 <a class="xlink" href="P1-T08.html">P1-T08</a>;兩核心改同一個字裡的不同 bit 會互相覆蓋。)<strong>驗收:能說出選擇依據與 race 原因。</strong></p>
+<p><strong>任務 D(連結)— 連到 blk-mq tag</strong>
+寫一兩句話:你的 bitmap 配置器,如何對應到「blk-mq 用 tag 管理 in-flight I/O 請求」?(提示:tag = 一個 bit;配置 tag = find-first-zero + set;I/O 完成 = clear。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 用 bitmap 實作配置器,連續配置 N 個資源各回傳遞增的最小空閒索引。
+2. ☐ 釋放其中一個後再配置,能重用該索引(find-first-zero)。
+3. ☐ 說明 <code>set_bit</code>(原子)與 <code>__set_bit</code>(非原子)何時各該用。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用 bitmap(set/clear/test）。
+- <strong>80(熟練)</strong>:能實作 bitmap 配置器(alloc/free/重用)。
+- <strong>100(精通)</strong>:能連結到後續區塊層/NVMe 的 tag 配置(sbitmap)。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——blk-mq 用 tag(sbitmap)管理 in-flight request;NVMe 佇列深度也靠類似配置。此 task 是理解 <span class="xlink-stub" title="待撰寫">P5</span> tag 機制的前置。cpumask 則關係你 I/O 佇列與 CPU 核心的綁定(呼應 <a class="xlink" href="P1-T03.html">P1-T03</a>)。</li>
+<li><strong>這課餵給未來的</strong>:bitmap 配置器 → <span class="xlink-stub" title="待撰寫">P5</span> blk-mq 的 tag/sbitmap;cpumask → CPU 親和性、多佇列綁核;原子位元操作 → 回收 <a class="xlink" href="P1-T08.html">P1-T08</a>/<a class="xlink" href="P1-T10.html">P1-T10</a>,並用於 kernel 並行旗標。</li>
+<li><strong>下一步 → <a class="xlink" href="P2-T08.html">P2-T08</a> 整合驗收:讀懂一個真實 kernel 子系統的資料結構</strong>:你已經學完 Phase 2 的所有資料結構(list_head、container_of、雜湊/hlist、紅黑樹、XArray、bitmap)。最後一課是<strong>整合實戰</strong>——挑一段約 100–200 行的<strong>真實 kernel 程式碼</strong>(建議選與儲存相關的,為 <span class="xlink-stub" title="待撰寫">P5</span> 暖身),逐段註解它用到的每一個資料結構與慣用法。這是 Phase 2 的出關門檻,也正是你日後讀自家 module 與 block layer 程式碼的核心技能:把這個階段學的所有「一眼可讀」的能力,用在真正的 kernel 原始碼上。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P2-T06.html">← P2-T06 radix tree 與 XArray</a><a class="pn next" href="P2-T08.html">P2-T08 整合驗收 — 讀懂一個真實 kernel 子系統的資料結構使用 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

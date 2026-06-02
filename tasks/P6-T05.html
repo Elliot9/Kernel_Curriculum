@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P6-T05 · Peer-to-Peer DMA(p2pdma)—— NVMe↔GPU 直通的核心</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P6 · DMA、IOMMU 與 P2PDMA</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  <span class="gate-pill">🚪 出關門檻</span>
+</nav>
+<article class="paper">
+<h1 id="p6-t05-peer-to-peer-dmap2pdma-nvmegpu">P6-T05 · Peer-to-Peer DMA(p2pdma)—— NVMe↔GPU 直通的核心</h1>
+<blockquote>
+<p><strong>一句話</strong>:P2PDMA 讓兩個 PCIe 裝置(你的 NVMe 和 GPU)直接互傳資料,<strong>完全不經過 host DRAM</strong>——這正是你產品「把 NVMe queue I/O 餵給 GPU」最理想的路徑。但它有嚴格限制:需要共同的 PCIe switch/root port 支援、受 IOMMU 設定影響,且 user space 介面(自 6.2 進 mainline)只能用於 NVMe 上的 O_DIRECT。</p>
+</blockquote>
+<hr />
+<h2 id="phase-6">🚪 這是 Phase 6 出關門檻</h2>
+<p>這是 Phase 6 的<strong>關卡(gate)</strong>,也是<strong>你產品的核心技術</strong>。本 task 達 <strong>80 分</strong>——能解釋 P2PDMA 原理、限制與在自家產品的適用性——才算掌握了產品資料路徑的關鍵,方可進入 Phase 7(GPU/RAID 整合)。</p>
+<p>為什麼這道關這麼重要?因為 <strong>P2PDMA 正是「DMA 把 NVMe queue I/O 餵給 GPU」最理想的實現路徑</strong>。你產品的核心就是「NVMe 的資料經 DMA 餵給 GPU 算 parity」——P2PDMA 讓這條路徑能<strong>直接在 NVMe 和 GPU 之間進行,不繞道 host 記憶體</strong>(省一次複製、降延遲、省 host 頻寬)。理解它的原理與限制,<strong>直接決定你產品資料路徑的設計</strong>。這道關確保你能評估「在自家 RAID-over-NVMe-to-GPU 產品上採用 P2PDMA 的可行性與限制」。</p>
+<hr />
+<h2 id="p2pdma">為什麼是「P2PDMA」(導讀)</h2>
+<p>你已經懂 DMA(<a class="xlink" href="P6-T01.html">P6-T01</a>)、scatter-gather(<a class="xlink" href="P6-T02.html">P6-T02</a>)、屏障(<a class="xlink" href="P6-T03.html">P6-T03</a>)、IOMMU(<a class="xlink" href="P6-T04.html">P6-T04</a>)。這一課把它們用到你產品的核心場景:<strong>Peer-to-Peer DMA(P2PDMA,點對點 DMA)</strong>——讓 NVMe 和 GPU 直接互傳。</p>
+<p><strong>P2PDMA 是什麼</strong>:<strong>兩個 PCIe 裝置之間直接 DMA,資料不繞經 host DRAM</strong>。回顧 <a class="xlink" href="P5-T07.html">P5-T07</a> 的對比:
+- <strong>傳統(繞道 host)</strong>:NVMe → DMA 到 host 記憶體 → 再搬到 GPU(兩段傳輸、佔 host 頻寬、延遲高)。
+- <strong>P2PDMA(直通)</strong>:NVMe → 直接 DMA 到 GPU 記憶體(一段傳輸、省 host 頻寬、延遲低)。</p>
+<p>幾個核心概念:
+- <strong>NVMe CMB(Controller Memory Buffer)與裝置 BAR</strong>:裝置可以透過 BAR(<a class="xlink" href="P4-T04.html">P4-T04</a>)<strong>暴露自己的記憶體</strong>(如 NVMe 的 CMB)——這塊記憶體能當 P2PDMA 的目標/來源。
+- <strong>kernel p2pdma 子系統</strong>:<code>pci_p2pdma_add_resource</code>(provider 註冊它的 BAR 當 P2P 資源)、<code>ZONE_DEVICE</code>/<code>MEMORY_DEVICE_PCI_P2PDMA</code> struct page(讓這塊裝置記憶體能用一般的 DMA 流程)。
+- <strong>拓樸限制</strong>:P2P 不是任意兩個裝置都能做——需要<strong>共同的 PCIe switch 或 root port 支援</strong>(我已查證:TLP 在同一 switch 下可路由;到 host bridge 預設被擋,除非在 root-complex 白名單)。
+- <strong>user space p2pdma 介面(自 6.2 進 mainline)</strong>:經 sysfs <code>/sys/&lt;pci_device&gt;/p2pmem/allocate</code> 配置、映射後<strong>僅能用於 NVMe 上的 O_DIRECT I/O</strong>(我已查證這三個限制)。</p>
+<p>為什麼這對你是 <code>scope: direct(產品核心)</code>?如上——這正是你產品資料路徑最理想的實現。這道出關門檻確保你能評估它在你產品的可行性。</p>
+<p>(我已用 web 查證了所有版本敏感的事實:userspace P2PDMA 在 <strong>6.2</strong> mainline、經 sysfs、僅 NVMe O_DIRECT;拓樸需同 switch/root port;有 IOMMU 時 RC 白名單被停用;<code>CONFIG_PCI_P2PDMA</code> 預設關、依賴 64-bit。)</p>
+<hr />
+<h2 id="_1">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P6-T03.html">P6-T03</a>(DMA 屏障——P2P 傳輸也要正確順序)、<a class="xlink" href="P6-T04.html">P6-T04</a>(IOMMU——P2P 可行性與 IOMMU 設定相關)、<a class="xlink" href="P4-T04.html">P4-T04</a>(BAR——裝置透過 BAR 暴露記憶體)。也用到 <a class="xlink" href="P5-T07.html">P5-T07</a>(P2PDMA 前沿預告)、<a class="xlink" href="P5-T05.html">P5-T05</a>(NVMe)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P5-T07.html">P5-T07</a> 的「P2PDMA:NVMe↔GPU 直通不經 host」嗎?這課深入它的原理與限制。
+  2. 你還記得 <a class="xlink" href="P4-T04.html">P4-T04</a> 的「BAR:裝置暴露的記憶體區域」嗎?P2P 的目標就是某個裝置 BAR 暴露的記憶體(如 NVMe CMB)。</li>
+<li>工具:PCI P2PDMA 文件(https://docs.kernel.org/driver-api/pci/p2pdma.html ）、<code>drivers/pci/p2pdma.c</code>、p2pmem-test。</li>
+<li>環境:支援的或模擬的環境(<strong>實驗只在 VM</strong>;真實 P2P 需特定硬體拓樸)。</li>
+</ul>
+<hr />
+<h2 id="_2">核心內容</h2>
+<p>拆成這幾節:<strong>(1) P2PDMA 是什麼:不經 host DRAM → (2) 裝置 BAR 記憶體與 NVMe CMB → (3) kernel p2pdma 子系統 → (4) 拓樸限制 → (5) user space p2pdma 的三個限制 → (6) 在你產品的可行性</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-p2pdma-host-dram">1. P2PDMA 是什麼:不經 host DRAM</h3>
+<p>先把核心價值畫清楚——P2PDMA 對你產品的意義。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph traditional["傳統路徑(繞道 host DRAM)"]
+        T1b["NVMe --DMA--> host DRAM --DMA/copy--> GPU<br/>① 兩段傳輸<br/>② 佔用 host 記憶體頻寬<br/>③ 延遲較高(多一跳)<br/>④ host DRAM 成為瓶頸"]
+    end
+    subgraph p2p["P2PDMA 路徑(直通)"]
+        P1b["NVMe --DMA 直接--> GPU(不經 host DRAM)<br/>① 一段傳輸<br/>② 省 host 記憶體頻寬<br/>③ 延遲更低<br/>④ ★ 你產品『餵 NVMe 資料給 GPU 算 parity』的理想路徑 ★"]
+    end
+    traditional -.“P2PDMA 消除繞道”.-> p2p
+    HOW6["怎麼做到:資料在 PCIe 結構內,<br/>從 NVMe 直接路由到 GPU(TLP 在 PCIe switch 內轉發)<br/>→ 根本不進 host 記憶體"]
+    p2p --> HOW6
+    style T1b fill:#c2603a,color:#f4ecd8
+    style P1b fill:#8a9a5b,color:#10100e
+    style HOW6 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>P2PDMA</strong>:兩個 PCIe 裝置之間直接 DMA,<strong>資料不繞經 host DRAM</strong>。對比傳統路徑(NVMe → host DRAM → GPU,兩段、佔頻寬、延遲高),P2P 是 NVMe → 直接到 GPU(一段、省頻寬、延遲低)。</p>
+<p><strong>怎麼做到</strong>:資料在 PCIe 結構內,從 NVMe 直接路由到 GPU(PCIe 的 TLP 封包在 switch 內轉發),根本不進 host 記憶體。</p>
+<p><strong>這就是你產品的理想路徑</strong>:你要「把 NVMe queue I/O 餵給 GPU 算 parity」——P2PDMA 讓 NVMe 的資料直接到 GPU,不繞 host DRAM。省下的不只是延遲,還有 host 記憶體頻寬(在高吞吐 RAID 場景,host DRAM 頻寬可能是瓶頸)。</p>
+<p>(驗收點之一:用文字+圖說明一次 NVMe↔GPU P2P 傳輸如何不經過 host DRAM。)</p>
+<hr />
+<h3 id="2-bar-nvme-cmb">2. 裝置 BAR 記憶體與 NVMe CMB</h3>
+<p>P2P 的資料要落在「裝置能直接存取的記憶體」——也就是某個裝置透過 <strong>BAR</strong> 暴露的記憶體。</p>
+<p><pre class="mermaid">flowchart TB
+    BAR4["回顧 P4-T04:裝置透過 BAR 暴露記憶體/暫存器<br/>(BAR 指向裝置的一塊記憶體區域,有 PCIe 位址)"]
+    BAR4 --> CMB["NVMe CMB(Controller Memory Buffer):<br/>NVMe 裝置可選地透過 BAR 暴露一塊『裝置上的記憶體』<br/>→ 這塊記憶體有 PCIe 位址,別的裝置能直接 DMA 存取它"]
+    BAR4 --> GPUMEM["GPU 也透過 BAR 暴露它的記憶體<br/>(GPU 的顯存可被映射到 PCIe 位址空間)"]
+    CMB --> P2PMEM["★ P2P 的關鍵:這些『BAR 暴露的裝置記憶體』<br/>有 PCIe 位址,所以一個裝置能直接 DMA 到另一個裝置的 BAR 記憶體 ★<br/>(NVMe 的資料可直接 DMA 進 GPU 的 BAR 記憶體)"]
+    GPUMEM --> P2PMEM
+    NOTE34["★ 常見誤區:把 p2pmem 當一般 RAM 用 ★<br/>它是『裝置 BAR 記憶體』,不是系統 RAM——<br/>語意受限(存取特性、一致性、用途都和 RAM 不同)"]
+    P2PMEM --> NOTE34
+    style CMB fill:#6fa8b8,color:#10100e
+    style P2PMEM fill:#e8a33d,color:#10100e
+    style NOTE34 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>機制(回顧 <a class="xlink" href="P4-T04.html">P4-T04</a> BAR):
+- 裝置透過 <strong>BAR</strong> 暴露記憶體區域(有 PCIe 位址)。
+- <strong>NVMe CMB(Controller Memory Buffer)</strong>:NVMe 裝置可選地透過 BAR 暴露一塊「裝置上的記憶體」——這塊記憶體有 PCIe 位址,別的裝置能直接 DMA 存取它。
+- <strong>GPU</strong> 也透過 BAR 暴露它的記憶體(顯存可映射到 PCIe 位址空間)。
+- <strong>P2P 的關鍵</strong>:這些「BAR 暴露的裝置記憶體」有 PCIe 位址,所以<strong>一個裝置能直接 DMA 到另一個裝置的 BAR 記憶體</strong>——NVMe 的資料可直接 DMA 進 GPU 的 BAR 記憶體。</p>
+<p><strong>常見誤區:把 p2pmem 當一般 RAM 用</strong>——它是「裝置 BAR 記憶體」,不是系統 RAM,語意受限(存取特性、一致性、用途都和 RAM 不同)。例如它可能不支援某些一般 RAM 的操作,容量也受裝置限制。把它當普通記憶體配置/使用會出問題。</p>
+<hr />
+<h3 id="3-kernel-p2pdma">3. kernel p2pdma 子系統</h3>
+<p>kernel 用 <strong>p2pdma 子系統</strong>管理 P2P 資源。核心是 provider 註冊 BAR、client 配置使用。</p>
+<p><pre class="mermaid">flowchart TB
+    PROVIDER["Provider(提供 P2P 記憶體的裝置,如有 CMB 的 NVMe 或 GPU):"]
+    PROVIDER --> ADDRES["pci_p2pdma_add_resource(pdev, bar, size, offset)<br/>★ 把這個裝置的一段 BAR 註冊為 P2P DMA 資源 ★<br/>→ 這塊記憶體得到 ZONE_DEVICE struct page<br/>(MEMORY_DEVICE_PCI_P2PDMA)→ 能用一般 DMA 流程處理"]
+    ADDRES --> ZONEDEV["ZONE_DEVICE struct page 的意義:<br/>讓『裝置 BAR 記憶體』有對應的 struct page(P3-T06),<br/>於是能像一般記憶體頁那樣走 DMA 映射流程(P6-T02)<br/>(否則裝置 BAR 記憶體沒有 struct page,無法用標準 DMA API)"]
+    ZONEDEV --> CLIENT["Client(要用 P2P 記憶體的一方):<br/>向 p2pdma 配置一塊 p2pmem,用它做 DMA<br/>(kernel 內驅動可用 p2pdma API)"]
+    NOTE35["★ 兩個 driver 要合作 ★<br/>P2P 是兩裝置間的傳輸 → 提供方和使用方的 driver<br/>都要支援/協調(provider 註冊、client 使用)"]
+    CLIENT --> NOTE35
+    style ADDRES fill:#e8a33d,color:#10100e
+    style ZONEDEV fill:#6fa8b8,color:#10100e
+    style NOTE35 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>p2pdma 子系統的核心:
+- <strong>Provider</strong>(提供 P2P 記憶體的裝置)用 <strong><code>pci_p2pdma_add_resource(pdev, bar, size, offset)</code></strong> 把它的一段 BAR 註冊為 P2P DMA 資源(驗收點:在原始碼中指出 provider 如何用 <code>pci_p2pdma_add_resource</code> 註冊 BAR)。
+- 這塊記憶體得到 <strong><code>ZONE_DEVICE</code> struct page</strong>(<code>MEMORY_DEVICE_PCI_P2PDMA</code>)——<strong>讓「裝置 BAR 記憶體」有對應的 <code>struct page</code></strong>(回顧 <a class="xlink" href="P3-T06.html">P3-T06</a> struct page),於是能像一般記憶體頁那樣走 DMA 映射流程(<a class="xlink" href="P6-T02.html">P6-T02</a>)。否則裝置 BAR 記憶體沒有 struct page,無法用標準 DMA API。
+- <strong>Client</strong>(要用 P2P 記憶體的一方)向 p2pdma 配置一塊 p2pmem,用它做 DMA。</p>
+<p><strong>關鍵:兩個 driver 要合作</strong>——P2P 是兩裝置間的傳輸,提供方和使用方的 driver 都要支援/協調(provider 註冊、client 使用)。這對你產品意味著:NVMe driver 和 GPU driver(或你的整合層)要協調好 P2P 資源。</p>
+<p>(你可以在 <code>drivers/pci/p2pdma.c</code> 讀 <code>pci_p2pdma_add_resource</code> 的實作,看 provider 怎麼註冊。)</p>
+<hr />
+<h3 id="4-p2p">4. 拓樸限制:不是任意兩裝置都能 P2P</h3>
+<p><strong>最關鍵的限制</strong>:P2P <strong>不是任意兩個 PCIe 裝置都能做</strong>——取決於 PCIe 拓樸。這是評估產品可行性的核心。</p>
+<p><pre class="mermaid">flowchart TB
+    QUESTION["兩個裝置能不能 P2P?取決於它們在 PCIe 樹的位置"]
+    QUESTION --> SWITCH3["✓ 同一個 PCIe switch 下:<br/>TLP(PCIe 封包)可在 switch 內直接路由(依 ACS 設定)<br/>→ 不必到 root port → kernel 保證可 P2P<br/>(這是最可靠的 P2P 拓樸)"]
+    QUESTION --> ROOTPORT["△ 連到同一 root port / root complex:<br/>TLP 可能要 hairpin 回 root port,或經 CPU SOC 內部路由<br/>→ PCIe 規格未定義跨 hierarchy 的轉發,kernel 預設『擋』<br/>→ 除非該 root complex 在 kernel 的『白名單(已知可行的硬體)』"]
+    QUESTION --> CROSS["✗ 跨不同 root port / 經 host bridge:<br/>預設不允許(除非白名單);很多 RC 根本不支援或很慢"]
+    IOMMU7["★ IOMMU 的影響(我已查證)★<br/>有 IOMMU 時,root-complex 白名單會被『停用』<br/>(因為 TLP 打到 RC 會被 IOMMU 拒絕,除非 kernel 能在 IOMMU 裡映射 P2P 位址)<br/>→ P2P 可行性與 IOMMU 設定強相關(P6-T04)"]
+    ROOTPORT --> IOMMU7
+    KERNELCHK["kernel 用 pci_p2pdma_distance_many() 檢查:<br/>『所有相關裝置是否在同一 root port 下、或 host bridge 在白名單』<br/>→ 不相容回 -1"]
+    SWITCH3 --> KERNELCHK
+    style SWITCH3 fill:#8a9a5b,color:#10100e
+    style CROSS fill:#c2603a,color:#f4ecd8
+    style IOMMU7 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>拓樸限制(驗收點:列出至少兩個 P2P 可行性的拓樸/平台限制)</strong>:
+- <strong>同一個 PCIe switch 下</strong>:TLP 可在 switch 內直接路由(依 ACS 設定),不必到 root port → kernel 保證可 P2P。<strong>這是最可靠的拓樸</strong>(把 NVMe 和 GPU 接在同一個 PCIe switch 下)。
+- <strong>連到同一 root port / root complex</strong>:TLP 可能要 hairpin 回 root port、或經 CPU SOC 內部路由——PCIe 規格未定義跨 hierarchy 轉發,kernel 預設擋,除非該 root complex 在 kernel 的<strong>白名單</strong>(已知可行的硬體)。
+- <strong>跨不同 root port / 經 host bridge</strong>:預設不允許;很多 root complex 根本不支援或很慢。</p>
+<p><strong>IOMMU 的影響(我已查證,呼應 <a class="xlink" href="P6-T04.html">P6-T04</a>)</strong>:<strong>有 IOMMU 時,root-complex 白名單會被停用</strong>——因為 TLP 打到 RC 會被 IOMMU 拒絕(除非 kernel 能在 IOMMU 裡映射 P2P 位址)。所以 <strong>P2P 可行性與 IOMMU 設定強相關</strong>。</p>
+<p>kernel 用 <strong><code>pci_p2pdma_distance_many()</code></strong> 檢查兩裝置是否相容(同 root port 下、或 host bridge 在白名單),不相容回 -1。</p>
+<p><strong>常見誤區:以為任意兩 PCIe 裝置都能 P2P</strong>——需拓樸/switch/root port 支援,且常受 IOMMU 與平台限制。<strong>這對你產品的硬體設計直接相關</strong>:要可靠地用 P2P,最好把 NVMe 和 GPU 接在<strong>同一個 PCIe switch</strong> 下,並評估 IOMMU 設定。</p>
+<hr />
+<h3 id="5-user-space-p2pdma">5. user space p2pdma 的三個限制</h3>
+<p>如果你產品要在 <strong>user space</strong> 用 P2P(例如 user space 驅動直接協調 NVMe↔GPU),要知道 user space p2pdma 介面的<strong>三個明確限制</strong>(我已查證)。</p>
+<p><pre class="mermaid">flowchart TB
+    USERSPACE["user space p2pdma 介面(讓 user 程式直接用 P2P 記憶體)"]
+    USERSPACE --> L1["★ 限制① 版本:自 6.2 進 mainline ★<br/>(更早的 kernel 沒有 user space 介面,<br/>p2pdma 框架本身自 4.20 但預設不編入)"]
+    USERSPACE --> L2["★ 限制② 配置方式:經 sysfs ★<br/>mmap /sys/<pci_device>/p2pmem/allocate<br/>→ 取得一塊 p2pmem 的映射(VMA)"]
+    USERSPACE --> L3["★ 限制③ 用途:僅能用於 NVMe 上的 O_DIRECT I/O ★<br/>映射得到的 VMA 只能傳給『NVMe backed 檔案/區塊裝置的 O_DIRECT I/O』<br/>(非 O_DIRECT、或非 NVMe → 目前不支援)"]
+    NOTE36["★ 常見誤區:user space p2pdma 映射用於非 O_DIRECT 或非 NVMe ★<br/>目前明確不支援 → 規劃 user space P2P 架構時要記住這三個限制<br/>(也呼應 P5-T01:O_DIRECT 繞過 page cache,正好搭配 P2P 直通)"]
+    L3 --> NOTE36
+    style L1 fill:#6fa8b8,color:#10100e
+    style L2 fill:#6fa8b8,color:#10100e
+    style L3 fill:#e8a33d,color:#10100e
+    style NOTE36 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>user space p2pdma 的三個限制(驗收點:正確說明這三個限制)</strong>:
+1. <strong>版本:自 6.2 進 mainline</strong>——更早的 kernel 沒有 user space 介面(p2pdma 框架本身自 4.20,但預設不編入 <code>CONFIG_PCI_P2PDMA</code>)。
+2. <strong>配置方式:經 sysfs</strong>——<code>mmap</code> 檔案 <code>/sys/&lt;pci_device&gt;/p2pmem/allocate</code>,取得一塊 p2pmem 的映射(VMA)。
+3. <strong>用途:僅能用於 NVMe 上的 O_DIRECT I/O</strong>——映射得到的 VMA 只能傳給「NVMe backed 檔案/區塊裝置的 O_DIRECT I/O」。</p>
+<p><strong>常見誤區:user space p2pdma 映射用於非 O_DIRECT 或非 NVMe</strong>——目前明確不支援。規劃 user space P2P 架構時要記住這三個限制。</p>
+<p><strong>注意這個漂亮的搭配(回顧 <a class="xlink" href="P5-T01.html">P5-T01</a>)</strong>:user space p2pdma 只能用於 <strong>O_DIRECT</strong>——而 O_DIRECT 正好<strong>繞過 page cache</strong>(<a class="xlink" href="P5-T01.html">P5-T01</a>)。這不是巧合:P2P 直通的整個重點就是「資料不繞道(不經 page cache、不經 host DRAM)」,所以它自然搭配 O_DIRECT。你產品的零拷貝路徑(O_DIRECT + P2P)是一致的設計。</p>
+<hr />
+<h3 id="6-raid-over-nvme-to-gpu">6. 在你產品的可行性:RAID-over-NVMe-to-GPU</h3>
+<p>最後把整課收束到你產品——評估 P2PDMA 的可行性與限制(這是出關的精通目標)。</p>
+<p><pre class="mermaid">flowchart TB
+    PRODUCT3["你的產品:RAID over NVMe + GPU 算 parity<br/>核心需求:把 NVMe 的資料餵給 GPU 算 parity"]
+    PRODUCT3 --> FIT["P2PDMA 為何理想:<br/>NVMe 資料直接 DMA 到 GPU,不繞 host DRAM<br/>→ 省延遲、省 host 頻寬(高吞吐 RAID 的關鍵)"]
+    PRODUCT3 --> CONSTRAINTS2["但要評估的限制(綜合本課):"]
+    CONSTRAINTS2 --> C1b["① 拓樸:NVMe 和 GPU 最好在同一 PCIe switch 下<br/>(否則需 root complex 白名單,且 IOMMU 會干擾)"]
+    CONSTRAINTS2 --> C2b["② IOMMU 設定:有 IOMMU 時 RC 白名單停用<br/>→ 要嘛同 switch、要嘛審慎處理 IOMMU"]
+    CONSTRAINTS2 --> C3b["③ 若走 user space:僅 NVMe O_DIRECT、6.2+、sysfs 配置"]
+    CONSTRAINTS2 --> C4b["④ ★ 與 RAID0/multipath、KASLR 的相容性問題 ★<br/>(P7-T05 GDS 會深入——這些直接影響本產品!)"]
+    style FIT fill:#8a9a5b,color:#10100e
+    style CONSTRAINTS2 fill:#e8a33d,color:#10100e
+    style C4b fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>在你產品的可行性評估(驗收的精通目標)</strong>:
+- <strong>為何理想</strong>:P2P 讓 NVMe 資料直接到 GPU、不繞 host DRAM——省延遲、省 host 頻寬(高吞吐 RAID 的關鍵)。
+- <strong>要評估的限制</strong>:
+  1. <strong>拓樸</strong>:NVMe 和 GPU 最好在<strong>同一 PCIe switch</strong> 下(否則需 RC 白名單,且 IOMMU 會干擾)。
+  2. <strong>IOMMU 設定</strong>:有 IOMMU 時 RC 白名單停用——要嘛同 switch、要嘛審慎處理 IOMMU(<a class="xlink" href="P6-T04.html">P6-T04</a>)。
+  3. <strong>若走 user space</strong>:僅 NVMe O_DIRECT、6.2+、sysfs 配置(第 5 節)。
+  4. <strong>與 RAID0/multipath、KASLR 的相容性問題</strong>——這是一個<strong>直接影響你產品的警訊</strong>:<a class="xlink" href="P7-T05.html">P7-T05</a>(GDS)會深入,GPU Direct Storage 在某些配置(RAID0、multipath、KASLR 開啟)下有相容性問題。<strong>你的產品正是 RAID + GPU</strong>,所以這些相容性限制要特別注意。</p>
+<p><strong>常見誤區:忽略 P2PDMA 與 RAID0/multipath、KASLR 的相容性問題</strong>——這對你的 RAID-over-NVMe-to-GPU 產品是直接的風險,<a class="xlink" href="P7-T05.html">P7-T05</a> 會詳述。</p>
+<p>所以你的結論應該是:<strong>P2PDMA(或其上層的 GDS)是你產品最理想的資料路徑,但可行性取決於硬體拓樸(最好同 switch)、IOMMU 設定、以及與 RAID/multipath 的相容性</strong>。這是你做產品架構決策的核心依據——也是這道出關門檻要你掌握的。</p>
+<p>把「你產品能不能用 P2PDMA」整理成一張可行性決策圖:</p>
+<p><pre class="mermaid">flowchart TB
+    START3{"NVMe 和 GPU 在同一 PCIe switch 下?"}
+    START3 -->|"是"| GOOD4["✓ 最可靠:TLP 在 switch 內路由,kernel 保證可 P2P"]
+    START3 -->|"否(同 root port)"| WL{"root complex 在 kernel 白名單?"}
+    WL -->|"是 + 無 IOMMU"| MAYBE["△ 可能可行(但有 IOMMU 則白名單停用)"]
+    WL -->|"否"| NO2["✗ 預設被擋"]
+    GOOD4 --> COMPAT{"用了 RAID0/multipath?KASLR 開啟?"}
+    COMPAT -->|"是"| RISK3["⚠ 相容性風險(P7-T05 GDS 詳述)→ 需驗證"]
+    COMPAT -->|"否"| SHIP["✓ 可採用 P2PDMA/GDS 直通路徑"]
+    style GOOD4 fill:#8a9a5b,color:#10100e
+    style NO2 fill:#c2603a,color:#f4ecd8
+    style RISK3 fill:#e8a33d,color:#10100e
+</pre></p>
+<hr />
+<h2 id="p2pdma_1">打通關:把 P2PDMA 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    P2P4["★ P2PDMA:兩 PCIe 裝置直接 DMA,不經 host DRAM ★<br/>= 你產品『NVMe 資料餵 GPU 算 parity』的理想路徑(省延遲/host 頻寬)"]
+    P2P4 --> BAR5["靠裝置 BAR 暴露的記憶體(NVMe CMB、GPU 顯存)<br/>有 PCIe 位址 → 裝置間可直接 DMA(別當一般 RAM)"]
+    P2P4 --> KERNEL3["kernel p2pdma:pci_p2pdma_add_resource 註冊 BAR<br/>→ ZONE_DEVICE struct page → 能走標準 DMA 流程(P6-T02)<br/>(provider + client 兩 driver 要合作)"]
+    P2P4 --> TOPO["★ 拓樸限制:最好同 PCIe switch 下(TLP 可路由)★<br/>同 root port 需白名單;有 IOMMU 時 RC 白名單停用(P6-T04)<br/>(pci_p2pdma_distance_many 檢查)"]
+    P2P4 --> USER2["user space p2pdma(已查證):<br/>① 6.2 mainline ② sysfs /p2pmem/allocate ③ 僅 NVMe O_DIRECT<br/>(搭配 O_DIRECT 繞過 page cache,P5-T01)"]
+    TOPO --> FEASIBILITY["★ 你產品可行性:同 switch + 審慎 IOMMU + 注意 RAID0/multipath/KASLR 相容性(P7-T05)★"]
+    USER2 --> FEASIBILITY
+    style P2P4 fill:#e8a33d,color:#10100e
+    style TOPO fill:#8a9a5b,color:#10100e
+    style FEASIBILITY fill:#c2603a,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>P2PDMA 讓 NVMe 和 GPU 直接互傳、不經 host DRAM——正是你產品「餵 NVMe 資料給 GPU 算 parity」的理想路徑(省延遲、省 host 頻寬）；靠裝置 BAR 暴露的記憶體（NVMe CMB／GPU 顯存，別當一般 RAM），kernel 用 <code>pci_p2pdma_add_resource</code> 註冊、<code>ZONE_DEVICE</code> page 讓它走標準 DMA；但限制嚴格——最好同 PCIe switch 下、有 IOMMU 時 RC 白名單停用、user space 介面（6.2、sysfs、僅 NVMe O_DIRECT），且要注意與 RAID0/multipath/KASLR 的相容性（P7-T05）。</strong></p>
+<hr />
+<h2 id="_3">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為任意兩 PCIe 裝置都能 P2P。</strong>
+需拓樸/switch/root port 支援,且常受 IOMMU 與平台限制。最可靠是同一 PCIe switch 下;同 root port 需白名單;有 IOMMU 時 RC 白名單停用。</p>
+<p><strong>誤區二:把 p2pmem 當一般 RAM 用。</strong>
+它是裝置 BAR 記憶體,語意受限(存取特性、一致性、容量都和系統 RAM 不同)。別當普通記憶體用。</p>
+<p><strong>誤區三:user space p2pdma 映射用於非 O_DIRECT 或非 NVMe。</strong>
+目前明確不支援——僅能用於 NVMe backed 的 O_DIRECT I/O(且 6.2+、經 sysfs 配置)。</p>
+<p><strong>誤區四:忽略 P2PDMA 與 RAID0/multipath、KASLR 的相容性問題。</strong>
+這對你的 RAID-over-NVMe-to-GPU 產品是直接風險(<a class="xlink" href="P7-T05.html">P7-T05</a> GDS 詳述)。規劃時要評估。</p>
+<hr />
+<h2 id="_4">動手實作(出關驗收任務)</h2>
+<p><strong>環境</strong>:支援的或模擬的環境(<strong>實驗只在 VM</strong>;真實 P2P 需特定硬體拓樸)。參考 PCI P2PDMA 文件、<code>drivers/pci/p2pdma.c</code>、p2pmem-test README。</p>
+<p><strong>任務(出關門檻):理解並評估 P2PDMA</strong></p>
+<p><strong>Part 1 — NVMe↔GPU P2P 資料路徑(驗收點 1)</strong>
+用<strong>文字 + 圖</strong>說明:一次 NVMe↔GPU 的 P2P 傳輸如何<strong>不經過 host DRAM</strong>?(對比傳統繞道路徑。)<strong>驗收:用文字+圖說明一次 NVMe↔GPU P2P 傳輸如何不經過 host DRAM。</strong></p>
+<p><strong>Part 2 — provider 註冊 BAR(驗收點 2)</strong>
+閱讀 <code>drivers/pci/p2pdma.c</code>(https://elixir.bootlin.com/linux/v6.12/source/drivers/pci/p2pdma.c ），在原始碼中指出 <strong>provider 如何用 <code>pci_p2pdma_add_resource</code> 註冊 BAR</strong>。<strong>驗收:在原始碼中指出 provider 如何用 <code>pci_p2pdma_add_resource</code> 註冊 BAR。</strong></p>
+<p><strong>Part 3 — user space p2pdma 的三個限制(驗收點 3)</strong>
+正確說明 user space p2pdma 的<strong>三個限制</strong>。<strong>驗收:正確說明(① 6.2+ 進 mainline、② 經 sysfs <code>/sys/&lt;pci_device&gt;/p2pmem/allocate</code> 配置、③ 僅能用於 NVMe 上的 O_DIRECT I/O)。</strong>(參考 p2pmem-test README、https://lwn.net/Articles/906092/ ）</p>
+<p><strong>Part 4 — 拓樸/平台限制(驗收點 4)</strong>
+列出<strong>至少兩個</strong> P2P 可行性的拓樸/平台限制。<strong>驗收:列出至少兩個(如:需同 PCIe switch 下 TLP 才能路由 / 同 root port 需在白名單 / 有 IOMMU 時 RC 白名單停用 / 跨 root port 多半不支援)。</strong></p>
+<p>(進階:用 p2pmem-test 的觀念,走一次「從裝置 BAR 配置 p2pmem → 對 NVMe 做 O_DIRECT I/O」的流程。)</p>
+<hr />
+<h2 id="_5">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 用文字+圖說明一次 NVMe↔GPU P2P 傳輸如何不經過 host DRAM。
+2. ☐ 在原始碼中指出 provider 如何用 <code>pci_p2pdma_add_resource</code> 註冊 BAR。
+3. ☐ 正確說明 user space p2pdma 的三個限制(6.2+、sysfs 配置、僅 NVMe O_DIRECT)。
+4. ☐ 列出至少兩個 P2P 可行性的拓樸/平台限制。</p>
+<p><strong>評分量表(出關門檻,需達 80)</strong>:
+- <strong>60</strong>:能說明 P2PDMA 概念。
+- <strong>80(出關門檻 🚪)</strong>:能解讀 kernel p2pdma 流程與 user space 限制。達此分數方可進入 Phase 7。
+- <strong>100</strong>:能評估在自家 RAID-over-NVMe-to-GPU 產品上採用 P2PDMA 的可行性與限制。</p>
+<hr />
+<h2 id="_6">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應(產品核心)</strong>——這正是「DMA 把 NVMe queue I/O 餵給 GPU」最理想的實現路徑;理解其原理與限制直接決定產品資料路徑設計。</li>
+<li><strong>這課收束了 Phase 6</strong>:DMA API(<a class="xlink" href="P6-T01.html">P6-T01</a>)→ scatter-gather/sync(<a class="xlink" href="P6-T02.html">P6-T02</a>)→ 屏障(<a class="xlink" href="P6-T03.html">P6-T03</a>)→ IOMMU/VFIO(<a class="xlink" href="P6-T04.html">P6-T04</a>)→ P2PDMA(本課,把全部用到產品核心)。你「位址的真相」與「DMA 正確性」主線都在此收束。</li>
+<li><strong>下一步 → <a class="xlink" href="P7-T01.html">P7-T01</a> 進入 Phase 7(軟體 RAID、parity 計算與 GPU 整合)</strong>:恭喜你通過 Phase 6 出關門檻——掌握了 P2PDMA 這個產品核心技術!最後一個階段 <strong>Phase 7 把所有東西組成你的產品</strong>:軟體 RAID(<code>drivers/md/</code>,回顧 <a class="xlink" href="P3-T01.html">P3-T01</a>)、RAID-5/6 的 <strong>parity 計算數學</strong>(XOR、Reed-Solomon,回收 <a class="xlink" href="P0-T11.html">P0-T11</a> 你的 XOR 主線!)、kernel 的 <code>lib/raid6</code>、以及 <strong>GPU Direct Storage(GDS)與 CUDA</strong> 把 parity 計算 offload 到 GPU。本課的 P2PDMA 正是 GDS 的基礎。你的「XOR→parity→GPU 平行」主線(P0-T11→P7-T02→T03→T04→T06)將在 Phase 7 完成。(提醒:GDS/CUDA 的版本敏感細節,我會在 Phase 7 動工前查證——尤其本課提到的 RAID0/multipath/KASLR 相容性。)</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P6-T04.html">← P6-T04 IOMMU 與 VFIO</a><a class="pn next" href="P7-T01.html">P7-T01 Linux 軟體 RAID(md / dm-raid)與 raid5.c 概覽 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

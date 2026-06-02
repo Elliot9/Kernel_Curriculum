@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linux Kernel Developer 養成路徑 · 教材總覽</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#10100e;
+    --ink-2:#1a1916;
+    --ink-3:#24221d;
+    --paper:#f4ecd8;
+    --paper-dim:#cfc6b0;
+    --amber:#e8a33d;
+    --amber-bright:#ffb84d;
+    --rust:#c2603a;
+    --sage:#8a9a5b;
+    --sky:#6fa8b8;
+    --line:#3a372f;
+    --line-soft:#2c2a24;
+    --mono:'JetBrains Mono',monospace;
+    --serif:'Newsreader',Georgia,serif;
+    --tc:'Noto Sans TC',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:var(--tc);
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(232,163,61,.05), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(111,168,184,.04), transparent 45%);
+    min-height:100vh;
+  }
+  ::selection{background:var(--amber);color:var(--ink)}
+
+  /* ---- top masthead ---- */
+  .masthead{
+    border-bottom:1px solid var(--line);
+    padding:3.5rem 2rem 2.5rem;
+    max-width:1180px;margin:0 auto;
+    position:relative;
+  }
+  .masthead::before{
+    content:"// SINGLE SOURCE OF TRUTH";
+    font-family:var(--mono);font-size:.7rem;letter-spacing:.3em;
+    color:var(--amber);opacity:.7;display:block;margin-bottom:1.4rem;
+  }
+  .masthead h1{
+    font-family:var(--serif);font-weight:600;
+    font-size:clamp(2.2rem,5vw,3.6rem);
+    line-height:1.05;letter-spacing:-.02em;
+    color:var(--paper);margin-bottom:.8rem;
+  }
+  .masthead h1 .accent{color:var(--amber-bright);font-style:italic}
+  .masthead .sub{
+    font-family:var(--serif);font-size:1.15rem;
+    color:var(--paper-dim);max-width:60ch;font-style:italic;
+  }
+  .meta-row{
+    display:flex;flex-wrap:wrap;gap:2rem;margin-top:2rem;
+    font-family:var(--mono);font-size:.78rem;
+  }
+  .meta-row .m{display:flex;flex-direction:column;gap:.2rem}
+  .meta-row .m .k{color:var(--paper-dim);opacity:.6;letter-spacing:.1em;font-size:.68rem}
+  .meta-row .m .v{color:var(--amber);font-weight:700;font-size:1.1rem}
+  .learner-note{
+    margin-top:1.8rem;padding:1rem 1.2rem;
+    border-left:3px solid var(--rust);
+    background:var(--ink-2);
+    font-size:.92rem;color:var(--paper-dim);
+    max-width:70ch;
+  }
+  .learner-note b{color:var(--paper)}
+
+  /* ---- search ---- */
+  .search-wrap{max-width:1180px;margin:2rem auto 0;padding:0 2rem}
+  #search{
+    width:100%;padding:.9rem 1.1rem;
+    background:var(--ink-2);border:1px solid var(--line);
+    color:var(--paper);font-family:var(--mono);font-size:.95rem;
+    border-radius:2px;transition:border-color .2s;
+  }
+  #search:focus{outline:none;border-color:var(--amber)}
+  #search::placeholder{color:var(--paper-dim);opacity:.5}
+
+  /* ---- legend ---- */
+  .legend{
+    max-width:1180px;margin:1.2rem auto 0;padding:0 2rem;
+    display:flex;flex-wrap:wrap;gap:1.4rem;
+    font-family:var(--mono);font-size:.72rem;color:var(--paper-dim);
+  }
+  .legend .lg{display:flex;align-items:center;gap:.45rem}
+  .dot{width:.7rem;height:.7rem;border-radius:50%;display:inline-block}
+  .dot.direct{background:var(--rust)}
+  .dot.indirect{background:var(--sky)}
+  .dot.base{background:var(--paper-dim)}
+  .dot.gate{background:var(--amber)}
+
+  /* ---- phase spine ---- */
+  .spine{max-width:1180px;margin:2.5rem auto 5rem;padding:0 2rem}
+  .phase{
+    margin-bottom:3rem;border:1px solid var(--line-soft);
+    border-radius:4px;overflow:hidden;background:var(--ink-2);
+    transition:border-color .25s;
+  }
+  .phase:hover{border-color:var(--line)}
+  .phase-head{
+    display:grid;grid-template-columns:auto 1fr auto;
+    gap:1.4rem;align-items:center;
+    padding:1.6rem 1.8rem;
+    border-bottom:1px solid var(--line-soft);
+    background:linear-gradient(90deg,var(--ink-3),transparent);
+    cursor:pointer;
+  }
+  .phase-id{
+    font-family:var(--mono);font-weight:800;font-size:2rem;
+    color:var(--ink);background:var(--amber);
+    width:3.4rem;height:3.4rem;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;letter-spacing:-.05em;
+  }
+  .phase-meta h2{
+    font-family:var(--serif);font-weight:600;font-size:1.4rem;
+    color:var(--paper);letter-spacing:-.01em;margin-bottom:.25rem;
+  }
+  .phase-meta .goal{font-size:.88rem;color:var(--paper-dim);max-width:75ch;line-height:1.55}
+  .phase-stat{
+    font-family:var(--mono);font-size:.72rem;text-align:right;
+    color:var(--paper-dim);flex-shrink:0;line-height:1.8;
+  }
+  .phase-stat .big{color:var(--amber);font-size:1rem;font-weight:700}
+
+  /* ---- task grid ---- */
+  .task-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+    gap:1px;background:var(--line-soft);
+  }
+  .task{
+    background:var(--ink-2);padding:1.1rem 1.3rem;
+    text-decoration:none;color:inherit;display:block;
+    transition:background .18s;position:relative;
+    border-left:3px solid transparent;
+  }
+  .task:hover{background:var(--ink-3);border-left-color:var(--amber)}
+  .task .tid{
+    font-family:var(--mono);font-size:.72rem;font-weight:700;
+    color:var(--amber);letter-spacing:.05em;
+  }
+  .task .ttitle{
+    font-family:var(--tc);font-size:.95rem;font-weight:500;
+    color:var(--paper);margin:.35rem 0 .5rem;line-height:1.4;
+  }
+  .task .tfoot{
+    display:flex;align-items:center;justify-content:space-between;
+    font-family:var(--mono);font-size:.68rem;color:var(--paper-dim);
+  }
+  .task .tdot{display:flex;gap:.35rem;align-items:center}
+  .task .gate-badge{
+    position:absolute;top:.7rem;right:.8rem;
+    font-family:var(--mono);font-size:.6rem;
+    background:var(--amber);color:var(--ink);
+    padding:.1rem .4rem;border-radius:2px;font-weight:700;letter-spacing:.05em;
+  }
+  .task.is-stub{opacity:.55}
+  .task.is-stub .ttitle::after{
+    content:" · 待撰寫";font-size:.7rem;color:var(--paper-dim);font-weight:400;
+  }
+  .task.is-ready .tid::before{content:"● ";color:var(--sage);font-size:.6rem;vertical-align:middle}
+
+  /* ---- footer ---- */
+  footer{
+    border-top:1px solid var(--line);max-width:1180px;
+    margin:0 auto;padding:2.5rem 2rem 4rem;
+    font-family:var(--mono);font-size:.75rem;color:var(--paper-dim);
+  }
+  footer .links{display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem}
+  footer a{color:var(--amber);text-decoration:none;border-bottom:1px dotted var(--amber)}
+  .hidden{display:none!important}
+
+  @media(max-width:640px){
+    .phase-head{grid-template-columns:auto 1fr;gap:1rem}
+    .phase-stat{grid-column:1/-1;text-align:left;display:flex;gap:1.2rem;margin-top:.5rem}
+    .masthead{padding:2.5rem 1.3rem 2rem}
+    .spine,.search-wrap,.legend,.masthead,footer{padding-left:1.3rem;padding-right:1.3rem}
+  }
+</style>
+</head>
+<body>
+<header class="masthead">
+  <h1>Linux Kernel Developer <span class="accent">養成路徑</span></h1>
+  <div class="meta-row">
+    <div class="m"><span class="k">TASKS</span><span class="v">69</span></div>
+    <div class="m"><span class="k">PHASES</span><span class="v">8</span></div>
+    <div class="m"><span class="k">總時數</span><span class="v">750–950</span></div>
+    <div class="m"><span class="k">預估期程</span><span class="v">14–18 月</span></div>
+  </div>
+  <div class="learner-note">
+    <b>讀者設定:一張白紙。</b>
+  </div>
+</header>
+
+<div class="search-wrap">
+  <input id="search" type="text" placeholder="搜尋 task(輸入 ID、關鍵字,如 spinlock、DMA、parity、P5-T06)…" autocomplete="off">
+</div>
+<div class="legend">
+  <span class="lg"><span class="dot direct"></span>直接對應產品</span>
+  <span class="lg"><span class="dot indirect"></span>間接相關</span>
+  <span class="lg"><span class="dot base"></span>基礎能力</span>
+  <span class="lg"><span class="dot gate"></span>階段關卡(出關門檻)</span>
+  <span class="lg"><span style="color:var(--sage)">●</span>&nbsp;已備教材</span>
+</div>
+
+<main class="spine" id="spine"><!-- injected by build --></main>
+
+<footer>
+  <div class="links">
+    <a href="#spine">▲ 回到頂端</a>
+    <span>單一事實來源 · 教材以 Mermaid 圖 + 精確比喻為主</span>
+  </div>
+  <div>版本性提醒已寫入各課:SLUB-only(6.8)· EEVDF 取代 CFS(6.6)· CUDA 12.8 GDS 改用上游 P2PDMA(不支援 RAID0/multipath,KASLR 下失敗)· LDD3 釘 2.6.10 僅概念。</div>
+</footer>
+
+<script>
+// === task registry (injected) ===
+const REGISTRY = {"meta": {"title": "Linux Kernel Developer 養成路徑", "subtitle": "從一張白紙到能讀懂並修改 block layer / driver / DMA / RAID parity", "learner": "", "total_tasks": 69, "total_hours": "750–950", "duration": "約 14–18 個月"}, "phases": [{"id": "P0", "name": "深度 C、記憶體與未定義行為", "goal": "記憶體安全 + GC 習慣,重訓成能精準推理指標、記憶體佈局、整數/指標運算與 UB 的底層思維。", "hours": "70–90", "weeks": "6–8", "gate": "P0-T12", "tasks": ["P0-T01", "P0-T02", "P0-T03", "P0-T04", "P0-T05", "P0-T06", "P0-T07", "P0-T08", "P0-T09", "P0-T10", "P0-T11", "P0-T12"]}, {"id": "P1", "name": "計算機結構與作業系統概念", "goal": "建立 CPU 與 OS 的心智模型:process vs thread、排程、虛擬記憶體、並行、同步、memory ordering、cache coherence、對齊。", "hours": "120–150", "weeks": "10–12", "gate": "P1-T11", "tasks": ["P1-T01", "P1-T02", "P1-T03", "P1-T04", "P1-T05", "P1-T06", "P1-T07", "P1-T08", "P1-T09", "P1-T10", "P1-T11"]}, {"id": "P2", "name": "kernel 工作所需資料結構", "goal": "精通 kernel 中無所不在的資料結構,讓 kernel 原始碼中的這些結構一眼可讀。", "hours": "50–60", "weeks": "4–5", "gate": "P2-T08", "tasks": ["P2-T01", "P2-T02", "P2-T03", "P2-T04", "P2-T05", "P2-T06", "P2-T07", "P2-T08"]}, {"id": "P3", "name": "核心 kernel 內部機制與 module 開發", "goal": "理解 kernel 架構、能編譯/開機自訂 kernel、會寫 LKM,並精通記憶體管理、同步、中斷與除錯。", "hours": "150–200", "weeks": "12–16", "gate": "P3-T15", "tasks": ["P3-T01", "P3-T02", "P3-T03", "P3-T04", "P3-T05", "P3-T06", "P3-T07", "P3-T08", "P3-T09", "P3-T10", "P3-T11", "P3-T12", "P3-T13", "P3-T14", "P3-T15"]}, {"id": "P4", "name": "裝置驅動與 Device Model", "goal": "理解 Linux 如何抽象裝置與匯流排,能寫字元/區塊裝置驅動,並掌握 PCI 子系統。", "hours": "100–120", "weeks": "8–10", "gate": "P4-T04", "tasks": ["P4-T01", "P4-T02", "P4-T03", "P4-T04", "P4-T05"]}, {"id": "P5", "name": "Block Layer、儲存堆疊與 NVMe", "goal": "深入理解從 VFS 到裝置的整條儲存堆疊、blk-mq,以及 NVMe 協定與 Linux NVMe 驅動。", "hours": "120–150", "weeks": "10–12", "gate": "P5-T06", "tasks": ["P5-T01", "P5-T02", "P5-T03", "P5-T04", "P5-T05", "P5-T06", "P5-T07"]}, {"id": "P6", "name": "DMA、IOMMU 與 P2PDMA", "goal": "精通 Linux DMA API、IOMMU 角色,以及 PCIe peer-to-peer DMA(NVMe↔GPU 直通)。", "hours": "70–90", "weeks": "6–8", "gate": "P6-T05", "tasks": ["P6-T01", "P6-T02", "P6-T03", "P6-T04", "P6-T05"]}, {"id": "P7", "name": "GPU/CUDA 整合與 RAID parity 數學", "goal": "理解軟體 RAID、RAID-5/6 parity 數學、lib/raid6 實作,以及用 GDS/CUDA 把 parity offload 到 GPU。", "hours": "70–90", "weeks": "6–8", "gate": "P7-T06", "tasks": ["P7-T01", "P7-T02", "P7-T03", "P7-T04", "P7-T05", "P7-T06"]}]};
+const READY = ["P0-T01", "P0-T02", "P0-T03", "P0-T04", "P0-T05", "P0-T06", "P0-T07", "P0-T08", "P0-T09", "P0-T10", "P0-T11", "P0-T12", "P1-T01", "P1-T02", "P1-T03", "P1-T04", "P1-T05", "P1-T06", "P1-T07", "P1-T08", "P1-T09", "P1-T10", "P1-T11", "P2-T01", "P2-T02", "P2-T03", "P2-T04", "P2-T05", "P2-T06", "P2-T07", "P2-T08", "P3-T01", "P3-T02", "P3-T03", "P3-T04", "P3-T05", "P3-T06", "P3-T07", "P3-T08", "P3-T09", "P3-T10", "P3-T11", "P3-T12", "P3-T13", "P3-T14", "P3-T15", "P4-T01", "P4-T02", "P4-T03", "P4-T04", "P4-T05", "P5-T01", "P5-T02", "P5-T03", "P5-T04", "P5-T05", "P5-T06", "P5-T07", "P6-T01", "P6-T02", "P6-T03", "P6-T04", "P6-T05", "P7-T01", "P7-T02", "P7-T03", "P7-T04", "P7-T05", "P7-T06"]; // task IDs that have full pages written
+const SCOPE = {"P0-T01": "base", "P0-T02": "base", "P0-T03": "base", "P0-T04": "direct", "P0-T05": "base", "P0-T06": "direct", "P0-T07": "direct", "P0-T08": "direct", "P0-T09": "direct", "P0-T10": "direct", "P0-T11": "direct", "P0-T12": "base", "P1-T01": "base", "P1-T02": "indirect", "P1-T03": "direct", "P1-T04": "direct", "P1-T05": "direct", "P1-T06": "direct", "P1-T07": "indirect", "P1-T08": "direct", "P1-T09": "direct", "P1-T10": "direct", "P1-T11": "direct", "P2-T01": "base", "P2-T02": "direct", "P2-T03": "direct", "P2-T04": "indirect", "P2-T05": "direct", "P2-T06": "direct", "P2-T07": "direct", "P2-T08": "direct", "P3-T01": "direct", "P3-T02": "direct", "P3-T03": "direct", "P3-T04": "direct", "P3-T05": "direct", "P3-T06": "direct", "P3-T07": "direct", "P3-T08": "direct", "P3-T09": "direct", "P3-T10": "direct", "P3-T11": "direct", "P3-T12": "indirect", "P3-T13": "direct", "P3-T14": "direct", "P3-T15": "direct", "P4-T01": "direct", "P4-T02": "direct", "P4-T03": "direct", "P4-T04": "direct", "P4-T05": "indirect", "P5-T01": "direct", "P5-T02": "direct", "P5-T03": "direct", "P5-T04": "direct", "P5-T05": "direct", "P5-T06": "direct", "P5-T07": "direct", "P6-T01": "direct", "P6-T02": "direct", "P6-T03": "direct", "P6-T04": "direct", "P6-T05": "direct", "P7-T01": "direct", "P7-T02": "direct", "P7-T03": "direct", "P7-T04": "direct", "P7-T05": "direct", "P7-T06": "direct"}; // tid -> 'direct'|'indirect'|'base'
+const TITLES = {"P0-T01": "開發環境與編譯流程", "P0-T02": "指標基礎與位址思維", "P0-T03": "陣列、字串與指標的關係", "P0-T04": "struct、union、bitfield 與記憶體對齊", "P0-T05": "行程記憶體佈局(stack / heap / BSS / data / text)", "P0-T06": "手動記憶體管理與常見記憶體錯誤", "P0-T07": "函式指標與 callback —— kernel「ops 結構」的根", "P0-T08": "前處理器與巨集", "P0-T09": "C 型別系統、整數提升與帶號陷阱", "P0-T10": "未定義行為(UB)與編譯器最佳化的互動", "P0-T11": "位元操作(bitwise operations)", "P0-T12": "Phase 0 整合驗收 — 手刻動態陣列、鏈結串列與簡易配置器", "P1-T01": "CPU 執行模型與暫存器", "P1-T02": "記憶體階層與快取", "P1-T03": "快取一致性與對齊的硬體意義", "P1-T04": "虛擬記憶體、MMU、分頁與 TLB", "P1-T05": "行程 vs 執行緒", "P1-T06": "context switch 與系統呼叫、使用者/核心邊界", "P1-T07": "CPU 排程", "P1-T08": "並行基礎與 race condition", "P1-T09": "鎖、互斥與條件變數", "P1-T10": "原子操作、memory ordering 與 memory barrier", "P1-T11": "【環境里程碑】建置 QEMU/KVM kernel 開發環境", "P2-T01": "Big-O 與資料結構選型思維", "P2-T02": "kernel 侵入式鏈結串列 list_head", "P2-T03": "container_of 慣用法", "P2-T04": "雜湊表與 kernel hlist", "P2-T05": "二元搜尋樹到紅黑樹", "P2-T06": "radix tree 與 XArray", "P2-T07": "bitmap 與點陣圖在 kernel 的應用", "P2-T08": "整合驗收 — 讀懂一個真實 kernel 子系統的資料結構使用", "P3-T01": "kernel 架構總覽與原始碼樹佈局", "P3-T02": "從原始碼編譯與設定 kernel(Kconfig / menuconfig / make)", "P3-T03": "第一個 Loadable Kernel Module(init/exit、Kbuild、printk)", "P3-T04": "module 進階(EXPORT_SYMBOL、模組參數、模組堆疊、簽章)", "P3-T05": "kernel 編碼風格與 checkpatch", "P3-T06": "kernel 記憶體管理(一)—— page allocator 與 buddy system", "P3-T07": "kernel 記憶體管理(二)—— kmalloc / slab(SLUB) / vmalloc / GFP flags", "P3-T08": "kernel 同步(一)—— spinlock、mutex、semaphore 與選型", "P3-T09": "kernel 同步(二)—— atomic、RW lock、seqlock、per-CPU、completion", "P3-T10": "中斷與延後工作(hardirq / softirq / tasklet / workqueue / threaded IRQ)", "P3-T11": "memory barrier 與 Linux Kernel Memory Model(LKMM)", "P3-T12": "行程排程器內部(EEVDF,CFS 為歷史脈絡)", "P3-T13": "kernel 除錯(一)—— printk/動態除錯、Oops/panic 判讀、ftrace", "P3-T14": "kernel 除錯(二)—— KASAN、KCSAN、lockdep、kgdb、crash/kdump", "P3-T15": "整合驗收 + 第一個 patch — 寫一個含並行與除錯的完整 module", "P4-T01": "Linux Device Model(device / driver / bus / class / kobject / sysfs)", "P4-T02": "字元裝置驅動(file_operations / cdev / 註冊)", "P4-T03": "ioctl 與 mmap(user/kernel 控制與零拷貝資料面)", "P4-T04": "PCI 子系統(pci_driver / BAR / config space / MSI-X)", "P4-T05": "平台裝置與 device tree(概覽)", "P5-T01": "儲存堆疊總覽與 Linux Storage Stack Diagram", "P5-T02": "block layer 核心物件(bio / bio_vec / request / request_queue)", "P5-T03": "多佇列 block layer(blk-mq)", "P5-T04": "I/O 排程器(mq-deadline / BFQ / Kyber / none)", "P5-T05": "NVMe 協定基礎(控制器/命名空間、SQ/CQ、doorbell、PRP/SGL)", "P5-T06": "Linux NVMe 驅動原始碼(drivers/nvme/host/)", "P5-T07": "近期 block/storage 演進(LWN,2023–2025)", "P6-T01": "DMA 基礎與 DMA API(coherent vs streaming)", "P6-T02": "scatter-gather 與 DMA 同步", "P6-T03": "DMA 屏障與按門鈴(doorbell)的正確順序", "P6-T04": "IOMMU 與 VFIO", "P6-T05": "Peer-to-Peer DMA(p2pdma)—— NVMe↔GPU 直通的核心", "P7-T01": "Linux 軟體 RAID(md / dm-raid)與 raid5.c 概覽", "P7-T02": "RAID-5 parity 數學(XOR)與救援原理", "P7-T03": "RAID-6 parity 數學(GF(2⁸) Reed-Solomon)", "P7-T04": "in-kernel lib/raid6 實作與 SIMD 演算法選擇", "P7-T05": "GPUDirect Storage(GDS)/cuFile 與上游 P2PDMA 的銜接", "P7-T06": "CUDA 基礎與 parity offload 的端到端理解(整合驗收/課程總結業)"}; // tid -> short title
+
+const spine = document.getElementById('spine');
+REGISTRY.phases.forEach(ph=>{
+  const sec=document.createElement('section');
+  sec.className='phase';
+  sec.dataset.pid=ph.id;
+  const tasksHtml = ph.tasks.map(tid=>{
+    const ready = READY.includes(tid);
+    const scope = SCOPE[tid]||'base';
+    const title = TITLES[tid]||tid;
+    const isGate = (tid===ph.gate);
+    const href = ready ? ('tasks/'+tid+'.html') : '#';
+    const cls = ['task', ready?'is-ready':'is-stub'].join(' ');
+    const scopeLabel = scope==='direct'?'直接對應':scope==='indirect'?'間接相關':'基礎能力';
+    return `<a class="${cls}" href="${href}" data-tid="${tid}" data-title="${title.toLowerCase()}" data-scope="${scope}">
+      ${isGate?'<span class="gate-badge">關卡</span>':''}
+      <span class="tid">${tid}</span>
+      <div class="ttitle">${title}</div>
+      <div class="tfoot">
+        <span class="tdot"><span class="dot ${scope}"></span>${scopeLabel}</span>
+        <span>${ready?'閱讀 →':'—'}</span>
+      </div>
+    </a>`;
+  }).join('');
+  sec.innerHTML = `
+    <div class="phase-head">
+      <div class="phase-id">${ph.id}</div>
+      <div class="phase-meta">
+        <h2>${ph.name}</h2>
+        <div class="goal">${ph.goal}</div>
+      </div>
+      <div class="phase-stat">
+        <div><span class="big">${ph.tasks.length}</span> tasks</div>
+        <div>${ph.hours} 小時</div>
+        <div>${ph.weeks} 週</div>
+      </div>
+    </div>
+    <div class="task-grid">${tasksHtml}</div>`;
+  spine.appendChild(sec);
+});
+
+// === search ===
+const search=document.getElementById('search');
+search.addEventListener('input',e=>{
+  const q=e.target.value.trim().toLowerCase();
+  document.querySelectorAll('.task').forEach(t=>{
+    const hay=(t.dataset.tid+' '+t.dataset.title).toLowerCase();
+    t.classList.toggle('hidden', q && !hay.includes(q));
+  });
+  // hide empty phases
+  document.querySelectorAll('.phase').forEach(p=>{
+    const any=[...p.querySelectorAll('.task')].some(t=>!t.classList.contains('hidden'));
+    p.classList.toggle('hidden', q && !any);
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P0-T05 · 行程記憶體佈局(stack / heap / BSS / data / text)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P0 · 深度 C、記憶體與未定義行為</span>
+  <span class="scope-pill base">基礎能力</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p0-t05">P0-T05 · 行程記憶體佈局</h1>
+<blockquote>
+<p><strong>一句話</strong>:你的程式跑起來時,它的記憶體被分成幾個用途不同的「區」——程式碼一區、全域變數一區、會長大的 heap 一區、會伸縮的 stack 一區。知道每個變數住哪一區,你就能預測它的生命週期,也就讀得懂「為什麼回傳區域變數的指標是災難」。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>在 JS/PHP 裡,你不關心變數「住哪」。垃圾回收器(GC)替你管理一切——東西沒人用了,它自動清掉。你從來沒被迫想過「這個變數活多久?誰負責回收它?它住在記憶體哪一塊?」</p>
+<p>C 沒有 GC。變數活多久、住在哪、誰回收,<strong>全是你的責任</strong>。要扛起這個責任,你得先有一張地圖:一支執行中的程式,它的記憶體到底被分成哪些區、各區的脾氣(生命週期、能不能寫、預設值)是什麼。</p>
+<p>這張地圖之所以關鍵,有三個原因:</p>
+<ol>
+<li><strong>它解釋了一個 C 新手必踩的致命坑</strong>——「回傳指向區域變數的指標」為什麼是災難(因為那塊記憶體在函式結束的瞬間就失效了)。這個坑在 kernel 裡同樣致命,而且更難 debug。</li>
+<li><strong>它是理解 Phase 1 虛擬記憶體的基礎</strong>。每個行程都有自己的這張地圖(自己的位址空間),而 kernel 負責維護它們。</li>
+<li><strong>它連到 user/kernel 邊界</strong>。kernel 本身也是一塊有佈局的記憶體;理解「使用者程式的位址空間長怎樣」,是之後理解「kernel 空間 vs 使用者空間」的前置。</li>
+</ol>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P0-T04.html">P0-T04</a>(你已懂變數在記憶體有位址、struct 的佈局)。</li>
+<li>自我檢測:
+  1. 你能用 <code>%p</code> 印出一個變數的位址嗎?(這課靠「比較位址大小」來推斷變數住哪一區)
+  2. 你還記得 <a class="xlink" href="P0-T02.html">P0-T02</a> 的「野指標 / 懸空」概念嗎?這課會解釋它的根本成因。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 一張佈局地圖 → (2)~(6) 逐區解說(text/rodata、data、BSS、heap、stack)→ (7) stack 的生命週期與懸空指標 → (8) heap 與 stack 為何相向生長</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 一張地圖:執行中程式的記憶體分區</h3>
+<p>當你的程式被載入執行,它的記憶體(行程的「位址空間」)被分成幾個區段。慣例上由<strong>低位址到高位址</strong>排列:</p>
+<p><pre class="mermaid">flowchart TB
+    T["text(程式碼區)<br/>你的機器碼指令 · 唯讀<br/>【低位址】"]
+    R["rodata(唯讀資料)<br/>字串常數、const"]
+    D["data(已初始化全域)<br/>有給初值的全域 / static 變數"]
+    B["BSS(未初始化全域)<br/>沒給初值的全域 / static · 啟動時歸零"]
+    H["heap(堆積)<br/>malloc 配置的 · 向上長大 ↑"]
+    GAP["⋮ 中間是大片未使用的空間 ⋮<br/>(讓 heap 和 stack 各自伸縮)"]
+    S["stack(堆疊)<br/>區域變數、函式呼叫記錄 · 向下長大 ↓<br/>【高位址】"]
+    T --- R --- D --- B --- H --- GAP --- S
+    style T fill:#6fa8b8,color:#10100e
+    style H fill:#8a9a5b,color:#10100e
+    style S fill:#e8a33d,color:#10100e
+    style GAP fill:#24221d,color:#cfc6b0
+</pre></p>
+<p>接下來五節,逐區說明它們各自的脾氣。記住一個核心問題貫穿全部:<strong>這一區的東西,活多久?誰負責清理?</strong></p>
+<hr />
+<h3 id="2-text-rodata">2. text 與 rodata:唯讀的程式碼與常數</h3>
+<p><strong>text(程式碼區)</strong>:存放你編譯出來的機器碼指令(回顧 <a class="xlink" href="P0-T01.html">P0-T01</a>,這就是連結後可執行檔裡的那些 CPU 指令)。它是<strong>唯讀</strong>的——程式不能在執行時修改自己的指令。</p>
+<p><strong>為什麼唯讀?</strong> 防止意外或惡意竄改程式碼。如果程式能改自己的指令,一個 bug 或攻擊就可能把程式改成做壞事。硬體層級的唯讀保護,讓「程式碼」這塊不可寫。</p>
+<p><strong>rodata(read-only data,唯讀資料)</strong>:字串字面值(<code>"hello"</code>)、<code>const</code> 修飾的常數。也是唯讀。</p>
+<p>這解釋了一個經典崩潰:</p>
+<pre><code class="language-c">char *s = &quot;hi&quot;;    // &quot;hi&quot; 這個字串字面值住在唯讀的 rodata
+s[0] = 'H';        // 崩潰!你想改一塊唯讀記憶體
+</code></pre>
+<p><pre class="mermaid">flowchart LR
+    CODE["char *s = &quot;hi&quot;;"]
+    CODE --> WHERE["字串 &quot;hi&quot; 被放在 rodata(唯讀區)<br/>s 只是指向它"]
+    WHERE --> TRY["s[0] = 'H' 試圖寫入 rodata"]
+    TRY --> CRASH["硬體拒絕寫唯讀區 → 崩潰"]
+    style WHERE fill:#6fa8b8,color:#10100e
+    style CRASH fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>這個「指向唯讀字面值」vs「複製到可寫陣列」的差別,值得用一張圖釘清楚——它是新手極常踩的崩潰來源:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph ptr["char *s = &quot;hi&quot;(指標指向字面值)"]
+        SP["s(指標,在 stack)"]
+        LIT["&quot;hi&quot; 字面值<br/>在 rodata(唯讀)"]
+        SP -->|"指向"| LIT
+        WP["s[0]='H' → 寫 rodata → 崩潰 ✗"]
+    end
+    subgraph arr["char s[] = &quot;hi&quot;(複製到陣列)"]
+        SA["s 是一個 char 陣列<br/>在可寫的區域(stack/data)<br/>啟動時把 &quot;hi&quot; 複製進來"]
+        WA["s[0]='H' → 改可寫記憶體 → OK ✓"]
+    end
+    style LIT fill:#6fa8b8,color:#10100e
+    style WP fill:#c2603a,color:#f4ecd8
+    style SA fill:#8a9a5b,color:#10100e
+    style WA fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>差別在:<code>char *s</code> 只是「指向那個唯讀字面值」,而 <code>char s[]</code> 是「把字面值<strong>複製</strong>一份到可寫的陣列」。前者改不得,後者隨你改。</p>
+<hr />
+<h3 id="3-data">3. data:有初值的全域變數</h3>
+<p><strong>data 區</strong>:存放<strong>有給初始值</strong>的全域變數和 static 變數。例如:</p>
+<pre><code class="language-c">int g = 42;            // 全域,有初值 → data 區
+static int s = 7;      // static,有初值 → data 區
+</code></pre>
+<p>它們的初值(42、7)會被存進執行檔裡,程式載入時複製到記憶體的 data 區。這些變數從程式開始到結束都存在(生命週期 = 整個程式),不像區域變數會隨函式來去。</p>
+<hr />
+<h3 id="4-bss">4. BSS:沒初值的全域變數(啟動時歸零)</h3>
+<p><strong>BSS 區</strong>:存放<strong>沒給初始值</strong>的全域 / static 變數。例如:</p>
+<pre><code class="language-c">int g;                 // 全域,無初值 → BSS
+static int arr[1000];  // static,無初值 → BSS
+</code></pre>
+<p>BSS 有個聰明的設計:<strong>它不佔執行檔的空間</strong>。想想看——一個一萬個元素的全域陣列,如果沒給初值,難道要在執行檔裡存一萬個 0 嗎?沒必要。所以執行檔裡只記「BSS 需要多大」,程式啟動時由系統<strong>一次把整塊 BSS 清成 0</strong>。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph file["執行檔(磁碟上)"]
+        DATA_F["data:存實際初值<br/>(int g=42 → 存 42)"]
+        BSS_F["BSS:只存『需要多大』<br/>(不存一堆 0,省空間)"]
+    end
+    subgraph mem["載入記憶體後"]
+        DATA_M["data:複製初值進來"]
+        BSS_M["BSS:系統一次清成 0"]
+    end
+    DATA_F --> DATA_M
+    BSS_F -->|"啟動時 memset 0"| BSS_M
+    style BSS_F fill:#6fa8b8,color:#10100e
+    style BSS_M fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>這也解釋了 C 的一個你可能背過的規則</strong>:全域變數預設是 0,但區域變數預設是垃圾值。為什麼待遇不同?因為<strong>全域變數在 BSS 會被啟動時歸零,而區域變數在 stack 不會</strong>(stack 空間是重複使用的,上面殘留著前一個函式留下的舊資料)。規則背後是「住在哪一區」的差異。</p>
+<hr />
+<h3 id="5-heap">5. heap:你親手管理的動態區</h3>
+<p><strong>heap(堆積)</strong>:你用 <code>malloc</code> 動態配置的記憶體住這裡。它的特點:</p>
+<ul>
+<li><strong>生命週期由你掌控</strong>:從 <code>malloc</code> 配置,活到你 <code>free</code> 它為止。不像區域變數隨函式消失,heap 上的東西「函式回傳了也還在」——這正是它的用途。</li>
+<li><strong>向高位址方向長大</strong>:你每多 <code>malloc</code> 一塊,heap 往高位址延伸。</li>
+<li><strong>責任全在你</strong>:沒有 GC,忘了 <code>free</code> 就洩漏(這是下一課 <a class="xlink" href="P0-T06.html">P0-T06</a> 的主題)。</li>
+</ul>
+<p>heap 是「需要活得比某個函式久」的資料的家。下一課會深入它的管理;這課你只要記住它在地圖上的位置和「生命週期由你掌控」這個本質。</p>
+<hr />
+<h3 id="6-stack">6. stack:自動、快速,但短命</h3>
+<p><strong>stack(堆疊)</strong>:區域變數、函式參數、函式呼叫的記錄住這裡。它的特點:</p>
+<ul>
+<li><strong>自動管理</strong>:你不需要手動配置/釋放區域變數,進出函式時 stack 自動長出/縮回。</li>
+<li><strong>向低位址方向長大</strong>:和 heap 相向而行(第 8 節解釋為什麼)。</li>
+<li><strong>短命</strong>:這是重點,下一節專門講。</li>
+</ul>
+<p>每次呼叫一個函式,stack 上就<strong>長出</strong>一塊空間,叫 <strong>stack frame</strong>,專門放這次呼叫的區域變數和參數。函式一回傳,這塊 frame 立刻<strong>縮回去</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph call["呼叫 foo() 時"]
+        F1["main 的 frame"]
+        F2["foo 的 frame<br/>(foo 的區域變數住這)"]
+        F1 --- F2
+    end
+    subgraph ret["foo 回傳後"]
+        R1["main 的 frame"]
+        R2["foo 的 frame 已縮回<br/>★ foo 的區域變數瞬間失效 ★"]
+        R1 -.- R2
+    end
+    F2 -->|"foo 回傳"| R1
+    style F2 fill:#8a9a5b,color:#10100e
+    style R2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<blockquote>
+<p><strong>比喻</strong>:stack 像一疊便利貼。呼叫函式 = 在最上面貼一張新便利貼,寫上這次的區域變數。函式回傳 = 撕掉最上面那張。撕掉之後,那張便利貼上寫的東西就沒了——而且那個位置很快會被下一張便利貼覆蓋。</p>
+</blockquote>
+<hr />
+<h3 id="7">7. 致命坑:回傳指向區域變數的指標</h3>
+<p>第 6 節的「短命」直接導致 C 新手最致命的錯誤之一。看這段:</p>
+<pre><code class="language-c">int *make_bad(void) {
+    int local = 42;
+    return &amp;local;     // 災難:回傳一張即將被撕掉的便利貼的地址
+}
+</code></pre>
+<p><code>local</code> 住在 <code>make_bad</code> 的 stack frame。函式一回傳,frame 縮回,<code>local</code> 失效。呼叫者拿到的指標,指向一塊「<strong>已經不再屬於它</strong>」的記憶體——這就是<strong>懸空指標(dangling pointer)</strong>(回顧 <a class="xlink" href="P0-T02.html">P0-T02</a> 提過的概念,這裡看到它的根本成因)。</p>
+<p>逐步看災難怎麼發生:</p>
+<p><pre class="mermaid">flowchart TB
+    S1["make_bad 執行中:<br/>local=42 住在 make_bad 的 frame<br/>回傳 &local(那塊的位址)"]
+    S2["make_bad 回傳:<br/>它的 frame 縮回<br/>local 那塊記憶體不再屬於任何人"]
+    S3["呼叫者拿到指標 p,指向那塊已失效的記憶體<br/>(此刻可能還『碰巧』讀到 42)"]
+    S4["下次任何函式呼叫,<br/>新的 frame 覆蓋了那塊記憶體<br/>→ p 指向的值變成別的東西"]
+    S5["時好時壞、極難重現的 bug"]
+    S1 --> S2 --> S3 --> S4 --> S5
+    style S2 fill:#e8a33d,color:#10100e
+    style S4 fill:#c2603a,color:#f4ecd8
+    style S5 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>最陰險的是 S3→S4:剛回傳時,那塊記憶體<strong>可能還沒被覆蓋</strong>,所以 p 讀起來「好像」還是 42,程式看似正常。但下次有別的函式呼叫覆蓋了它,值就變了。這種「有時對、有時錯」的 bug 最難抓。</p>
+<p><strong>正解</strong>:要回傳「活得比函式久」的東西,得用 <strong>heap</strong>(<code>malloc</code>),因為 heap 的記憶體不隨函式回傳而消失:</p>
+<pre><code class="language-c">int *make_good(void) {
+    int *p = malloc(sizeof(int));   // 配置在 heap
+    *p = 42;
+    return p;     // 安全:heap 的東西函式回傳後仍存在
+}                 // ……但呼叫者要負責 free(下一課的主題)
+</code></pre>
+<hr />
+<h3 id="8-heap-stack">8. heap 向上、stack 向下:為什麼相向?</h3>
+<p>回到地圖:heap 從中間往<strong>高</strong>位址長,stack 從高位址往<strong>低</strong>處長,兩者相向,中間留一大片空白。</p>
+<p><pre class="mermaid">flowchart TB
+    H["heap 起點(較低)"]
+    Hgrow["heap 向上長大 ↑↑↑"]
+    GAP["⋮ 共享的空白緩衝區 ⋮<br/>(誰需要就用誰的)"]
+    Sgrow["stack 向下長大 ↓↓↓"]
+    S["stack 起點(較高)"]
+    H --> Hgrow --> GAP --> Sgrow --> S
+    style GAP fill:#24221d,color:#cfc6b0
+    style Hgrow fill:#8a9a5b,color:#10100e
+    style Sgrow fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>為什麼這樣設計?</strong> 好處是「彈性共享」:兩者從兩端往中間長,共用中間那片空白,不必預先切死「heap 只能用這麼多、stack 只能用那麼多」。哪邊需要多一點,就往中間多吃一點。</p>
+<p><strong>壞處</strong>:萬一其中一個長到撞上另一個——stack 暴衝(例如無窮遞迴,一直貼便利貼貼到撞進 heap),就出事,這叫 <strong>stack overflow</strong>(沒錯,那個著名網站的名字就來自這個經典崩潰)。</p>
+<hr />
+<h2 id="_4">打通關:把佈局收攏成一個心智模型</h2>
+<p>把五個區段按「生命週期 + 能不能寫 + 誰管理」收攏成一張表/圖,這就是你看待程式記憶體的心智模型:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph longlife["活整個程式(全域生命週期)"]
+        TEXT["text/rodata:唯讀,放程式碼與常數"]
+        DATA["data:可寫,有初值的全域"]
+        BSS["BSS:可寫,無初值全域,啟動歸零"]
+    end
+    subgraph youmanage["你掌控生命週期"]
+        HEAP["heap:malloc 配置,活到 free<br/>(忘了 free → 洩漏)<br/>能跨函式存活 ← 用來回傳長壽資料"]
+    end
+    subgraph autolife["隨函式來去(短命)"]
+        STACK["stack:區域變數,函式回傳即失效<br/>(回傳它的指標 → 懸空)"]
+    end
+    style TEXT fill:#6fa8b8,color:#10100e
+    style HEAP fill:#8a9a5b,color:#10100e
+    style STACK fill:#e8a33d,color:#10100e
+</pre></p>
+<p>一句話總結這個心智模型:<strong>東西住在哪一區,就決定了它活多久、能不能改、誰負責清理。</strong> 「回傳區域變數指標 = 懸空」是因為 stack 短命;「要長壽資料就用 heap」是因為 heap 由你掌控生命週期;「全域預設為 0」是因為 BSS 啟動歸零。所有這些「規則」,追到底都是「住在哪一區」的必然結果——這正是把零散規則變成一個連貫理解的關鍵。</p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為區域變數的位址固定不變。</strong>
+區域變數住 stack,每次函式呼叫的 frame 位置可能不同(尤其有遞迴、或不同呼叫路徑時)。別把區域變數的位址記下來「下次再用」。</p>
+<p><strong>誤區二(致命):回傳指向區域變數的指標。</strong>
+如第 7 節,函式回傳後 stack frame 失效,指標變懸空,造成時好時壞的 bug。要回傳長壽資料,用 heap 配置。這個坑在 kernel 裡同樣致命。</p>
+<p><strong>誤區三:混淆 BSS 與 data。</strong>
+<code>int g = 5;</code>(有初值)在 data 區;<code>int g;</code>(無初值)在 BSS,啟動時被歸零。理解這個區別,你才懂為什麼「全域變數預設為 0,但區域變數預設是垃圾」。</p>
+<p><strong>誤區四:試圖修改字串字面值。</strong>
+<code>char *s = "hi"; s[0]='H';</code> 會崩潰,因為 "hi" 在唯讀的 rodata。要可改,用 <code>char s[] = "hi";</code>(複製到可寫區)。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。</p>
+<p><strong>任務 A — 用位址推斷分區</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+int g_init = 42;        // data 區
+int g_uninit;           // BSS 區
+int main(void) {
+    static int s = 7;   // data 區
+    int local = 1;      // stack
+    int *heap = malloc(sizeof(int));  // heap
+    printf(&quot;text (main)    : %p\n&quot;, (void*)main);
+    printf(&quot;data (g_init)  : %p\n&quot;, (void*)&amp;g_init);
+    printf(&quot;bss  (g_uninit): %p\n&quot;, (void*)&amp;g_uninit);
+    printf(&quot;heap           : %p\n&quot;, (void*)heap);
+    printf(&quot;stack(local)   : %p\n&quot;, (void*)&amp;local);
+    free(heap);
+    return 0;
+}
+</code></pre>
+<p>觀察印出的位址:text/data/bss 的位址較低且相近,heap 在中間,stack 的位址明顯高很多。<strong>對照第 1 節的地圖,確認每個變數落在哪一區。</strong></p>
+<p><strong>任務 B — 看執行檔的區段大小,並驗證 BSS 特性</strong></p>
+<pre><code class="language-bash">gcc -o prog prog.c
+size prog        # 印出 text data bss 三欄的 bytes 數
+</code></pre>
+<p>然後做這個實驗:把 <code>g_uninit</code> 改成一個大陣列 <code>int g_uninit[1000];</code>,重編後再 <code>size</code>——觀察 <strong>bss 欄變大(多了約 4000 bytes),但 data 欄沒變</strong>。這親眼證明了第 4 節說的「未初始化的大陣列只佔 BSS、不佔執行檔空間」。再把它改成<strong>有初值</strong>的 <code>int g_uninit[1000] = {1};</code>,重編後看——這次連執行檔本身都變大了(初值要存進檔案)。</p>
+<p><strong>任務 C — 製造懸空指標(在 VM 裡觀察)</strong>
+寫出第 7 節的 <code>make_bad</code>,在 <code>main</code> 裡接住它的回傳值,<strong>立刻</strong>印一次(可能還是 42),然後呼叫另一個會用到 stack 的函式(隨便印點東西),<strong>再印一次</strong>那個指標的值——觀察它可能變了。寫一句話解釋:為什麼第一次「碰巧對」,第二次卻變了?</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 宣告 1 個全域、1 個 static、1 個區域、1 個 <code>malloc</code> 配置的變數,印出四者位址後正確分類其所屬區段。
+2. ☐ 用 <code>size prog</code> 讀出 text/data/bss 三欄數值,並透過「把全域陣列改大」的實驗,解釋哪個變數影響了 bss(且未影響 data)。
+3. ☐ 能解釋「回傳區域變數指標」為何產生懸空指標(連結到 stack frame 的生命週期)。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能分類各變數住哪一區。
+- <strong>80(熟練)</strong>:能畫出完整佈局圖,解釋 stack/heap 的生長方向與生命週期差異。
+- <strong>100(精通)</strong>:能連結到虛擬記憶體與行程位址空間(預告 Phase 1),並完整解釋懸空指標的成因與正解。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:基礎能力。理解 user space 程式的位址空間,是後續理解 user/kernel 邊界(<a class="xlink" href="P1-T06.html">P1-T06</a>)與 <code>mmap</code>(<a class="xlink" href="P4-T03.html">P4-T03</a>)的前置。</li>
+<li><strong>這課餵給未來的</strong>:heap 的概念 → <a class="xlink" href="P0-T06.html">P0-T06</a> 手動記憶體管理;「行程位址空間」→ Phase 1 虛擬記憶體;懸空指標 → <a class="xlink" href="P0-T06.html">P0-T06</a> use-after-free。</li>
+<li><strong>下一步 → <a class="xlink" href="P0-T06.html">P0-T06</a> 手動記憶體管理與常見記憶體錯誤</strong>:你已經知道 heap 是你親手管理的區、它能讓資料活得比函式久。下一課就正式面對「親手管理」的全部重量——<code>malloc</code>/<code>free</code>,以及沒有 GC 兜底時,那些會咬你的記憶體錯誤(use-after-free、洩漏、越界)。這正是 kernel 程式設計的日常風險。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P0-T04.html">← P0-T04 struct、union、bitfield 與記憶體對齊</a><a class="pn next" href="P0-T06.html">P0-T06 手動記憶體管理與常見記憶體錯誤 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

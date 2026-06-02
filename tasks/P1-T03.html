@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T03 · 快取一致性與對齊的硬體意義</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t03">P1-T03 · 快取一致性與對齊的硬體意義</h1>
+<blockquote>
+<p><strong>一句話</strong>:多核心時代,每個核心有自己的 cache,於是冒出兩個問題:一個核心改了資料,別人怎麼知道(cache coherence)?以及一個陰險的效能殺手——兩個執行緒寫「不同變數」卻因為它們擠在同一條 cache line 上而互相拖累(false sharing)。這直接關係你產品的多核擴展性。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>上一課 <a class="xlink" href="P1-T02.html">P1-T02</a> 講的是<strong>單核心</strong>的 cache。但你的伺服器是<strong>多核心</strong>的,而多核心讓 cache 的故事多了一個關鍵轉折:<strong>每個核心有它自己的 L1/L2 cache</strong>。</p>
+<p>這立刻產生一個問題:如果核心 A 和核心 B 都把同一個變數 <code>x</code> 載入各自的 cache,然後 A 把 <code>x</code> 改成新值——<strong>B 的 cache 裡還是舊的 <code>x</code></strong>,怎麼辦?如果不處理,B 會用到過時的資料,程式就錯了。硬體解決這個問題的機制,叫<strong>快取一致性(cache coherence)</strong>。</p>
+<p>更陰險的是另一個問題:因為 cache 以「整條 line(64 bytes)」為單位管理(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a>),兩個<strong>完全不同</strong>的變數,只要它們在記憶體上靠得夠近、落在同一條 cache line 上,當兩個核心各自頻繁寫其中一個,硬體的一致性機制會讓這條 line 在兩個核心間不斷「搶來搶去」,造成巨大的效能損失——即使這兩個變數根本無關。這叫 <strong>false sharing(偽共享)</strong>。</p>
+<p>為什麼這對你是 <code>scope: direct</code>(直接對應工作)?因為 kernel 為了多核效能,有大量設計專門在對付這些問題:<strong>per-CPU 變數</strong>(每個核心一份,避免互搶)、<code>____cacheline_aligned</code>(把資料對齊到 cache line 邊界,避免 false sharing)、<strong>NVMe 多佇列</strong>(每個核心一條 I/O 佇列,正是為了避開 cache 競爭)。這些你產品會直接接觸的設計,動機全在這一課。看懂 false sharing,你才懂為什麼 kernel 要費那麼大勁做 per-CPU。</p>
+<p>這一課也是你那條<strong>「記憶體順序/可見性」主線</strong>的起點(P1-T03 → <a class="xlink" href="P1-T10.html">P1-T10</a> → <a class="xlink" href="P3-T11.html">P3-T11</a> → <a class="xlink" href="P6-T03.html">P6-T03</a>):這裡先建立「多核心下,一個核心的寫入何時、如何讓別的核心看見」的硬體直覺。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T02.html">P1-T02</a>(你已懂 cache line 64 bytes、cache 一次載入一整條)。</li>
+<li>自我檢測:
+  1. 你能說出「為什麼 CPU 一次載入 64 bytes 而非單一 byte」嗎?(空間局部性 + cache line)這課整個建立在 cache line 上。
+  2. 你寫過多執行緒程式嗎?(用 pthread 開兩個執行緒。)這課的實驗需要。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 多核心的難題:各有 cache → (2) cache coherence 與 MESI 概念 → (3) false sharing 的機制 → (4) 用對齊/padding 解決 → (5) 釐清:coherence ≠ 記憶體順序 → (6) 連到 kernel:per-CPU 與 cache line 對齊</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-cache">1. 多核心的難題:同一個變數,各核心 cache 裡各一份</h3>
+<p><pre class="mermaid">flowchart TB
+    subgraph core_a["核心 A"]
+        CA["A 的 cache<br/>x = 5(舊)"]
+    end
+    subgraph core_b["核心 B"]
+        CB["B 的 cache<br/>x = 5(舊)"]
+    end
+    MEM["主記憶體<br/>x = 5"]
+    CA -.快取自.-> MEM
+    CB -.快取自.-> MEM
+    PROBLEM["問題:A 把它 cache 裡的 x 改成 99<br/>→ B 的 cache 還是 5<br/>→ 若不處理,B 會用到過時的值!"]
+    style PROBLEM fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>這就是多核心 cache 的核心難題:<strong>同一份資料在多個核心的 cache 裡有副本,其中一個被改了,其他的就過時了</strong>。如果硬體不管,多核心程式的共享資料會充滿這種「我看到的和你看到的不一樣」的錯亂。</p>
+<p>硬體的解法是讓各核心的 cache 之間「互相通氣」,維持一個共識:任何時刻,大家對同一塊資料的認知要一致。這個機制就是 cache coherence。</p>
+<hr />
+<h3 id="2-cache-coherence-mesi">2. cache coherence 與 MESI(概念層級)</h3>
+<p>cache coherence 協定讓各核心的 cache <strong>互相監聽、協調</strong>,確保「不會有兩個核心同時握著同一塊資料的不同有效值」。最經典的協定叫 <strong>MESI</strong>,名字來自 cache line 的四個狀態。你<strong>不需要精通</strong>細節,只要建立概念直覺:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph mesi["MESI:一條 cache line 在某核心 cache 中的四種狀態"]
+        M["Modified(已修改)<br/>我改過了,只有我有最新版,<br/>記憶體是舊的"]
+        E["Exclusive(獨佔)<br/>只有我有這份,且和記憶體一致"]
+        S["Shared(共享)<br/>多個核心都有這份唯讀副本,<br/>都和記憶體一致"]
+        I["Invalid(無效)<br/>我這份已過時,不能用<br/>(被別人改了)"]
+    end
+    style M fill:#c2603a,color:#f4ecd8
+    style E fill:#8a9a5b,color:#10100e
+    style S fill:#6fa8b8,color:#10100e
+    style I fill:#24221d,color:#cfc6b0
+</pre></p>
+<p>核心精神:<strong>當一個核心要「寫」一條 cache line,它必須先取得這條 line 的「獨佔/修改」權,並讓其他核心持有的這條 line 副本變成「Invalid」(失效)。</strong> 看一次寫入如何引發協調:</p>
+<p><pre class="mermaid">flowchart TB
+    S1["初始:A 和 B 的 cache 都有 x(狀態 Shared)"]
+    S2["A 要寫 x:<br/>先廣播『我要獨佔 x 這條 line』"]
+    S3["B 收到:把自己的 x 副本標記為 Invalid<br/>(我這份作廢了)"]
+    S4["A 取得獨佔權,把 x 改成 99<br/>(狀態 Modified)"]
+    S5["之後 B 想讀 x:<br/>發現自己是 Invalid<br/>→ 必須重新取得最新值(從 A 或記憶體)"]
+    S1 --> S2 --> S3 --> S4 --> S5
+    style S3 fill:#c2603a,color:#f4ecd8
+    style S4 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>結論:<strong>coherence 保證了「正確性」</strong>——B 不會永遠用著過時的 x,它的舊副本會被作廢、被迫重新取得最新值。但注意那個「廣播、作廢、重新取得」的過程<strong>有成本</strong>,而這個成本正是下一節 false sharing 災難的來源。</p>
+<hr />
+<h3 id="3-false-sharing">3. false sharing:兩個無關變數的暗中互鬥</h3>
+<p>現在揭露那個陰險的效能殺手。關鍵前提來自 <a class="xlink" href="P1-T02.html">P1-T02</a>:<strong>cache 以整條 line(64 bytes)為單位</strong>。所以一致性協定也是<strong>以 cache line 為單位</strong>運作的——它作廢的是「整條 line」,不是「單個變數」。</p>
+<p>設想兩個變數 <code>a</code> 和 <code>b</code>,它們在記憶體上相鄰,<strong>落在同一條 cache line 上</strong>。核心 A 拼命寫 <code>a</code>,核心 B 拼命寫 <code>b</code>。它們寫的是<strong>不同變數</strong>,邏輯上毫無關係,應該互不干擾才對。但是:</p>
+<p><pre class="mermaid">flowchart TB
+    LINE["一條 cache line(64 bytes)<br/>同時裝著 a 和 b"]
+    S1["核心 A 寫 a:<br/>取得整條 line 獨佔<br/>→ 讓 B 的這條 line 失效(Invalid)"]
+    S2["核心 B 想寫 b:<br/>發現自己的 line 被作廢了<br/>→ 重新取得整條 line 獨佔<br/>→ 反過來讓 A 的失效"]
+    S3["核心 A 又要寫 a:<br/>發現又被作廢了<br/>→ 再次搶回..."]
+    S4["這條 line 在 A、B 間<br/>無止盡地『乒乓』來回<br/>每次都付出協調成本"]
+    LINE --> S1 --> S2 --> S3 --> S4
+    style S4 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>這就是 false sharing</strong>:<code>a</code> 和 <code>b</code> 明明是不同變數、邏輯上無關,卻因為<strong>共處一條 cache line</strong>,使得「寫 a」和「寫 b」透過一致性協定互相作廢對方的 cache,造成這條 line 在兩個核心間瘋狂乒乓。結果是:兩個執行緒各自寫各自的變數,卻慢得像在搶同一個東西——明明沒有真正的共享,卻有共享的代價,所以叫「<strong>偽</strong>共享」。</p>
+<p>它的陰險在於:<strong>程式碼看起來完全正確</strong>(你確實在操作不同變數),沒有任何 race、沒有 bug,只是莫名其妙地慢。不懂 false sharing 的人會百思不得其解。</p>
+<hr />
+<h3 id="4-padding-cache-line">4. 解法:用對齊/padding 把它們分到不同 cache line</h3>
+<p>既然 false sharing 的根源是「兩個變數擠在同一條 cache line」,解法就直接:<strong>把它們分開到不同的 cache line 上</strong>。手段是「對齊」或「填充(padding)」——讓每個變數獨佔一條 line。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph before["false sharing(壞):同一條 line"]
+        direction LR
+        L1["cache line<br/>[ a ][ b ][...空...]<br/>a、b 共處一條 → 乒乓"]
+    end
+    subgraph after["對齊後(好):各佔一條 line"]
+        direction LR
+        L2["cache line 1<br/>[ a ][...padding 填滿 64B...]"]
+        L3["cache line 2<br/>[ b ][...padding 填滿 64B...]"]
+    end
+    before -->|"用 alignas(64) 或 padding<br/>把 a、b 推到不同 line"| after
+    style L1 fill:#c2603a,color:#f4ecd8
+    style L2 fill:#8a9a5b,color:#10100e
+    style L3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>具體做法(C11):用 <code>alignas(64)</code> 強制變數對齊到 cache line 邊界,或在 struct 成員間插入 padding 把它們撐開超過 64 bytes:</p>
+<pre><code class="language-c">#include &lt;stdalign.h&gt;
+struct counters {
+    alignas(64) long a;   // a 對齊到 64,獨佔一條 line
+    alignas(64) long b;   // b 也對齊到 64,落在下一條 line
+};
+</code></pre>
+<p>這樣 A 寫 <code>a</code>、B 寫 <code>b</code> 就各自動各自那條 line,不再互相作廢——乒乓消失,效能恢復。<strong>代價是多用了一些記憶體</strong>(每個變數撐到佔一條 line),但換來多核心下的效能,通常非常值得。</p>
+<p>(回顧 <a class="xlink" href="P0-T04.html">P0-T04</a> 的對齊與 padding——當時是為了「滿足硬體對齊要求」,這裡是為了「避免 false sharing」。同一個 padding 工具,不同的目的。)</p>
+<hr />
+<h3 id="5-coherence">5. 關鍵釐清:coherence 不等於「記憶體順序」</h3>
+<p>這是一個極重要、也極容易混淆的點,單獨拉出來,而且它是你那條「記憶體順序」主線的關鍵伏筆。</p>
+<p><strong>cache coherence 保證的是</strong>:對<strong>單一</strong>一塊資料,所有核心最終會看到一致的值(不會有人永遠卡在舊值)。</p>
+<p><strong>但 coherence 不保證</strong>:<strong>多個不同變數</strong>的寫入,在別的核心眼中<strong>以什麼順序出現</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    COH["cache coherence 管的:<br/>單一變數 x 的副本一致性<br/>(B 不會永遠看到舊的 x)"]
+    ORD["coherence 不管的:<br/>『A 先寫 x 再寫 y』這個順序,<br/>在 B 眼中是否也是『先 x 後 y』<br/>→ 可能 B 先看到 y 的新值,才看到 x 的!"]
+    COH -.“這是兩件事!”.-> ORD
+    NEXT["『多變數的寫入順序如何被別人看見』<br/>由記憶體模型(memory model)決定<br/>→ 這是 P1-T10 的主題"]
+    ORD --> NEXT
+    style COH fill:#6fa8b8,color:#10100e
+    style ORD fill:#e8a33d,color:#10100e
+    style NEXT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>換句話說:即使每個變數各自都是一致的(coherence),CPU 和編譯器仍可能<strong>重排</strong>不同變數的讀寫順序,讓另一個核心看到「不符合程式碼順序」的結果。這就是為什麼光有 coherence 還不夠,還需要 <strong>memory ordering / memory barrier</strong>——那是 <a class="xlink" href="P1-T10.html">P1-T10</a> 的主題,也是 kernel 同步、以及你 DMA 工作(描述子必須在按門鈴前對裝置可見)的核心。</p>
+<p><strong>現在你只要牢牢記住這個區別</strong>:coherence 管「單一資料的副本一致」,ordering 管「多個資料的寫入順序如何被看見」,<strong>兩者是不同的問題</strong>。混淆它們是並行程式設計的常見錯誤根源。</p>
+<hr />
+<h3 id="6-kernelper-cpu-cache-line">6. 連到 kernel:per-CPU 變數與 cache line 對齊</h3>
+<p>把這一課的硬體現實,連到你產品會直接碰到的 kernel 設計:</p>
+<p><pre class="mermaid">flowchart TB
+    PROBLEM["多核心共享狀態的兩個成本:<br/>① coherence 協調開銷<br/>② false sharing 乒乓"]
+    PROBLEM --> SOL1["kernel 解法一:per-CPU 變數<br/>每個核心一份自己的資料<br/>→ 根本不共享,就沒有協調/乒乓<br/>(例:per-CPU 計數器、統計)"]
+    PROBLEM --> SOL2["kernel 解法二:____cacheline_aligned<br/>把關鍵資料對齊到 cache line<br/>→ 避免 false sharing"]
+    PROBLEM --> SOL3["kernel 解法三:NVMe 多佇列<br/>每個核心一條 I/O 提交/完成佇列<br/>→ 各核心不爭搶同一佇列的 cache line"]
+    style SOL1 fill:#8a9a5b,color:#10100e
+    style SOL2 fill:#8a9a5b,color:#10100e
+    style SOL3 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>這三個都是你日後會直接接觸的:
+- <strong>per-CPU 變數</strong>:kernel 大量使用「每核一份」的資料來避免共享成本。你寫 kernel 程式碼會遇到 <code>this_cpu_*</code> 之類的 API。
+- <strong><code>____cacheline_aligned</code></strong>:kernel 原始碼裡常見的標註,就是第 4 節的對齊手法,專門避免 false sharing。
+- <strong>NVMe 多佇列(multi-queue)</strong>:這是你產品的核心!現代 NVMe 與 kernel 的 blk-mq 框架讓<strong>每個 CPU 核心有自己的 I/O 佇列</strong>,正是為了讓多核心並行送 I/O 時,不互相爭搶同一條佇列的 cache line。你現在懂了它背後的硬體動機。</p>
+<hr />
+<h2 id="_4">打通關:把快取一致性收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    MULTI["多核心:每核有自己的 cache"]
+    MULTI --> COH["問題① 一致性:一個核心改了,別人怎麼知道?<br/>→ cache coherence(MESI)<br/>寫前讓別人的副本失效,保證最終一致"]
+    MULTI --> FALSE["問題② false sharing:<br/>不同變數擠同一條 line(64B)<br/>→ 寫各自的卻互相作廢 → 乒乓變慢"]
+    FALSE --> FIX["解法:對齊/padding 分到不同 line<br/>(alignas(64))"]
+    COH --> CLARIFY["釐清:coherence ≠ memory ordering<br/>(前者管單變數一致,後者管多變數順序→P1-T10)"]
+    FIX --> KERNEL["kernel 對應:per-CPU 變數、<br/>____cacheline_aligned、NVMe 多佇列<br/>(你的產品)"]
+    style COH fill:#6fa8b8,color:#10100e
+    style FALSE fill:#c2603a,color:#f4ecd8
+    style KERNEL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>多核心讓每個核心各有 cache,於是需要 coherence 維持「單一資料的一致」,但這個以 cache line 為單位的機制,會讓擠在同一條 line 的無關變數產生 false sharing;kernel 用 per-CPU、cache line 對齊、NVMe 多佇列來迴避這些成本——而 coherence 並不保證多變數的可見順序,那要等 P1-T10 的 memory ordering。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為「兩執行緒寫不同變數就互不影響」。</strong>
+若兩變數落在同一條 cache line,仍會 false sharing,互相拖累。要確保它們在不同 line(對齊/padding)。</p>
+<p><strong>誤區二:以為 cache coherence 保證了記憶體順序。</strong>
+這是兩回事(第 5 節)。coherence 管單一資料的副本一致;多變數的可見順序由 memory model 決定(<a class="xlink" href="P1-T10.html">P1-T10</a>)。混淆這點是並行 bug 的常見根源。</p>
+<p><strong>誤區三:對 false sharing 視而不見,只盯著演算法。</strong>
+程式邏輯完全正確卻莫名很慢,多核心場景下要懷疑 false sharing。它不是 bug(沒有 race),是效能問題。</p>
+<p><strong>誤區四:過度 padding 浪費記憶體。</strong>
+對齊到 cache line 會讓每個變數佔滿 64 bytes。只對「多核心高頻寫、且確實會 false sharing」的熱點這樣做,不要無腦對所有變數加 <code>alignas(64)</code>。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,多核心機器,<strong>安全,不需 root、不動系統</strong>。需要 pthread。</p>
+<p><strong>任務 A — 重現 false sharing</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;time.h&gt;
+#define ITER 100000000L
+
+struct { long a; long b; } shared;   // a、b 相鄰,極可能同一條 cache line
+
+void *inc_a(void *_) { for (long i=0;i&lt;ITER;i++) shared.a++; return 0; }
+void *inc_b(void *_) { for (long i=0;i&lt;ITER;i++) shared.b++; return 0; }
+
+int main(void) {
+    pthread_t t1, t2;
+    clock_t start = clock();
+    pthread_create(&amp;t1, 0, inc_a, 0);
+    pthread_create(&amp;t2, 0, inc_b, 0);
+    pthread_join(t1, 0); pthread_join(t2, 0);
+    // 注意:clock() 量的是 CPU 時間總和;用 time ./prog 看實際牆鐘時間更直觀
+    printf(&quot;done\n&quot;);
+    return 0;
+}
+</code></pre>
+<p>用 <code>gcc -O2 prog.c -o prog -lpthread &amp;&amp; time ./prog</code> 跑,記下時間(看 <code>real</code> 那行)。</p>
+<p><strong>任務 B — 用對齊消除 false sharing,比較</strong>
+把 struct 改成讓 <code>a</code>、<code>b</code> 分到不同 cache line:</p>
+<pre><code class="language-c">#include &lt;stdalign.h&gt;
+struct { alignas(64) long a; alignas(64) long b; } shared;
+</code></pre>
+<p>其餘不變,重新編譯、<code>time ./prog</code>。<strong>比較兩個版本的時間</strong>——對齊版應明顯較快。寫一句話:用 cache line 乒乓解釋為什麼。</p>
+<p><strong>任務 C(思考)— 連到你的產品</strong>
+寫一兩句話:NVMe 多佇列「每個 CPU 一條 I/O 佇列」的設計,如何用這一課的概念解釋它為什麼對多核心效能重要?(提示:避免多核心爭搶同一佇列資料結構的 cache line。)</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 重現 false sharing:兩執行緒各自累加落在同一 cache line 的兩個 counter,量測時間。
+2. ☐ 將兩 counter 以 <code>alignas(64)</code> 或 padding 分到不同 cache line 後,時間明顯下降。
+3. ☐ 能解釋原因(cache line 乒乓 / coherence 以 line 為單位作廢)。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能複述 coherence 概念。
+- <strong>80(熟練)</strong>:能重現並解釋 false sharing。
+- <strong>100(精通)</strong>:能連結到 kernel 的 per-CPU 變數、cache line 對齊設計與 NVMe 多佇列,並清楚區分 coherence 與 memory ordering。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——kernel 的 per-CPU 資料結構、<code>____cacheline_aligned</code>、NVMe 多佇列(每核一隊)都是為了避開 false sharing 與 cache 競爭。這是你產品多核擴展性的硬體基礎。</li>
+<li><strong>這課餵給未來的(兩條主線)</strong>:「coherence ≠ ordering」→ <a class="xlink" href="P1-T10.html">P1-T10</a> memory ordering → <a class="xlink" href="P3-T11.html">P3-T11</a> LKMM → <a class="xlink" href="P6-T03.html">P6-T03</a> DMA 的記憶體屏障(這是你「記憶體順序/可見性」主線);per-CPU/對齊 → kernel 同步與資料結構設計。</li>
+<li><strong>下一步 → <a class="xlink" href="P1-T04.html">P1-T04</a> 虛擬記憶體、MMU、分頁與 TLB</strong>:cache 的主題告一段落。下一課進入 OS 記憶體管理的<strong>地基</strong>——虛擬記憶體:為什麼每支程式都以為自己獨佔整個記憶體?虛擬位址如何經 MMU 硬體轉成實體位址?這一課極其重要,因為它是你那條「位址的真相」主線的關鍵一站,也是日後 DMA(P6)最大陷阱「虛擬/實體/匯流排位址三者之分」的源頭。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T02.html">← P1-T02 記憶體階層與快取</a><a class="pn next" href="P1-T04.html">P1-T04 虛擬記憶體、MMU、分頁與 TLB →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

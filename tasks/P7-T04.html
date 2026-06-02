@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P7-T04 · in-kernel lib/raid6 實作與 SIMD 演算法選擇</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P7 · GPU/CUDA 整合與 RAID parity 數學</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p7-t04-in-kernel-libraid6-simd">P7-T04 · in-kernel lib/raid6 實作與 SIMD 演算法選擇</h1>
+<blockquote>
+<p><strong>一句話</strong>:kernel 不是只有一份 parity 程式碼——<code>lib/raid6/algos.c</code> 內含多個 SIMD 實作(SSE2/AVX2/AVX512/NEON…),開機時跑 benchmark、選最快的那個(<code>dmesg</code> 的 <code>raid6: using algorithm ...</code>)。這是你 GPU offload 的「CPU 參考實作」與正確性基準:GPU 算出的 P/Q 必須和 lib/raid6 一致。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P7-T03.html">P7-T03</a> 你懂了 RAID-6 的數學(P/Q syndrome、GF 乘法、兩碟還原)。這一課看 <strong>kernel 怎麼實作它</strong>——<code>lib/raid6/</code>。這對你產品有雙重意義:它是你的<strong>「CPU 參考實作」對照組</strong>(GPU offload 的效益要拿它當基準),也是<strong>正確性基準</strong>(GPU 算出的結果必須和它一致)。</p>
+<p>最有意思的設計:<strong>kernel 不是只有一份 parity 程式碼</strong>。<code>lib/raid6/algos.c</code> 內含<strong>多個 SIMD 實作</strong>——針對不同 CPU 指令集(x86 的 SSE2/AVX2/AVX512、ARM 的 NEON…)各有一份,<strong>開機時跑 benchmark、選最快的那個</strong>。你可以在 <code>dmesg</code> 看到它選了哪個(<code>raid6: using algorithm ...</code>)。</p>
+<p>幾個要看的部件:
+- <strong><code>lib/raid6/algos.c</code></strong>:多 SIMD 實作的列表 + 開機 benchmark 擇優邏輯。
+- <strong><code>include/linux/raid/pq.h</code></strong>:介面(P/Q 計算、還原的函式宣告)。
+- <strong><code>lib/raid6/recov.c</code></strong>:還原(失效碟還原)的入口。
+- <strong>gen_syndrome 路徑</strong>:產生 P/Q 的路徑。</p>
+<p>還有一個關鍵的觀念釐清:<strong>這和 GPU offload 的關係</strong>——它們不是互斥的兩種東西,而是<strong>同一個數學在不同硬體上的加速</strong>。lib/raid6 用 CPU 的 SIMD 加速;你的產品用 GPU 加速。理解 kernel 怎麼做 SIMD 加速,你才能評估 GPU offload 的效益(快多少)與正確性(結果一致)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?如上——這是你產品 GPU offload 的對照組與正確性基準。理解 lib/raid6,你才知道「offload 到底省了什麼、結果對不對」。</p>
+<p>(這一課是 <a class="xlink" href="P5-T06.html">P5-T06</a> 讀原始碼經驗的又一次應用——<code>lib/raid6</code> 比 NVMe 驅動小,但同樣用「從一個函式切入」的讀碼法。)</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P7-T03.html">P7-T03</a>(RAID-6 的 P/Q 數學、GF 乘法、為何可平行)、<a class="xlink" href="P5-T06.html">P5-T06</a>(讀 kernel 原始碼的經驗)。也用到 <a class="xlink" href="P3-T01.html">P3-T01</a>(原始碼樹)、<a class="xlink" href="P7-T01.html">P7-T01</a>(raid5.c 呼叫 lib/raid6)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P7-T03.html">P7-T03</a> 的「GF 乘法可用 SIMD/向量化一次算多個 byte」嗎?lib/raid6 就是用各種 SIMD 指令集實作這個。
+  2. 你還記得 <a class="xlink" href="P7-T01.html">P7-T01</a> 說「raid5.c 處理 stripe 時呼叫 lib/raid6 算 parity」嗎?這課就是那個被呼叫的 lib/raid6。</li>
+<li>工具:Bootlin 看 <code>lib/raid6/algos.c</code>、<code>recov.c</code>、<code>include/linux/raid/pq.h</code>;<code>dmesg</code>。</li>
+<li>環境:Linux(看 dmesg)+ Bootlin 讀碼(<strong>安全</strong>)。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) lib/raid6 的角色 → (2) 多 SIMD 實作 → (3) 開機 benchmark 擇優 → (4) gen_syndrome:產生 P/Q → (5) recov.c:還原入口 → (6) 與 GPU offload 的關係</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-libraid6-raid5c-parity">1. lib/raid6 的角色:被 raid5.c 呼叫的 parity 引擎</h3>
+<p>先定位 <code>lib/raid6</code> 在整個 RAID 架構的位置——它是被 <code>raid5.c</code> 呼叫的「parity 計算引擎」。</p>
+<p><pre class="mermaid">flowchart TB
+    RAID5C["drivers/md/raid5.c(P7-T01):處理 stripe<br/>需要算 P/Q 時..."]
+    RAID5C --> CALL2["呼叫 lib/raid6 的介面(pq.h 宣告的函式)<br/>例:gen_syndrome(算 P/Q)、recovery(還原)"]
+    CALL2 --> LIBRAID6["lib/raid6/:parity 計算引擎<br/>實作 P7-T03 的數學(XOR + GF 乘法)<br/>用 SIMD 加速(第2/3節)"]
+    LIBRAID6 --> RESULT4["算出 P/Q(或還原失效資料)→ 回給 raid5.c"]
+    NOTE47["★ 分工:raid5.c 管『RAID 邏輯』(stripe、狀態機、I/O 協調)★<br/>★ lib/raid6 管『純數學計算』(P/Q、還原)★<br/>→ 你 offload 時,就是把『lib/raid6 的計算』換成 GPU 算"]
+    LIBRAID6 --> NOTE47
+    style CALL2 fill:#6fa8b8,color:#10100e
+    style LIBRAID6 fill:#e8a33d,color:#10100e
+    style NOTE47 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><code>lib/raid6</code> 的角色:它是<strong>被 <code>raid5.c</code> 呼叫的「parity 計算引擎」</strong>。<code>raid5.c</code>(<a class="xlink" href="P7-T01.html">P7-T01</a>)處理 stripe,需要算 P/Q 時,呼叫 <code>lib/raid6</code> 的介面(<code>pq.h</code> 宣告的函式,如 <code>gen_syndrome</code> 算 P/Q、recovery 還原)。<code>lib/raid6</code> 實作 <a class="xlink" href="P7-T03.html">P7-T03</a> 的數學(XOR + GF 乘法),用 SIMD 加速。</p>
+<p><strong>分工</strong>:<code>raid5.c</code> 管「RAID 邏輯」(stripe、狀態機、I/O 協調);<code>lib/raid6</code> 管「純數學計算」(P/Q、還原）。這個分工對你很重要——<strong>你 offload 時,就是把「<code>lib/raid6</code> 的計算」換成 GPU 算</strong>(在 <a class="xlink" href="P7-T01.html">P7-T01</a> 的 <code>raid5.c</code> 呼叫點介入)。raid5.c 的 RAID 邏輯不變,只換掉計算引擎。</p>
+<hr />
+<h3 id="2-simd">2. 多 SIMD 實作:同一數學的多個版本</h3>
+<p><code>lib/raid6</code> 最有意思的設計:同一個 P/Q 計算,有<strong>多個針對不同 SIMD 指令集的實作</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    MATH2["同一個數學:P = XOR、Q = ⊕ gⁱ·Di(P7-T03)"]
+    MATH2 --> IMPLS["lib/raid6 有多個實作(同數學、不同指令集):"]
+    IMPLS --> I1d["int1/int2/...:純 C(無 SIMD,後備)"]
+    IMPLS --> I2d["sse2/avx2/avx512:x86 的 SIMD<br/>(一次算 16/32/64 byte)"]
+    IMPLS --> I3d["neon:ARM 的 SIMD"]
+    IMPLS --> I4d["其他架構的 SIMD..."]
+    WHY8["★ 為何多版本 ★<br/>不同 CPU 支援不同指令集,各指令集的寬度/效能不同<br/>→ 每個都實作一次,執行期選最適合這台機器的(第3節)<br/>→ GF 乘法用 SIMD 的向量查表(如 PSHUFB)一次算多 byte(P7-T03)"]
+    IMPLS --> WHY8
+    NOTE48["★ 常見誤區:以為只有單一 parity 實作 ★<br/>實為多 SIMD 版本 + 執行期擇優"]
+    WHY8 --> NOTE48
+    style IMPLS fill:#e8a33d,color:#10100e
+    style WHY8 fill:#8a9a5b,color:#10100e
+    style NOTE48 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><code>lib/raid6</code> 有<strong>多個實作</strong>(同數學、不同指令集):純 C(<code>int1</code>/<code>int2</code>…,後備)、x86 SIMD(<code>sse2</code>/<code>avx2</code>/<code>avx512</code>,一次算 16/32/64 byte）、ARM 的 <code>neon</code>、其他架構的 SIMD…</p>
+<p><strong>為何多版本</strong>:不同 CPU 支援不同指令集,各指令集的寬度/效能不同。所以<strong>每個都實作一次,執行期選最適合這台機器的</strong>(第 3 節)。GF 乘法用 SIMD 的向量查表(如 x86 的 PSHUFB)一次算多 byte(回顧 <a class="xlink" href="P7-T03.html">P7-T03</a> 的可平行性——SIMD 是 CPU 上的平行)。</p>
+<p><strong>常見誤區:以為只有單一 parity 實作</strong>——實為多 SIMD 版本 + 執行期擇優。這個設計讓 kernel 在任何 CPU 上都能跑出該 CPU 最好的 parity 效能。</p>
+<p>(對照你產品:lib/raid6 用 <strong>CPU SIMD</strong> 平行;你用 <strong>GPU</strong> 平行——同一數學、不同硬體的加速,第 6 節。)</p>
+<hr />
+<h3 id="3-benchmark">3. 開機 benchmark 擇優:選最快的實作</h3>
+<p><code>lib/raid6/algos.c</code> 的核心邏輯:<strong>開機時 benchmark 各實作、選最快的</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    BOOT4["開機 / 模組載入時:raid6 初始化"]
+    BOOT4 --> DETECT["① 偵測這台機器支援哪些指令集<br/>(有 AVX512?AVX2?只有 SSE2?)"]
+    DETECT --> BENCH["② 對『支援的』各實作跑 benchmark<br/>(實際算一段 parity,計時)"]
+    BENCH --> PICK["③ 選最快的那個實作,記下來之後都用它"]
+    PICK --> DMESG["④ 印到 dmesg:<br/>raid6: using algorithm ...(選用的)<br/>raid6: ... gen() / xor() 的速度數字"]
+    NOTE49["★ 常見誤區:忽略 dmesg 開機訊息已標明選用的演算法 ★<br/>→ 想知道你的機器用哪個 raid6 實作?dmesg | grep raid6 就有<br/>(不必猜,kernel 開機就告訴你了)"]
+    DMESG --> NOTE49
+    LOCATION["★ 程式碼位置(驗收要找的)★<br/>algos.c 的 raid6_select_algo()(或類似)<br/>= 執行期擇優的邏輯所在"]
+    PICK --> LOCATION
+    style BENCH fill:#e8a33d,color:#10100e
+    style DMESG fill:#8a9a5b,color:#10100e
+    style LOCATION fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><code>algos.c</code> 的擇優流程:① 偵測機器支援哪些指令集 → ② 對支援的各實作跑 <strong>benchmark</strong>(實際算一段 parity、計時)→ ③ 選最快的、之後都用它 → ④ 印到 <code>dmesg</code>(<code>raid6: using algorithm ...</code>）。</p>
+<p><strong>程式碼位置(驗收點:在 <code>algos.c</code> 指出執行期擇優的邏輯位置)</strong>:<code>algos.c</code> 裡有個選擇函式(如 <code>raid6_select_algo()</code>),就是執行期 benchmark 擇優的邏輯所在。</p>
+<p><strong>常見誤區:忽略 <code>dmesg</code> 開機訊息已標明選用的演算法</strong>——想知道你的機器用哪個 raid6 實作?<code>dmesg | grep raid6</code> 就有(驗收點:在 <code>dmesg</code> 找出並回報 raid6 實際選用的 SIMD 演算法)。不必猜,kernel 開機就告訴你了。</p>
+<p>這個「執行期 benchmark 擇優」是個漂亮的工程模式:<strong>不在編譯期猜哪個快,而在執行期實測</strong>——因為「哪個 SIMD 最快」取決於實際的 CPU,只有跑了才知道。</p>
+<hr />
+<h3 id="4-gen_syndrome-pq">4. gen_syndrome:產生 P/Q 的路徑</h3>
+<p>產生 parity 的路徑——<strong>gen_syndrome</strong>(產生 P 和 Q syndrome)。</p>
+<p><pre class="mermaid">flowchart TB
+    NEED8["raid5.c 要算某 stripe 的 P/Q(P7-T01)"]
+    NEED8 --> GENSYN["呼叫 raid6_call.gen_syndrome(...)<br/>(raid6_call = 開機選定的那個實作,第3節)<br/>= pq.h 宣告的介面"]
+    GENSYN --> COMPUTE["選定的 SIMD 實作執行:<br/>P = D0 ⊕ D1 ⊕ ...(XOR)<br/>Q = ⊕ gⁱ·Di(GF 乘法 + XOR,用 SIMD 向量化,P7-T03)<br/>一次處理一整排 byte(SIMD 寬度)"]
+    COMPUTE --> WRITE6["P、Q 寫到該 stripe 的 parity chunk"]
+    NOTE50["★ 常見誤區:混淆 gen_syndrome(產生 P/Q)與 recovery(還原)★<br/>gen_syndrome:正常寫入時,從資料算出 P/Q<br/>recovery(第5節):碟失效時,從 P/Q + 其餘資料還原失效資料<br/>→ 兩條不同的路徑、不同的函式"]
+    COMPUTE --> NOTE50
+    style GENSYN fill:#6fa8b8,color:#10100e
+    style COMPUTE fill:#e8a33d,color:#10100e
+    style NOTE50 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>gen_syndrome 路徑</strong>:<code>raid5.c</code> 要算 P/Q 時,呼叫 <code>raid6_call.gen_syndrome(...)</code>(<code>raid6_call</code> 是開機選定的那個實作,第 3 節;這是 <code>pq.h</code> 宣告的介面)。選定的 SIMD 實作執行:<code>P = XOR</code>、<code>Q = ⊕ gⁱ·Dᵢ</code>(GF 乘法 + XOR,用 SIMD 向量化一次處理一整排 byte,<a class="xlink" href="P7-T03.html">P7-T03</a>)。算完寫到 parity chunk。</p>
+<p><strong>常見誤區:混淆 gen_syndrome(產生 P/Q)與 recovery(還原)</strong>——這是兩條不同的路徑:
+- <strong>gen_syndrome</strong>:正常寫入時,從資料算出 P/Q。
+- <strong>recovery</strong>(第 5 節):碟失效時,從 P/Q + 其餘資料還原失效資料。</p>
+<p>兩者用不同的函式、不同的數學路徑(產生 vs 解聯立)。讀碼時要分清你在看哪一條。對你產品:gen_syndrome 是「寫入時算 parity」的 offload 對象;recovery 是「degraded/rebuild 時還原」的 offload 對象(<a class="xlink" href="P7-T01.html">P7-T01</a>)——兩者都可 offload,但路徑不同。</p>
+<hr />
+<h3 id="5-recovc">5. recov.c:還原入口</h3>
+<p>還原的路徑在 <strong><code>recov.c</code></strong>——失效碟的還原入口。</p>
+<p><pre class="mermaid">flowchart TB
+    FAIL5["碟失效(degraded/rebuild,P7-T01):要還原失效資料"]
+    FAIL5 --> RECOV["lib/raid6/recov.c:還原入口<br/>依『失效幾顆、哪幾顆』選還原方法:"]
+    RECOV --> CASE1c["一顆資料碟失效:用 P 還原(其實就是 RAID-5 的 XOR 救援,P7-T02)"]
+    RECOV --> CASE2c["兩顆資料碟失效:解 GF 二元聯立(P7-T03)<br/>用 P、Q 與其餘資料還原兩者"]
+    RECOV --> CASE3c["資料 + Q 失效、資料 + P 失效... 各種情形"]
+    RECOV --> SIMD3["recov 也有 SIMD 實作(recov_ssse3.c 等)+ 擇優<br/>(還原同樣可向量化加速)"]
+    NOTE51["★ 介面在 pq.h(驗收要找的)★<br/>pq.h 宣告 gen_syndrome 和 recovery 的函式<br/>= raid5.c 與 lib/raid6 之間的『合約』"]
+    RECOV --> NOTE51
+    style RECOV fill:#e8a33d,color:#10100e
+    style CASE2c fill:#8a9a5b,color:#10100e
+    style NOTE51 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>recov.c 的還原(驗收點:在 <code>recov.c</code>/<code>pq.h</code> 指出還原與介面的入口並說明其作用)</strong>:<code>recov.c</code> 是還原入口,依「失效幾顆、哪幾顆」選還原方法——一顆資料碟失效用 P 還原(就是 RAID-5 的 XOR 救援,<a class="xlink" href="P7-T02.html">P7-T02</a>)、兩顆資料碟失效解 GF 二元聯立(<a class="xlink" href="P7-T03.html">P7-T03</a>)、還有資料+Q、資料+P 等各種情形。<code>recov</code> 也有 SIMD 實作(<code>recov_ssse3.c</code> 等）+ 擇優(還原同樣可向量化加速)。</p>
+<p><strong>介面在 <code>pq.h</code></strong>:<code>include/linux/raid/pq.h</code> 宣告 <code>gen_syndrome</code> 和 recovery 的函式——這是 <code>raid5.c</code> 與 <code>lib/raid6</code> 之間的「合約」(介面)。讀 <code>pq.h</code> 你會看到整個 lib/raid6 對外提供哪些功能。</p>
+<p>對你產品:recovery 路徑是 degraded/rebuild 時的還原計算(<a class="xlink" href="P7-T01.html">P7-T01</a>)——這也是可 offload 的部分(還原也是 parity 運算,計算量大時 GPU 加速有價值)。</p>
+<hr />
+<h3 id="6-gpu-offload">6. 與 GPU offload 的關係:同一數學,不同硬體</h3>
+<p>最後,釐清這一課對你產品最重要的觀念:<strong>lib/raid6 和 GPU offload 不是互斥的——是同一數學在不同硬體上的加速</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    MATH3["同一個 parity 數學(P7-T02/T03):<br/>P = XOR、Q = ⊕ gⁱ·Di、還原 = 解聯立"]
+    MATH3 --> CPU3["lib/raid6:在 CPU 上加速<br/>用 SIMD(SSE2/AVX2/...)一次算 16~64 byte<br/>+ 開機擇優選最快的 SIMD 實作"]
+    MATH3 --> GPU4["你的產品:在 GPU 上加速<br/>用數千 thread,每個算一個(或一組)byte<br/>(逐 byte 獨立,P7-T02/T03)"]
+    CPU3 --> RELATION2["★ 關係:同一數學、不同硬體 ★<br/>不是互斥,而是『加速器的選擇』<br/>→ 可互補(小 I/O 用 CPU、大批量用 GPU)<br/>→ 或取代(GPU 算所有 parity,CPU 省下來做別的)"]
+    GPU4 --> RELATION2
+    RELATION2 --> CORRECTNESS["★ 正確性基準:GPU 算的 P/Q 必須和 lib/raid6 一致 ★<br/>(同一數學 → 同樣的 0x11D/g={02} → 同樣的結果)<br/>→ lib/raid6 是你驗證 GPU kernel 正確性的對照組"]
+    style RELATION2 fill:#e8a33d,color:#10100e
+    style CORRECTNESS fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>lib/raid6 與 GPU offload 的關係(常見誤區:以為 GPU offload 與 lib/raid6 互斥)</strong>:它們<strong>不是互斥</strong>,而是<strong>同一數學在不同硬體上的加速</strong>:
+- <strong>lib/raid6</strong>:在 <strong>CPU</strong> 上加速——SIMD 一次算 16~64 byte + 開機擇優。
+- <strong>你的產品</strong>:在 <strong>GPU</strong> 上加速——數千 thread,每個算一個(或一組)byte(逐 byte 獨立,<a class="xlink" href="P7-T02.html">P7-T02</a>/<a class="xlink" href="P7-T03.html">P7-T03</a>)。</p>
+<p><strong>關係:加速器的選擇</strong>——可<strong>互補</strong>(小 I/O 用 CPU、大批量用 GPU)或<strong>取代</strong>(GPU 算所有 parity,CPU 省下來做別的)。這正是你產品的設計空間:什麼時候用 GPU、什麼時候用 CPU SIMD。</p>
+<p><strong>最關鍵的一點:正確性基準</strong>——<strong>GPU 算的 P/Q 必須和 lib/raid6 一致</strong>(同一數學、同樣的 0x11D/g={02}、同樣的結果)。所以 <strong>lib/raid6 是你驗證 GPU kernel 正確性的對照組</strong>:寫好 GPU parity kernel,拿同一批資料,GPU 算的 P/Q 要和 lib/raid6 算的逐 byte相同——這是你產品正確性的驗證方法。</p>
+<p>把「用 lib/raid6 當對照組驗證 GPU kernel」這個正確性迴圈畫出來:</p>
+<p><pre class="mermaid">flowchart TB
+    DATA_T4["同一批測試資料 D0, D1, ..."]
+    DATA_T4 --> CPU_T4["lib/raid6(CPU SIMD)算 P/Q<br/>= 參考答案(reference)"]
+    DATA_T4 --> GPU_T4["你的 GPU kernel 算 P/Q"]
+    CPU_T4 --> CMP["逐 byte 比對"]
+    GPU_T4 --> CMP
+    CMP --> OK{"完全相同?"}
+    OK -->|"是"| PASS["✓ GPU kernel 數學正確(同樣 0x11D/g={02})"]
+    OK -->|"否"| BUG["✗ GPU kernel 有 bug<br/>(多項式/生成元用錯?GF 乘法實作錯?對齊錯位?)"]
+    style CPU_T4 fill:#6fa8b8,color:#10100e
+    style CMP fill:#e8a33d,color:#10100e
+    style PASS fill:#8a9a5b,color:#10100e
+    style BUG fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>這也呼應了 <a class="xlink" href="P7-T03.html">P7-T03</a>:GF 乘法的可平行性,在 CPU 上是 SIMD、在 GPU 上是數千 thread——同一個「逐 byte 獨立」的數學性質,被兩種硬體用各自的方式平行化。</p>
+<hr />
+<h2 id="libraid6">打通關:把 lib/raid6 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    LIBRAID62["lib/raid6:被 raid5.c 呼叫的 parity 計算引擎(P7-T01)<br/>實作 P7-T03 的數學(P/Q、還原)"]
+    LIBRAID62 --> MULTI["★ 多 SIMD 實作(同數學、不同指令集)★<br/>純 C / SSE2 / AVX2 / AVX512 / NEON...<br/>(別以為只有單一實作)"]
+    MULTI --> SELECT["★ algos.c 開機 benchmark 擇優 ★<br/>實測各實作、選最快 → dmesg『raid6: using algorithm ...』<br/>(別忽略 dmesg 已標明選用的)"]
+    SELECT --> PATHS["兩條路徑(別混):<br/>gen_syndrome(算 P/Q)/ recov.c(還原失效資料)<br/>介面在 pq.h"]
+    PATHS --> GPU5["★ 與 GPU offload:同一數學、不同硬體(非互斥)★<br/>lib/raid6=CPU SIMD;你的產品=GPU 數千 thread<br/>可互補/取代;★ GPU 結果必須和 lib/raid6 一致(正確性基準)★"]
+    style MULTI fill:#6fa8b8,color:#10100e
+    style SELECT fill:#e8a33d,color:#10100e
+    style GPU5 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong><code>lib/raid6</code> 是被 <code>raid5.c</code> 呼叫的 parity 計算引擎,實作 P7-T03 的數學——它有多個 SIMD 實作(SSE2/AVX2/AVX512/NEON…，別以為只有一份），<code>algos.c</code> 開機時 benchmark 各實作、選最快的（<code>dmesg</code> 的 <code>raid6: using algorithm ...</code>）；gen_syndrome（算 P/Q）與 recov.c（還原）是兩條不同路徑、介面在 <code>pq.h</code>；它和 GPU offload 不互斥，是同一數學在不同硬體上的加速（CPU SIMD vs GPU 數千 thread，可互補/取代），而 lib/raid6 是你驗證 GPU kernel 正確性的對照組——GPU 算的 P/Q 必須和它逐 byte 一致。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為只有單一 parity 實作。</strong>
+<code>lib/raid6</code> 有多個 SIMD 版本(SSE2/AVX2/AVX512/NEON/純 C…)+ 執行期擇優。</p>
+<p><strong>誤區二:忽略 <code>dmesg</code> 開機訊息已標明選用的演算法。</strong>
+<code>dmesg | grep raid6</code> 直接告訴你這台機器選了哪個實作,不必猜。</p>
+<p><strong>誤區三:混淆 gen_syndrome(產生 P/Q)與 recovery(還原)。</strong>
+gen_syndrome 是寫入時從資料算 P/Q;recovery(<code>recov.c</code>)是碟失效時從 P/Q + 其餘資料還原。兩條不同路徑、函式。</p>
+<p><strong>誤區四:以為 GPU offload 與 lib/raid6 互斥。</strong>
+是同一數學在不同硬體上的加速(CPU SIMD vs GPU),可互補或取代。且 GPU 結果必須和 lib/raid6 一致(正確性基準)。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:Linux(看 dmesg)+ Bootlin 讀碼(<strong>安全</strong>)。</p>
+<p><strong>任務 A — dmesg 找選用的演算法(驗收點)</strong>
+在 Linux 上 <code>dmesg | grep raid6</code>(或 <code>journalctl -k | grep raid6</code>),找出 raid6 <strong>實際選用的 SIMD 演算法</strong>(如 <code>raid6: using algorithm avx2x4 gen() ...</code>)。<strong>驗收:在 <code>dmesg</code> 找出並回報 raid6 實際選用的 SIMD 演算法。</strong>(若 dmesg 沒有,可能 raid6 模組未載入;<code>modprobe raid6_pq</code> 或建一個 RAID-6 陣列觸發。)</p>
+<p><strong>任務 B — algos.c 的擇優邏輯(驗收點)</strong>
+在 <code>lib/raid6/algos.c</code>(https://elixir.bootlin.com/linux/v6.12/source/lib/raid6/algos.c ）中,找出<strong>執行期 benchmark 擇優的邏輯位置</strong>(如 <code>raid6_select_algo</code>——偵測支援、benchmark、選最快)。<strong>驗收:在 <code>algos.c</code> 指出執行期擇優的邏輯位置。</strong></p>
+<p><strong>任務 C — recov.c / pq.h 的還原與介面入口(驗收點)</strong>
+在 <code>recov.c</code>(https://elixir.bootlin.com/linux/v6.12/source/lib/raid6/recov.c ）指出還原入口、在 <code>pq.h</code>(https://elixir.bootlin.com/linux/v6.12/source/include/linux/raid/pq.h ）指出介面宣告(<code>gen_syndrome</code>、recovery 函式)。<strong>驗收:在 <code>recov.c</code>/<code>pq.h</code> 指出還原與介面的入口並說明其作用。</strong></p>
+<p><strong>任務 D(連結)— 與你的 GPU offload</strong>
+寫一兩句話:lib/raid6 和你產品的 GPU offload 是什麼關係?你會怎麼用 lib/raid6 驗證 GPU kernel 的正確性?(提示:同一數學不同硬體;GPU 算的 P/Q 要和 lib/raid6 逐 byte 一致。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 在 <code>dmesg</code> 找出並回報 raid6 實際選用的 SIMD 演算法。
+2. ☐ 在 <code>algos.c</code> 指出執行期擇優的邏輯位置。
+3. ☐ 在 <code>recov.c</code>/<code>pq.h</code> 指出還原與介面的入口並說明其作用。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能找到選用演算法。
+- <strong>80(熟練)</strong>:能解讀擇優機制與還原入口。
+- <strong>100(精通)</strong>:能說明 lib/raid6 的 SIMD 加速與 GPU offload 在架構上的對應與取捨。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這是你產品的「CPU 參考實作」對照組;理解 kernel 怎麼做 SIMD 加速,才能評估 GPU offload 的效益與正確性基準。</li>
+<li><strong>這課餵給未來的(XOR→parity→GPU 平行主線)</strong>:<a class="xlink" href="P7-T02.html">P7-T02</a> XOR → <a class="xlink" href="P7-T03.html">P7-T03</a> GF 數學 → 本課 lib/raid6(CPU SIMD 實作)→ <a class="xlink" href="P7-T06.html">P7-T06</a> CUDA(GPU 實作,要和 lib/raid6 結果一致)。SIMD 擇優的工程模式 → 你產品「何時用 CPU/GPU」的設計。</li>
+<li><strong>下一步 → <a class="xlink" href="P7-T05.html">P7-T05</a> GPUDirect Storage(GDS)/cuFile 與上游 P2PDMA 的銜接</strong>:你懂了 parity 數學(<a class="xlink" href="P7-T02.html">P7-T02</a>/<a class="xlink" href="P7-T03.html">P7-T03</a>)和 kernel 的 CPU 實作(本課)。下一課回到<strong>資料路徑</strong>——怎麼把 NVMe 的資料送到 GPU 去算 parity。<strong>GPUDirect Storage(GDS)</strong> 是 NVIDIA 的現成方案:NVMe → GPU 記憶體直通 DMA,不繞 host(建立在你 <a class="xlink" href="P6-T05.html">P6-T05</a> 學的 P2PDMA 之上)。關鍵的版本事實(我已查證):<strong>CUDA 12.8 起 GDS 在 x86_64 改用上游 PCI P2PDMA,不再依賴 nvidia-fs.ko/nvme.ko patch</strong>;但<strong>重大限制</strong>——<strong>GDS NVMe-P2PDMA 不支援 RAID0/multipath,且啟用 KASLR 時會失敗</strong>。對你的 RAID 產品,這些限制可能迫使你走自訂 P2PDMA 路徑而非現成的 GDS——這是直接影響架構選型的決策。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P7-T03.html">← P7-T03 RAID-6 parity 數學(GF(2⁸) Reed-Solomon)</a><a class="pn next" href="P7-T05.html">P7-T05 GPUDirect Storage(GDS)/cuFile 與上游 P2PDMA 的銜接 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

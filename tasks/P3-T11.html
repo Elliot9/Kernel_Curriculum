@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T11 · memory barrier 與 Linux Kernel Memory Model(LKMM)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p3-t11-memory-barrier-linux-kernel-memory-modellkmm">P3-T11 · memory barrier 與 Linux Kernel Memory Model(LKMM)</h1>
+<blockquote>
+<p><strong>一句話</strong>:把 <a class="xlink" href="P1-T10.html">P1-T10</a> 那個「編譯器和 CPU 會重排記憶體存取」的恐懼,變成 kernel 裡的實際工具——<code>smp_wmb</code>/<code>smp_rmb</code>、<code>READ_ONCE</code>/<code>WRITE_ONCE</code>、acquire/release。這是 lock-free、RCU,以及你 DMA 正確性的根:描述子必須在按 doorbell 前對 NVMe 裝置可見,否則裝置讀到舊資料、資料毀損。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這一課是你那條「記憶體順序/可見性」主線的關鍵一站(<a class="xlink" href="P1-T03.html">P1-T03</a> coherence≠ordering → <a class="xlink" href="P1-T10.html">P1-T10</a> 重排直覺 → <strong>本課 kernel 實戰</strong> → <a class="xlink" href="P6-T03.html">P6-T03</a> DMA),也是你 DMA 工作正確性的核心。</p>
+<p>回顧 <a class="xlink" href="P1-T10.html">P1-T10</a>:你建立了一個重要又燒腦的認知——<strong>「程式碼順序 = 執行/可見順序」是錯覺</strong>,編譯器和 CPU 都會重排記憶體存取,在多核心下讓別人看到違反直覺的順序。那一課只求「直覺 + 恐懼」。這一課把那份恐懼,變成 kernel 裡的<strong>實際工具</strong>:</p>
+<ul>
+<li><strong><code>READ_ONCE</code>/<code>WRITE_ONCE</code></strong>:防止編譯器對共享變數做某些危險的最佳化(把它當你明確要求的「就讀一次/寫一次記憶體」)。</li>
+<li><strong>memory barrier</strong>:<code>smp_mb</code>(全屏障)、<code>smp_wmb</code>(寫屏障)、<code>smp_rmb</code>(讀屏障)——強制某些記憶體操作的順序不被重排。</li>
+<li><strong>acquire/release</strong>:<code>smp_load_acquire</code>/<code>smp_store_release</code>——成對的順序語意(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a> 第 6 節)。</li>
+<li><strong>LKMM</strong>(Linux Kernel Memory Model):kernel 對「記憶體操作順序」的形式化模型,定義了這些工具的精確語意。</li>
+</ul>
+<p>為什麼這對你是 <code>scope: direct</code>、而且是 DMA 正確性的命門?因為當你做 DMA:你在記憶體裡準備好一個<strong>描述子</strong>(告訴 NVMe 裝置「要做什麼 I/O」),然後寫一個暫存器「<strong>按門鈴(doorbell)</strong>」通知裝置開工。<strong>你必須保證描述子的內容在門鈴之前就對裝置可見</strong>——如果 CPU 重排了這兩個寫入(門鈴的寫入先傳播到裝置、描述子還沒),裝置會去讀<strong>還沒寫好的垃圾描述子</strong>,執行錯誤的 I/O——對儲存產品,這是<strong>資料毀損</strong>。防止這個,就要 memory barrier(以及 <span class="xlink-stub" title="待撰寫">P6</span> 的 <code>dma_wmb</code>)。這一課讓你掌握這個命門。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T10.html">P1-T10</a>(重排直覺、barrier 概念、acquire/release 入門、volatile 不夠)、<a class="xlink" href="P3-T09.html">P3-T09</a>(原子操作)。<strong>強烈建議重看 <a class="xlink" href="P1-T10.html">P1-T10</a></strong>——這課是它的 kernel 實戰版。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P1-T10.html">P1-T10</a> 的 store-buffer 範例(兩執行緒可能都讀到舊值)、以及「barrier 強制順序」嗎?這課用 kernel 的 barrier 工具做同樣的事。
+  2. 你還記得 <a class="xlink" href="P1-T10.html">P1-T10</a> 說「<code>volatile</code> 不是 barrier、不保證原子」嗎?這課的 <code>READ_ONCE</code>/<code>WRITE_ONCE</code> 是 kernel 的正確工具(不是 volatile)。</li>
+<li>心態:這課和 <a class="xlink" href="P1-T10.html">P1-T10</a> 一樣燒腦。目標是「會用 kernel 的 barrier 工具、懂為什麼 DMA 需要它」,不求精通 LKMM 的形式化細節。</li>
+<li>環境:<strong>QEMU 虛擬機。實驗只在 VM。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 兩種重排:編譯器與 CPU → (2) READ_ONCE / WRITE_ONCE → (3) memory barrier:smp_mb/wmb/rmb → (4) acquire / release → (5) 命門:DMA 描述子必須在門鈴前可見 → (6) LKMM 的角色</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-cpu-kernel">1. 兩種重排:編譯器與 CPU(快速回顧 + kernel 視角)</h3>
+<p>先快速複習 <a class="xlink" href="P1-T10.html">P1-T10</a> 的核心,放到 kernel 脈絡:你的記憶體操作會被<strong>兩層</strong>重排。</p>
+<p><pre class="mermaid">flowchart TB
+    SRC["你寫的程式碼順序"]
+    SRC --> COMPILER["① 編譯器重排<br/>(最佳化時調換指令,單核也有)<br/>→ 對策:編譯器屏障 / READ_ONCE / WRITE_ONCE"]
+    SRC --> CPU["② CPU 重排<br/>(執行時記憶體操作的可見順序變動,多核才顯現)<br/>→ 對策:CPU 記憶體屏障 smp_mb/wmb/rmb"]
+    NOTE["kernel 的工具分別對付這兩層:<br/>READ_ONCE/WRITE_ONCE 管編譯器<br/>smp_* barrier 管 CPU(也含編譯器屏障效果)"]
+    COMPILER --> NOTE
+    CPU --> NOTE
+    style COMPILER fill:#6fa8b8,color:#10100e
+    style CPU fill:#e8a33d,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>關鍵(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a>):<strong>編譯器重排</strong>(編譯時調換,單核也有)和 <strong>CPU 重排</strong>(執行時可見順序變動,多核顯現)。kernel 的工具分別對付:<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 主要管編譯器層;<code>smp_*</code> barrier 管 CPU 層(也含編譯器屏障效果)。理解「有兩層、各有工具」,你才知道何時用哪個。</p>
+<hr />
+<h3 id="2-read_once-write_once">2. <code>READ_ONCE</code> / <code>WRITE_ONCE</code>:管住編譯器</h3>
+<p>第一個工具,對付編譯器層的重排與危險最佳化。問題:編譯器看到你反覆讀一個共享變數,可能「聰明地」把它快取在暫存器、只讀一次(它以為值不會變)——但在並行下,別的執行流可能改了那個變數,你卻用著快取的舊值。</p>
+<p><pre class="mermaid">flowchart TB
+    PROBLEM["共享變數 flag,你寫 while(!flag);<br/>編譯器可能優化成『只讀一次 flag、存暫存器、無限迴圈』<br/>(它不知道別的執行流會改 flag)→ 永遠看不到 flag 變 1"]
+    PROBLEM --> SOLUTION["WRITE_ONCE(flag, 1)：寫方明確『就寫這一次到記憶體』<br/>READ_ONCE(flag)：讀方明確『就從記憶體讀這一次』<br/>→ 阻止編譯器把存取優化掉/快取在暫存器"]
+    SOLUTION --> NOT_VOLATILE["★ 這是 kernel 的正確工具,不是 volatile ★<br/>(回顧 P1-T10:volatile 語意不同、不該用於並行)<br/>READ_ONCE/WRITE_ONCE 精確表達『這是一次對共享記憶體的存取』"]
+    style PROBLEM fill:#c2603a,color:#f4ecd8
+    style SOLUTION fill:#8a9a5b,color:#10100e
+    style NOT_VOLATILE fill:#e8a33d,color:#10100e
+</pre></p>
+<p><code>READ_ONCE</code>/<code>WRITE_ONCE</code> 的作用:<strong>告訴編譯器「這是一次明確的、對共享記憶體的讀/寫,別把它優化掉、別快取在暫存器、別拆分」</strong>。它防止的是<strong>編譯器的最佳化</strong>(驗收點:<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 防的是哪類編譯器最佳化——把共享變數存取優化掉/快取/重排這類)。</p>
+<p><strong>關鍵(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a> 的誤區):這不是 <code>volatile</code></strong>(常見誤區:<strong>以為 <code>volatile</code> 等於 <code>READ_ONCE</code></strong>)。<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 是 kernel 為並行存取設計的正確工具,語意精確;<code>volatile</code> 語意不同、不該用於 kernel 並行。存取無鎖保護的共享變數時,用 <code>READ_ONCE</code>/<code>WRITE_ONCE</code>。</p>
+<p>(注意:<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 只管編譯器,<strong>不提供 CPU 層的順序保證</strong>——那要 barrier,下一節。)</p>
+<hr />
+<h3 id="3-memory-barriersmp_mb-smp_wmb-smp_rmb">3. memory barrier:<code>smp_mb</code> / <code>smp_wmb</code> / <code>smp_rmb</code></h3>
+<p>第二個工具,對付 CPU 層的重排。<strong>memory barrier</strong> 強制「屏障兩側的記憶體操作順序不被 CPU 重排」(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a> 第 5 節)。kernel 有幾種:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph barriers["kernel 的 SMP 記憶體屏障"]
+        MB["smp_mb()  全屏障<br/>屏障前的所有讀寫,都在屏障後的所有讀寫之前完成/可見"]
+        WMB["smp_wmb() 寫屏障<br/>屏障前的所有『寫』,都在屏障後的『寫』之前對別人可見<br/>(只管寫的順序)"]
+        RMB["smp_rmb() 讀屏障<br/>屏障前的所有『讀』,都在屏障後的『讀』之前完成<br/>(只管讀的順序)"]
+    end
+    PAIR["★ 寫屏障與讀屏障通常成對使用 ★<br/>寫方用 smp_wmb 確保寫的順序,<br/>讀方用 smp_rmb 確保讀的順序<br/>→ 兩邊配合才保證跨 CPU 的可見順序"]
+    barriers --> PAIR
+    style WMB fill:#e8a33d,color:#10100e
+    style RMB fill:#6fa8b8,color:#10100e
+    style PAIR fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>三種:
+- <strong><code>smp_mb()</code></strong>(全屏障):屏障前的所有讀寫,都在屏障後的所有讀寫之前完成/可見。最強。
+- <strong><code>smp_wmb()</code></strong>(寫屏障):只管「寫」——屏障前的寫都在屏障後的寫之前對別人可見。
+- <strong><code>smp_rmb()</code></strong>(讀屏障):只管「讀」——屏障前的讀都在屏障後的讀之前完成。</p>
+<p><strong>關鍵:寫屏障和讀屏障通常成對使用</strong>——寫方用 <code>smp_wmb</code> 確保「先寫資料、後寫旗標」的順序對別人可見;讀方用 <code>smp_rmb</code> 確保「先讀旗標、後讀資料」的順序。兩邊配合,才能保證跨 CPU 的可見順序正確(這正是 producer-consumer 旗標範例要做的,動手實作會練)。</p>
+<p>(<code>smp_</code> 前綴代表「只在多核心(SMP)時才插入真正的屏障;單核編譯時退化成只有編譯器屏障」——因為單核沒有 CPU 層的跨核重排問題。)</p>
+<hr />
+<h3 id="4-acquire-release">4. acquire / release:成對的順序語意</h3>
+<p>第三個工具,是更高階、更好理解的成對語意(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a> 第 6 節):<strong><code>smp_store_release</code> / <code>smp_load_acquire</code></strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph producer["生產方"]
+        P1["WRITE_ONCE(data, 42);  ← 準備資料"]
+        P2["smp_store_release(&ready, 1);<br/>★ release:保證『之前的所有寫(data=42)』<br/>都在這個 ready=1 之前完成且可見 ★"]
+        P1 --> P2
+    end
+    subgraph consumer["消費方"]
+        C1["if (smp_load_acquire(&ready)) {<br/>★ acquire:保證『之後的所有讀』<br/>都在看到 ready=1 之後才進行 ★"]
+        C2["&nbsp;&nbsp;use(data);  ← 保證讀到 42(不會讀到舊 data)"]
+        C1 --> C2
+    end
+    producer -.“release 配 acquire”.-> consumer
+    BENEFIT["比裸 smp_wmb/smp_rmb 更好理解、更不易錯:<br/>release『發布』+ acquire『取得』成對,<br/>保證『看到旗標 → 一定看到旗標前的所有資料』"]
+    consumer --> BENEFIT
+    style P2 fill:#8a9a5b,color:#10100e
+    style C1 fill:#6fa8b8,color:#10100e
+    style BENEFIT fill:#e8a33d,color:#10100e
+</pre></p>
+<p>語意(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a>):
+- <strong><code>smp_store_release(&amp;flag, v)</code></strong>(release):保證「在它之前的所有寫」都已完成並可見,才讓這個寫生效。像「我發布前,確保所有準備工作都做完並公開」。
+- <strong><code>smp_load_acquire(&amp;flag)</code></strong>(acquire):保證「在它之後的所有讀」都在看到這個值之後才進行。像「我確認拿到入場券後,才開始看裡面的東西」。</p>
+<p>acquire/release 比裸的 <code>smp_wmb</code>/<code>smp_rmb</code> <strong>更好理解、更不易出錯</strong>——成對使用,直接保證「消費方一旦看到旗標,就一定看到旗標前的所有資料」。這也正是鎖背後的魔法(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a>:mutex 的 lock 帶 acquire、unlock 帶 release)。寫 lock-free 程式碼時,acquire/release 是常用且清楚的工具。</p>
+<hr />
+<h3 id="5-dma">5. 命門:DMA 描述子必須在門鈴前對裝置可見</h3>
+<p>現在來到這一課對你最關鍵的應用——也是你 DMA 工作的正確性命門。把前面的工具,用到「CPU 和裝置之間」。</p>
+<p>DMA 的典型流程:你在記憶體準備一個<strong>描述子</strong>(描述要做的 I/O),然後寫一個暫存器「<strong>按門鈴(doorbell)</strong>」通知裝置「有新工作,去讀描述子」。</p>
+<p><pre class="mermaid">flowchart TB
+    STEP1["① CPU 在記憶體寫好描述子<br/>(要讀/寫哪個位址、多少資料...)"]
+    STEP2["② CPU 寫 doorbell 暫存器<br/>(通知 NVMe 裝置:有新工作,去讀描述子)"]
+    STEP1 --> STEP2
+    DANGER["★ 危險:若這兩個寫入被重排 ★<br/>(門鈴的寫入先對裝置可見,描述子還沒寫好/還沒可見)<br/>→ 裝置收到門鈴,去讀描述子,讀到的是垃圾/舊資料<br/>→ 執行錯誤的 I/O → ★ 資料毀損 ★(對儲存產品是災難)"]
+    STEP2 --> DANGER
+    FIX["✓ 解法:在『寫描述子』和『按門鈴』之間插入寫屏障<br/>(SMP 間用 smp_wmb;對裝置/DMA 用 dma_wmb,P6 詳述)<br/>→ 保證裝置看到門鈴時,描述子一定已寫好且可見"]
+    DANGER --> FIX
+    style STEP1 fill:#6fa8b8,color:#10100e
+    style DANGER fill:#c2603a,color:#f4ecd8
+    style FIX fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>命門(驗收點:用文字解釋為何 DMA 描述子必須在按門鈴前對裝置可見)</strong>:如果「寫描述子」和「按門鈴」這兩個記憶體操作被重排,使得<strong>裝置先看到門鈴、描述子卻還沒寫好(或還沒對裝置可見)</strong>,裝置就會去讀一個<strong>還沒準備好的垃圾描述子</strong>,執行完全錯誤的 I/O——對你的儲存產品,這意味著資料被寫到錯誤的地方、或讀到錯誤的資料,即<strong>資料毀損</strong>。</p>
+<p>解法:在「寫描述子」和「按門鈴」之間插入<strong>寫屏障</strong>,強制「描述子的寫入」在「門鈴的寫入」之前對裝置可見。SMP 之間用 <code>smp_wmb</code>;但<strong>對裝置/DMA,要用專門的 <code>dma_wmb</code>/<code>dma_rmb</code></strong>(這預告 <span class="xlink-stub" title="待撰寫">P6</span>——裝置 DMA 的可見性比 CPU 之間更複雜,有專門的 DMA 屏障)。</p>
+<p>把「加了屏障後的正確順序」畫成時間線,對照前面的災難:</p>
+<p><pre class="mermaid">flowchart LR
+    A1["寫描述子(到記憶體)"]
+    A1 --> BAR2["─── dma_wmb()/smp_wmb() ───<br/>(屏障:確保描述子先對裝置可見)"]
+    BAR2 --> A2["寫 doorbell(通知裝置)"]
+    A2 --> DEV["裝置收到門鈴 → 去讀描述子<br/>★ 保證讀到已寫好的描述子(不是垃圾)★"]
+    style BAR2 fill:#e8a33d,color:#10100e
+    style DEV fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>這就是為什麼這一課是 DMA 正確性的根</strong>:沒有正確的屏障,你的 DMA 描述子和門鈴可能亂序,裝置讀到舊資料,資料毀損。你現在懂了那個必須插屏障的理由——這個認知會在 <span class="xlink-stub" title="待撰寫">P6</span> 變成具體的 <code>dma_wmb</code> 實作。</p>
+<p><strong>常見誤區</strong>:
+- <strong>以為有了鎖就永遠不必管 barrier</strong>——lock-free 結構、以及<strong>裝置/DMA 存取</strong>仍需要 barrier(鎖只保證鎖保護的臨界區之間,不管 CPU↔裝置的可見順序)。
+- <strong>漏掉「資料寫入」與「旗標/門鈴寫入」之間的屏障</strong>——就是上面這個命門,裝置會先看到門鈴後看到資料,讀到舊資料。</p>
+<hr />
+<h3 id="6-lkmm">6. LKMM 的角色</h3>
+<p>最後認識 <strong>LKMM(Linux Kernel Memory Model)</strong>——kernel 對「記憶體操作順序」的<strong>形式化模型</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    LKMM["LKMM:Linux Kernel Memory Model<br/>(在 tools/memory-model/)"]
+    LKMM --> WHAT["它定義什麼:<br/>kernel 的記憶體操作(READ_ONCE/WRITE_ONCE、<br/>barrier、acquire/release、原子操作)<br/>的『精確順序語意』<br/>→ 在所有 CPU 架構上的共同保證"]
+    WHAT --> WHY["為什麼需要:<br/>不同 CPU 架構重排規則不同(P1-T10),<br/>LKMM 給出一個『架構無關』的模型,<br/>讓你判斷一段 lock-free 程式碼是否正確<br/>(不必為每個架構各想一遍)"]
+    WHY --> TOOL["附帶工具:可用形式化檢查器驗證小段並行程式碼<br/>(進階;一般先會用 barrier 工具即可)"]
+    style LKMM fill:#6fa8b8,color:#10100e
+    style WHY fill:#e8a33d,color:#10100e
+</pre></p>
+<p>LKMM 是 kernel 記憶體順序的「<strong>權威規則書</strong>」:它形式化定義了 <code>READ_ONCE</code>/barrier/acquire-release/原子操作的精確語意,在<strong>所有 CPU 架構上的共同保證</strong>。因為不同架構重排規則不同(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a>:x86 嚴格、ARM 寬鬆),LKMM 給出一個<strong>架構無關</strong>的模型,讓你能判斷「一段 lock-free 程式碼在任何架構上是否正確」,而不必為每個架構各推一遍。它還附帶形式化檢查工具(可驗證小段並行程式碼)。</p>
+<p><strong>對你的程度</strong>:你不需要精通 LKMM 的形式化細節。目標是:<strong>知道它存在、是記憶體順序的權威規則書;會用 barrier/acquire-release 這些工具;懂為什麼 DMA 需要屏障。</strong> 真正深入 LKMM 是進階主題;遇到複雜的 lock-free 設計時,再回頭查 LKMM 文件(<code>tools/memory-model/Documentation/</code>)。</p>
+<hr />
+<h2 id="memory-barrier-lkmm">打通關:把 memory barrier 與 LKMM 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    REORDER["前提(P1-T10):編譯器 + CPU 會重排記憶體存取"]
+    REORDER --> TOOLS["kernel 的對策工具"]
+    TOOLS --> RWONCE["READ_ONCE/WRITE_ONCE:管編譯器<br/>(別優化掉/快取共享變數存取;★不是 volatile★)"]
+    TOOLS --> BARRIER["smp_mb/wmb/rmb:管 CPU 重排<br/>(寫屏障+讀屏障成對使用)"]
+    TOOLS --> AR["smp_store_release/load_acquire:成對順序語意<br/>(更好懂;看到旗標→一定看到旗標前的資料)"]
+    BARRIER --> DMA["★ 命門:DMA 描述子必須在按門鈴前對裝置可見 ★<br/>否則裝置讀垃圾描述子 → 資料毀損<br/>(SMP 用 smp_wmb;對裝置用 dma_wmb,P6)"]
+    AR --> DMA
+    TOOLS --> LKMM2["LKMM:記憶體順序的權威規則書(架構無關)<br/>(知道它存在、會用工具即可,不求精通形式化)"]
+    style BARRIER fill:#e8a33d,color:#10100e
+    style DMA fill:#c2603a,color:#f4ecd8
+    style LKMM2 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>把 P1-T10 的「重排恐懼」變成 kernel 工具——<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 管編譯器(不是 volatile)、<code>smp_wmb</code>/<code>smp_rmb</code>(成對)與 acquire/release 管 CPU 重排;而命門是 DMA:描述子必須在按門鈴前對裝置可見,否則裝置讀垃圾描述子導致資料毀損(SMP 用 <code>smp_wmb</code>,對裝置用 <code>dma_wmb</code>)。LKMM 是這一切的架構無關權威規則書。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為有了鎖就永遠不必管 barrier。</strong>
+lock-free 結構、以及裝置/DMA 存取仍需 barrier。鎖只保證臨界區之間,不管 CPU↔裝置的可見順序。</p>
+<p><strong>誤區二:以為 <code>volatile</code> 等於 <code>READ_ONCE</code>。</strong>
+語意不同。<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 是 kernel 為並行存取設計的正確工具;<code>volatile</code> 不該用於 kernel 並行(回顧 <a class="xlink" href="P1-T10.html">P1-T10</a>)。</p>
+<p><strong>誤區三:漏掉「資料寫入」與「旗標/門鈴寫入」之間的屏障。</strong>
+裝置/讀方可能先看到旗標、後看到資料 → 讀到舊資料。DMA 場景這就是資料毀損。要在資料寫入和門鈴之間插寫屏障。</p>
+<p><strong>誤區四:誤用過強或過弱的屏障。</strong>
+過強(到處 <code>smp_mb</code>)傷效能;過弱(該用全屏障卻只用單向)不保證正確。理解每種屏障管什麼(讀/寫/全),用對應的。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機。實驗只在 VM。</strong></p>
+<p><strong>任務 A — producer-consumer 旗標加屏障(驗收點)</strong>
+寫一個 module(或先在使用者態用 C11 atomics 練,再對應到 kernel)實作:
+- producer:<code>WRITE_ONCE(data, 42)</code>,然後 <code>smp_wmb()</code>(或 <code>smp_store_release(&amp;ready, 1)</code>),設旗標。
+- consumer:讀旗標(<code>smp_load_acquire(&amp;ready)</code> 或 配 <code>smp_rmb()</code>),旗標成立後讀 <code>data</code>,驗證讀到 42。
+<strong>驗收:正確插入 write/read 屏障(或 store-release/load-acquire),使資料可見性正確(consumer 看到旗標就一定看到 data=42)。</strong></p>
+<p><strong>任務 B — 解釋 DMA 命門(驗收點,核心)</strong>
+用文字解釋:<strong>為什麼 DMA 描述子必須在按門鈴(doorbell)前對裝置可見?</strong> 如果不保證會發生什麼?<strong>驗收:能解釋(若重排使裝置先看到門鈴、描述子未就緒,裝置讀垃圾描述子 → 資料毀損)。</strong></p>
+<p><strong>任務 C — 說明 READ_ONCE/WRITE_ONCE 防什麼(驗收點)</strong>
+寫一句話:<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 防止的是哪類編譯器最佳化?<strong>驗收:能說出(防止編譯器把共享變數存取優化掉/快取在暫存器/拆分,即管編譯器層而非 CPU 層)。</strong></p>
+<p><strong>任務 D(閱讀)— LKMM 速覽</strong>
+瀏覽 LKMM 的速查表(<code>tools/memory-model/Documentation/cheatsheet.txt</code>,https://elixir.bootlin.com/linux/v6.12/source/tools/memory-model/Documentation/cheatsheet.txt ）。不求全懂,目標是知道「kernel 有這份記憶體順序的權威規則書」。寫一句話你的理解。</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 對 producer-consumer 旗標範例,正確插入 write/read 屏障(或 store-release/load-acquire)使資料可見性正確。
+2. ☐ 用文字解釋「為何 DMA 描述子必須在按門鈴前對裝置可見」。
+3. ☐ 說出 <code>READ_ONCE</code>/<code>WRITE_ONCE</code> 防止的是哪類編譯器最佳化。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能照樣加屏障。
+- <strong>80(熟練)</strong>:能解釋 acquire/release 與裝置可見性。
+- <strong>100(精通)</strong>:能讀 LKMM 文件並判斷一段 lock-free 程式是否需要屏障。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這是 <span class="xlink-stub" title="待撰寫">P6</span> DMA 正確性的核心:描述子/資料必須在按 doorbell 前對 NVMe 裝置可見,否則裝置讀到舊資料導致資料毀損。</li>
+<li><strong>這課餵給未來的(你的記憶體順序主線完成)</strong>:<a class="xlink" href="P1-T03.html">P1-T03</a> coherence≠ordering → <a class="xlink" href="P1-T10.html">P1-T10</a> 重排直覺 → 本課(kernel barrier 工具)→ <a class="xlink" href="P6-T03.html">P6-T03</a> DMA 的 <code>dma_wmb</code>/<code>dma_rmb</code>(實戰)。barrier/acquire-release → lock-free 結構、RCU。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T12.html">P3-T12</a> 行程排程器內部(EEVDF,CFS 為歷史脈絡)</strong>:記憶體順序告一段落。下一課回到「排程」(回顧 <a class="xlink" href="P1-T07.html">P1-T07</a> 的排程概念),看 Linux <strong>現行</strong>的排程器內部:<code>task_struct</code>、排程類別、<strong>EEVDF</strong>(自 6.6 起取代 CFS 成為 fair class 預設——CFS 現在是歷史脈絡)、runqueue、搶佔。這讓你理解你的 kthread/workqueue(<a class="xlink" href="P3-T10.html">P3-T10</a>)何時被排到執行、優先權如何影響你 I/O 與 parity 工作的延遲。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T10.html">← P3-T10 中斷與延後工作(hardirq / softirq / tasklet / workqueue / threaded IRQ)</a><a class="pn next" href="P3-T12.html">P3-T12 行程排程器內部(EEVDF,CFS 為歷史脈絡) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

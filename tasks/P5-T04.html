@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P5-T04 · I/O 排程器(mq-deadline / BFQ / Kyber / none)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P5 · Block Layer、儲存堆疊與 NVMe</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p5-t04-io-mq-deadline-bfq-kyber-none">P5-T04 · I/O 排程器(mq-deadline / BFQ / Kyber / none)</h1>
+<blockquote>
+<p><strong>一句話</strong>:I/O 排程器決定請求的順序與合併——在慢速裝置上,排序能大幅減少尋道、提升吞吐;但在超高速 NVMe 上,重量級排程反而是負擔,所以常用 <code>none</code>(不排程,直接派發)。選對排程器是效能調校的一環,影響的不只吞吐,更是延遲與公平。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P5-T03.html">P5-T03</a> 你看到 blk-mq 的軟佇列那層會做 I/O 排程。這一課深入:有哪些<strong>I/O 排程器</strong>、各自的取捨、以及怎麼選。</p>
+<p>先理解<strong>為什麼需要 I/O 排程</strong>:當多個 I/O 請求進來,直接照「先來後到」派發未必最好。排程器可以:
+- <strong>合併(merge)</strong>:把相鄰的請求併成一個(回顧 <a class="xlink" href="P5-T02.html">P5-T02</a> bio→request 合併)——減少請求數。
+- <strong>排序(sort)</strong>:重排請求順序,讓裝置更有效率(對 HDD 這超重要——減少磁頭尋道;對 SSD 影響小但仍有合併效益)。
+- <strong>公平(fairness)</strong>:確保不同行程/任務都能拿到 I/O,不被某個 I/O 大戶餓死。
+- <strong>延遲(latency)</strong>:控制請求的等待時間,避免某些請求等太久。</p>
+<p>主要的排程器(blk-mq 時代):
+- <strong>mq-deadline</strong>:給每個請求一個<strong>期限(deadline)</strong>,避免請求飢餓——簡單、可預測。
+- <strong>BFQ(Budget Fair Queueing)</strong>:重視<strong>公平</strong>和<strong>互動友善</strong>(桌面場景:讓互動程式的 I/O 優先)。
+- <strong>Kyber</strong>:輕量、重視<strong>低延遲</strong>,用 token 限流。
+- <strong><code>none</code></strong>:<strong>不排程</strong>——直接派發。<strong>高速 NVMe 常用這個</strong>。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為<strong>你產品在 NVMe 上的延遲/吞吐表現,和排程器選擇相關</strong>。一個關鍵反直覺:<strong>對超高速 NVMe,常見建議是 <code>none</code> 或輕量的 mq-deadline</strong>——因為裝置本身夠快,重量級排程器(BFQ)的 CPU 開銷反而拖慢整體。理解這些取捨,你才能為產品做正確的效能調校。</p>
+<p>(這一課回收 <a class="xlink" href="P2-T05.html">P2-T05</a>:mq-deadline 用紅黑樹按 sector 排序請求——你練的紅黑樹在這裡用上。)</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P5-T03.html">P5-T03</a>(blk-mq、軟佇列做排程)、<a class="xlink" href="P2-T05.html">P2-T05</a>(紅黑樹——mq-deadline 用它排序)。也用到 <a class="xlink" href="P5-T02.html">P5-T02</a>(合併)、<a class="xlink" href="P1-T07.html">P1-T07</a>(排程的公平/延遲概念可類比)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P2-T05.html">P2-T05</a> 的「紅黑樹:有序、O(log n) 插入/查找」嗎?mq-deadline 用紅黑樹按 sector 排序請求。
+  2. 你還記得 <a class="xlink" href="P1-T07.html">P1-T07</a> CPU 排程的「公平 vs 延遲」權衡嗎?I/O 排程有類似的權衡(只是對象是 I/O 請求)。</li>
+<li>工具:<code>fio</code>(I/O 壓測工具)、<code>/sys/block/&lt;dev&gt;/queue/scheduler</code>(切換排程器)。</li>
+<li>環境:<strong>QEMU 虛擬機 / null_blk(實驗只在 VM)。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 為什麼需要 I/O 排程 → (2) mq-deadline:期限避免飢餓 → (3) BFQ:公平與互動 → (4) Kyber:低延遲 → (5) none:高速裝置的選擇 → (6) 切換與量測</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-io">1. 為什麼需要 I/O 排程:四個目標</h3>
+<p>I/O 排程器在「請求進來」和「派發給裝置」之間做加工。它追求四個(有時衝突的)目標:</p>
+<p><pre class="mermaid">flowchart TB
+    REQUESTS["多個 I/O 請求進來"]
+    REQUESTS --> SCHED3["I/O 排程器:決定派發的順序與組合"]
+    SCHED3 --> MERGE4["① 合併:相鄰請求併成一個(P5-T02)→ 減少請求數"]
+    SCHED3 --> SORT2["② 排序:重排順序讓裝置更有效率<br/>(HDD:減少磁頭尋道,巨大效益;SSD:效益小)"]
+    SCHED3 --> FAIR2["③ 公平:不同行程都拿到 I/O,不被大戶餓死"]
+    SCHED3 --> LAT["④ 延遲:控制等待時間,避免請求等太久"]
+    NOTE19["這四個目標常衝突:<br/>追求吞吐(排序/合併)可能犧牲個別請求的延遲;<br/>追求公平可能犧牲吞吐<br/>→ 不同排程器在這些目標間做不同取捨"]
+    MERGE4 --> NOTE19
+    style SCHED3 fill:#e8a33d,color:#10100e
+    style NOTE19 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>四個目標:<strong>合併</strong>(減少請求數)、<strong>排序</strong>(裝置效率——HDD 減少尋道效益巨大、SSD 效益小)、<strong>公平</strong>(不被 I/O 大戶餓死)、<strong>延遲</strong>(控制等待時間)。</p>
+<p><strong>關鍵(常見誤區:以為排程器只影響吞吐)</strong>:這四個目標常<strong>衝突</strong>——追求吞吐(排序/合併)可能犧牲個別請求的延遲;追求公平可能犧牲吞吐。所以排程器<strong>對延遲與公平性的影響,往往比對吞吐更顯著</strong>。不同排程器在這些目標間做不同取捨,沒有「最好」的,只有「最適合某工作負載」的。</p>
+<p>歷史脈絡:在 <strong>HDD 時代</strong>,排序(減少磁頭機械尋道)效益巨大,所以排程器很重要、很複雜。在 <strong>SSD/NVMe 時代</strong>,沒有機械尋道,排序的效益大減——這就是為什麼高速裝置常用 <code>none</code>(第 5 節)。</p>
+<hr />
+<h3 id="2-mq-deadline">2. mq-deadline:用期限避免飢餓</h3>
+<p><strong>mq-deadline</strong> 是一個簡單、可預測的排程器。核心想法:<strong>給每個請求一個期限(deadline)</strong>,確保沒有請求等太久(避免飢餓)。</p>
+<p><pre class="mermaid">flowchart TB
+    DEADLINE3["mq-deadline:每個請求帶一個 deadline(期限)"]
+    DEADLINE3 --> SORT3["平時:用紅黑樹(P2-T05)按 sector 排序請求<br/>→ 盡量按裝置位址順序派發(效率)"]
+    DEADLINE3 --> EXPIRE["但若有請求快到期(等太久):<br/>優先派發它,避免飢餓<br/>(讀和寫各有不同的 deadline,讀通常較急)"]
+    SORT3 --> BALANCE["= 在『效率排序』和『避免飢餓』之間平衡<br/>簡單、行為可預測"]
+    EXPIRE --> BALANCE
+    style DEADLINE3 fill:#6fa8b8,color:#10100e
+    style BALANCE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>mq-deadline 的機制:
+- <strong>平時</strong>:用<strong>紅黑樹</strong>(回收 <a class="xlink" href="P2-T05.html">P2-T05</a>!)按 sector 排序請求,盡量按裝置位址順序派發(效率)。
+- <strong>但設期限</strong>:每個請求有 deadline,若某請求快到期(等太久了),就<strong>優先派發它</strong>,避免飢餓。讀和寫各有不同 deadline(讀通常較急,因為應用常在等讀結果)。</p>
+<p>mq-deadline 在「效率排序」和「避免飢餓」之間取得簡單的平衡,<strong>行為可預測</strong>。它是很多場景的合理預設,<strong>對 NVMe 也常是 <code>none</code> 之外的合理選擇</strong>(輕量、保證不飢餓)。</p>
+<hr />
+<h3 id="3-bfq">3. BFQ:公平與互動友善</h3>
+<p><strong>BFQ(Budget Fair Queueing)</strong> 是重視<strong>公平</strong>和<strong>互動體驗</strong>的排程器,主要為桌面/互動場景設計。</p>
+<p><pre class="mermaid">flowchart TB
+    BFQ2["BFQ:預算式公平佇列"]
+    BFQ2 --> FAIR3["核心:給每個行程一個 I/O『預算』<br/>→ 公平分配 I/O 頻寬,沒有行程被餓死<br/>(類似 CPU 排程的公平,P1-T07,但對 I/O)"]
+    BFQ2 --> INTERACTIVE2["互動友善:<br/>偵測互動型 I/O(如開啟程式、捲動)<br/>→ 給它們較高優先,讓桌面感覺流暢"]
+    FAIR3 --> COST["代價:★ 較重(複雜的記帳)★<br/>CPU 開銷較大<br/>→ 對超高速 NVMe,這個開銷可能反而拖慢整體吞吐"]
+    INTERACTIVE2 --> COST
+    style BFQ2 fill:#6fa8b8,color:#10100e
+    style COST fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>BFQ 的特點:
+- <strong>公平</strong>:給每個行程一個 I/O「預算」,公平分配 I/O 頻寬(類比 <a class="xlink" href="P1-T07.html">P1-T07</a> CPU 排程的公平,但對象是 I/O)。
+- <strong>互動友善</strong>:偵測互動型 I/O(開啟程式、捲動),給它們較高優先,讓桌面流暢。</p>
+<p><strong>代價(關鍵)</strong>:BFQ <strong>較重</strong>——它做複雜的記帳(預算追蹤),CPU 開銷較大。<strong>對超高速 NVMe,這個開銷可能反而拖慢整體吞吐</strong>(裝置本身夠快,排程器的 CPU 成本成為瓶頸)。所以 BFQ 適合<strong>桌面/互動、且裝置不是極快</strong>的場景;對你的<strong>高效能 NVMe 伺服器場景,BFQ 通常不是好選擇</strong>。</p>
+<hr />
+<h3 id="4-kyber">4. Kyber:輕量、低延遲</h3>
+<p><strong>Kyber</strong> 是一個輕量的排程器,重視<strong>低延遲</strong>,專為快速裝置設計。</p>
+<p><pre class="mermaid">flowchart TB
+    KYBER["Kyber:輕量、低延遲導向"]
+    KYBER --> TOKEN["機制:用 token 限流<br/>限制同時派發的讀/寫請求數,<br/>動態調整以維持目標延遲<br/>(讀和寫分開控制)"]
+    TOKEN --> GOAL2["目標:保持低延遲<br/>(不讓太多請求同時擠在裝置,造成延遲尖峰)"]
+    KYBER --> LIGHT["★ 輕量 ★(比 BFQ 簡單得多)<br/>→ 適合快速裝置(開銷小、又能控延遲)"]
+    style KYBER fill:#6fa8b8,color:#10100e
+    style LIGHT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>Kyber 的機制:用 <strong>token 限流</strong>——限制同時派發的讀/寫請求數,動態調整以維持<strong>目標延遲</strong>(讀和寫分開控制)。想法:不讓太多請求同時擠在裝置,避免延遲尖峰。</p>
+<p>Kyber <strong>比 BFQ 輕量得多</strong>,適合<strong>快速裝置</strong>——開銷小,又能控制延遲。它是「高速裝置上想要一點延遲控制、但不要 BFQ 那麼重」時的選擇。對你的 NVMe 場景,Kyber 是 <code>none</code>/mq-deadline 之外、想要延遲控制時的一個選項。</p>
+<hr />
+<h3 id="5-none">5. <code>none</code>:高速裝置的選擇</h3>
+<p><strong><code>none</code></strong> 就是<strong>不排程</strong>——請求直接派發給裝置,不做排序(合併仍可能在更底層發生)。這在<strong>高速 NVMe 上常是最佳選擇</strong>,而這很反直覺。</p>
+<p><pre class="mermaid">flowchart TB
+    NONE["none:不做 I/O 排程,直接派發"]
+    NONE --> WHY2["為什麼高速 NVMe 常用 none(反直覺):"]
+    WHY2 --> R1b["① NVMe 沒有機械尋道(不像 HDD)<br/>→ 排序減少尋道的效益『消失了』"]
+    WHY2 --> R2b["② NVMe 內部自己有高度並行(多佇列、多通道)<br/>→ 裝置自己會調度,軟體再排程是多餘"]
+    WHY2 --> R3b["③ NVMe 快到每秒百萬 IOPS<br/>→ 排程器的 CPU 開銷成為瓶頸(P5-T03 同理)<br/>→ 不排程、直接派發反而最快、延遲最低"]
+    style NONE fill:#e8a33d,color:#10100e
+    style R3b fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>為什麼高速 NVMe 常用 <code>none</code>(驗收點:說明為何高速 NVMe 常選 none)</strong>:
+- <strong>沒有機械尋道</strong>:NVMe 不像 HDD 有磁頭,排序減少尋道的效益消失了。
+- <strong>裝置內部已高度並行</strong>:NVMe 自己有多佇列、多通道,內部會調度——軟體層再排程是多餘的。
+- <strong>裝置快到 CPU 成瓶頸</strong>:NVMe 每秒百萬 IOPS,排程器的 CPU 開銷反而成為瓶頸(同 <a class="xlink" href="P5-T03.html">P5-T03</a> 的道理:裝置快到讓軟體成為瓶頸)。</p>
+<p>所以對 NVMe,<strong>不排程(<code>none</code>)、直接派發,反而最快、延遲最低</strong>。這是「裝置特性決定軟體策略」的典型:HDD 時代複雜排程很值得,NVMe 時代簡單(甚至不排程)才對。</p>
+<p><strong>常見誤區:對高速 NVMe 仍套用重量級排程器</strong>——對 NVMe 套 BFQ 這種重量級排程器,常常<strong>降低</strong>效能。常見建議:NVMe 用 <code>none</code>(極致吞吐/延遲)或 <code>mq-deadline</code>(想要不飢餓的保證)。你產品調校時,從這兩個試起。</p>
+<p>把「該選哪個排程器」整理成一張依裝置/需求的決策圖:</p>
+<p><pre class="mermaid">flowchart TB
+    Q4{"裝置類型?"}
+    Q4 -->|"高速 NVMe / SSD"| FAST["優先 none(極致吞吐/延遲)<br/>或 mq-deadline(要不飢餓保證)<br/>★ 別用 BFQ(太重,反而拖慢)★"]
+    Q4 -->|"傳統 HDD / 慢速裝置"| SLOW["mq-deadline(排序減尋道)<br/>或 BFQ(桌面/互動、要公平)"]
+    FAST --> NEEDLAT{"高速但想要延遲控制?"}
+    NEEDLAT -->|"是"| KYBER3["可試 Kyber(輕量、低延遲)"]
+    NEEDLAT -->|"否"| NONE3["none / mq-deadline"]
+    VERIFY["★ 最後都要用 fio 量測驗證,別憑感覺 ★"]
+    NONE3 --> VERIFY
+    KYBER3 --> VERIFY
+    SLOW --> VERIFY
+    style FAST fill:#e8a33d,color:#10100e
+    style VERIFY fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h3 id="6">6. 切換與量測</h3>
+<p>最後是實務:怎麼切換排程器、怎麼量測比較。</p>
+<p><pre class="mermaid">flowchart TB
+    SWITCH2["切換排程器(per-device,每個裝置獨立):<br/>cat /sys/block/<dev>/queue/scheduler<br/>→ 顯示可選的,[中括號]是當前的<br/>echo mq-deadline > /sys/block/<dev>/queue/scheduler<br/>→ 切換"]
+    SWITCH2 --> MEASURE["量測(用 fio):<br/>對同一裝置、同一工作負載,<br/>切換不同排程器,各跑一次 fio<br/>比較:延遲(latency)、吞吐(throughput/IOPS)"]
+    MEASURE --> ANALYZE["分析:不同排程器的延遲/吞吐差異<br/>→ 依你的工作負載(讀寫比、隨機/順序、並行度)<br/>選最適合的"]
+    NOTE20["★ 常見誤區:切換排程器影響範圍誤判 ★<br/>scheduler 是 per-device 的(每個區塊裝置各自設定)<br/>改一個裝置不影響別的"]
+    SWITCH2 --> NOTE20
+    style SWITCH2 fill:#6fa8b8,color:#10100e
+    style ANALYZE fill:#8a9a5b,color:#10100e
+    style NOTE20 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<ul>
+<li><strong>切換(per-device)</strong>:<code>cat /sys/block/&lt;dev&gt;/queue/scheduler</code> 看可選的(<code>[中括號]</code> 是當前);<code>echo &lt;排程器&gt; &gt; /sys/block/&lt;dev&gt;/queue/scheduler</code> 切換。<strong>常見誤區:切換排程器影響範圍誤判</strong>——scheduler 是 <strong>per-device</strong>(每個區塊裝置各自設定),改一個不影響別的。</li>
+<li><strong>量測(用 <code>fio</code>)</strong>:對同一裝置、同一工作負載,切換不同排程器各跑一次 <code>fio</code>,比較<strong>延遲</strong>和<strong>吞吐/IOPS</strong>。</li>
+<li><strong>分析</strong>:依你的工作負載(讀寫比、隨機/順序、並行度)選最適合的。</li>
+</ul>
+<p>這是效能調校的標準做法:<strong>不要憑感覺,要量測</strong>。對你產品,在目標 NVMe 上用代表性的工作負載(模擬你的 RAID I/O 模式)量測 <code>none</code> vs <code>mq-deadline</code>,看哪個延遲/吞吐更好(驗收點:用 <code>fio</code> 對至少兩種排程器量測並比較)。</p>
+<hr />
+<h2 id="io">打通關:把 I/O 排程器收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    WHY3["為什麼排程:合併、排序、公平、延遲(常衝突,影響延遲/公平 > 吞吐)"]
+    WHY3 --> SCHEDULERS["主要排程器(blk-mq):"]
+    SCHEDULERS --> MQD["mq-deadline:期限避免飢餓(紅黑樹排序,P2-T05)<br/>簡單可預測;NVMe 的合理選擇之一"]
+    SCHEDULERS --> BFQ3["BFQ:公平 + 互動友善,但★較重★<br/>→ 桌面適用;高速 NVMe 通常不適合"]
+    SCHEDULERS --> KYBER2["Kyber:輕量、低延遲(token 限流)→ 快速裝置可用"]
+    SCHEDULERS --> NONE2["★ none:不排程,直接派發 ★<br/>高速 NVMe 常用(無機械尋道、裝置自己並行、避免 CPU 開銷)"]
+    NONE2 --> SWITCH3["切換:/sys/block/<dev>/queue/scheduler(per-device)<br/>量測:用 fio 比較延遲/吞吐 → 依負載選"]
+    SWITCH3 --> YOURS7["→ 你產品 NVMe 調校:從 none / mq-deadline 試起,量測為準"]
+    style NONE2 fill:#e8a33d,color:#10100e
+    style YOURS7 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>I/O 排程器在合併/排序/公平/延遲間做取捨(影響延遲與公平往往大於吞吐)——mq-deadline 用期限避免飢餓(紅黑樹排序)、BFQ 公平互動但較重、Kyber 輕量低延遲、<code>none</code> 不排程直接派發;高速 NVMe 常用 <code>none</code> 或 mq-deadline(因無機械尋道、裝置自己並行、要避免 CPU 開銷),別套重量級的 BFQ;切換是 per-device,調校要用 fio 量測為準。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:對高速 NVMe 仍套用重量級排程器。</strong>
+對 NVMe 套 BFQ 常降低效能。常見建議:NVMe 用 <code>none</code>(極致吞吐/延遲)或 <code>mq-deadline</code>(要不飢餓保證)。</p>
+<p><strong>誤區二:以為排程器只影響吞吐。</strong>
+排程器對<strong>延遲與公平性</strong>的影響往往比吞吐更顯著。四個目標常衝突,選擇是權衡。</p>
+<p><strong>誤區三:切換排程器影響範圍誤判。</strong>
+scheduler 是 <strong>per-device</strong>(每個區塊裝置各自設定)。改一個裝置不影響別的。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU / null_blk(實驗只在 VM)。</strong></p>
+<p><strong>任務 A — 切換排程器(驗收點)</strong>
+對一個裝置(null_blk 或 VM 裡的虛擬磁碟):<code>cat /sys/block/&lt;dev&gt;/queue/scheduler</code> 看可選的與當前的;<code>echo</code> 切換到另一個(如 <code>mq-deadline</code>),再 <code>cat</code> 確認改變。<strong>驗收:成功切換排程器並用 <code>cat</code> 確認。</strong></p>
+<p><strong>任務 B — fio 量測比較(驗收點)</strong>
+用 <code>fio</code> 對同一裝置、同一工作負載(例如隨機讀寫),在<strong>至少兩種排程器</strong>(如 <code>none</code> vs <code>mq-deadline</code>)下各跑一次,記錄延遲與吞吐/IOPS,比較差異。<strong>驗收:用 <code>fio</code> 對至少兩種排程器量測並比較延遲/吞吐。</strong></p>
+<p><strong>任務 C — 解釋 NVMe 為何常選 none(驗收點)</strong>
+寫一段話:為什麼高速 NVMe 常選 <code>none</code>?<strong>驗收:說明為何高速 NVMe 常選 <code>none</code>(無機械尋道、裝置內部並行、避免排程 CPU 開銷)。</strong></p>
+<p><strong>任務 D(連結)— 你產品的排程器選擇</strong>
+寫一兩句話:你的產品在 NVMe 上,會優先考慮哪個排程器?你會怎麼驗證這個選擇?(提示:從 none/mq-deadline 試起;用代表性工作負載 fio 量測。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 成功在 <code>/sys/block/&lt;dev&gt;/queue/scheduler</code> 切換排程器並用 <code>cat</code> 確認。
+2. ☐ 用 <code>fio</code> 對至少兩種排程器量測並比較延遲/吞吐。
+3. ☐ 說明為何高速 NVMe 常選 <code>none</code>。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能切換排程器。
+- <strong>80(熟練)</strong>:能量測並比較。
+- <strong>100(精通)</strong>:能依負載特性論證排程器選擇。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——你產品在 NVMe 上的延遲/吞吐表現與排程器選擇相關;理解取捨有助於效能調校。</li>
+<li><strong>這課餵給未來的</strong>:排程器取捨 → 你產品的效能調校;<code>fio</code> 量測方法 → 你日後驗證任何 I/O 變更;<code>none</code> 的道理(裝置快→軟體簡化)→ 呼應 <a class="xlink" href="P5-T03.html">P5-T03</a> blk-mq、預告 <a class="xlink" href="P5-T05.html">P5-T05</a> NVMe 的高並行。紅黑樹排序 → 回收 <a class="xlink" href="P2-T05.html">P2-T05</a>。</li>
+<li><strong>下一步 → <a class="xlink" href="P5-T05.html">P5-T05</a> NVMe 協定基礎(控制器/命名空間、SQ/CQ、doorbell、PRP/SGL)</strong>:你已經掌握 block layer 的物件、多佇列、排程。下一課深入<strong>裝置端的協定</strong>——<strong>NVMe</strong>,你產品的核心。你會學:控制器 vs 命名空間、<strong>提交/完成佇列(SQ/CQ)</strong>(就是 blk-mq 硬體佇列對應的那個,<a class="xlink" href="P5-T03.html">P5-T03</a>)、<strong>doorbell</strong> 暫存器(在 BAR 裡,回收 <a class="xlink" href="P4-T04.html">P4-T04</a>/<a class="xlink" href="P3-T11.html">P3-T11</a>)、命令/完成項的格式與 <strong>phase bit</strong>、以及 <strong>PRP/SGL</strong>(描述資料記憶體位置,和 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 bio_vec/scatter-gather 呼應,也是 <span class="xlink-stub" title="待撰寫">P6</span> DMA 的關鍵)。<strong>這直接對應你的工作</strong>:你產品把 NVMe queue I/O 餵給 GPU,理解 SQ/CQ、doorbell、PRP/SGL 是理解這條資料路徑的根本。(我已查證 NVMe 規格現況:Base Spec 2.3 於 2025-08 發布,2.1 是穩定教學參考。)</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P5-T03.html">← P5-T03 多佇列 block layer(blk-mq)</a><a class="pn next" href="P5-T05.html">P5-T05 NVMe 協定基礎(控制器/命名空間、SQ/CQ、doorbell、PRP/SGL) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2-T08 · 整合驗收 — 讀懂一個真實 kernel 子系統的資料結構使用</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P2 · kernel 工作所需資料結構</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  <span class="gate-pill">🚪 出關門檻</span>
+</nav>
+<article class="paper">
+<h1 id="p2-t08-kernel">P2-T08 · 整合驗收:讀懂一個真實 kernel 子系統的資料結構使用</h1>
+<blockquote>
+<p><strong>一句話</strong>:不再學新結構,而是把 Phase 2 學的全部——<code>list_head</code>、<code>container_of</code>、雜湊/hlist、紅黑樹、XArray、bitmap——拿去讀一段<strong>真實的 kernel 程式碼</strong>,逐段認出它用了哪些結構與慣用法。能做到這件事,你就真正具備了讀 kernel 原始碼的能力。</p>
+</blockquote>
+<hr />
+<h2 id="_1">🚪 這是出關門檻</h2>
+<p>這是 Phase 2 的<strong>關卡(gate)</strong>。本 task 達到 <strong>80 分</strong>(完整註解一段真實 kernel 程式碼、正確指認其中所有資料結構慣用法),並且<strong>具備閱讀 kernel 資料結構的信心</strong>,才算真正掌握了進入 Phase 3(核心 kernel 與 module 開發)所需的能力。</p>
+<p>為什麼設這道關?因為從 Phase 3 開始,你要真正寫 kernel module、讀大量 kernel 原始碼。如果 <code>list_for_each_entry</code>、<code>container_of</code>、<code>rb_node</code> 這些東西出現時你還要停下來查,閱讀會寸步難行。這道關確保你已經能「一眼認出」這些慣用法——這是 Phase 2 整個階段的目的:<strong>讓 kernel 原始碼裡的資料結構「一眼可讀」</strong>。</p>
+<hr />
+<h2 id="_2">為什麼是「讀真實程式碼」(導讀)</h2>
+<p>Phase 2 前七課,你逐一學了 kernel 的核心資料結構。但「分開學會每個」和「在一段真實程式碼裡同時認出它們」是兩回事。真實的 kernel 程式碼會<strong>把這些結構混在一起用</strong>——一個函式裡可能同時有 <code>list_for_each_entry</code> 走訪、<code>container_of</code> 取私有資料、操作一棵 rbtree。能在交織的真實 code 裡認出每一個,才是真本事。</p>
+<p>這一課就是這個整合練習:挑一段約 100–200 行的真實 kernel 函式或結構,<strong>逐段註解</strong>它用到的每一個資料結構與慣用法。這不只是 Phase 2 的驗收,<strong>更是你日後工作的核心技能</strong>——你讀自家 module、讀 block layer 程式碼、追 bug,靠的就是這個「看著陌生的 kernel code,認出它在用什麼結構、做什麼事」的能力。</p>
+<p>建議挑<strong>與儲存相關</strong>的子系統(從 <code>block</code> 目錄開始),這樣同時為 <span class="xlink-stub" title="待撰寫">P5</span>(Block Layer 與 NVMe)暖身——你會提前接觸到日後深入的程式碼。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為這正是你日後讀自家產品 module 與 block layer 程式碼的核心技能。沒有它,Phase 3 之後寸步難行;有了它,kernel 原始碼對你敞開。</p>
+<hr />
+<h2 id="_3">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<strong>整個 Phase 2(P2-T01 ~ P2-T07)</strong>。動手前,確認這些對你都已「一眼可讀」:
+  1. <code>list_head</code> 與 <code>list_for_each_entry</code> / <code>list_for_each_entry_safe</code>(<a class="xlink" href="P2-T02.html">P2-T02</a>)。
+  2. <code>container_of</code>(<a class="xlink" href="P2-T03.html">P2-T03</a>)——尤其「從成員指標反推外層 struct」。
+  3. 雜湊與 <code>hlist</code>(<a class="xlink" href="P2-T04.html">P2-T04</a>)、紅黑樹 <code>rb_node</code>(<a class="xlink" href="P2-T05.html">P2-T05</a>)、XArray(<a class="xlink" href="P2-T06.html">P2-T06</a>)、bitmap(<a class="xlink" href="P2-T07.html">P2-T07</a>)。</li>
+<li>工具:<strong>Bootlin Elixir</strong>(https://elixir.bootlin.com/linux/v6.12/source ）——線上瀏覽 kernel 原始碼,能點擊跳轉到定義(查 struct 宣告、巨集展開)。這是讀 kernel code 的利器。</li>
+<li>環境:純閱讀 + 註解,<strong>無系統風險</strong>。</li>
+</ul>
+<hr />
+<h2 id="kernel">核心內容:讀 kernel 程式碼的方法</h2>
+<p>這一課的「核心內容」不是新結構,而是<strong>讀 kernel 程式碼的系統方法</strong>。拆成:<strong>(1) 辨識的心法 → (2) 認出 list_head 走訪 → (3) 認出 container_of → (4) 認出樹/雜湊/XArray/bitmap → (5) 對照 struct 宣告 → (6) 警惕 _safe 這類「不是普通迴圈」的慣用法</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 辨識的心法:結構 + 慣用法 = 看懂意圖</h3>
+<p>讀 kernel code 不是逐字讀,而是<strong>辨識模式</strong>。每段程式碼都在用某些「資料結構 + 操作慣用法」做某件事。你的任務是認出「用了什麼結構、什麼操作」,從而推出「它在做什麼」。</p>
+<p><pre class="mermaid">flowchart TB
+    CODE["一段陌生的 kernel 程式碼"]
+    CODE --> SCAN["掃描:認出關鍵慣用法的『招牌字樣』"]
+    SCAN --> ID1["list_for_each_entry → 在走訪一個串列"]
+    SCAN --> ID2["container_of → 從成員取回外層 struct"]
+    SCAN --> ID3["rb_node / rb_insert_color → 在操作紅黑樹"]
+    SCAN --> ID4["hlist_ / xa_ / set_bit → 雜湊/XArray/bitmap"]
+    ID1 --> MEAN["組合起來 → 推出這段在做什麼<br/>(例:走訪一個 request 串列,<br/>對每個用 container_of 取回 driver 資料,<br/>做某事)"]
+    ID2 --> MEAN
+    ID3 --> MEAN
+    ID4 --> MEAN
+    style SCAN fill:#e8a33d,color:#10100e
+    style MEAN fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>心法:先認「招牌字樣」(API/巨集名),再推意圖。</strong> 你 Phase 2 學的每個結構都有它的招牌 API——看到 <code>list_for_each_entry</code> 就知道「走訪串列」,看到 <code>container_of</code> 就知道「取外層 struct」。認出這些,程式碼的骨架就浮現了。下面逐一複習每種結構的「招牌字樣」。</p>
+<hr />
+<h3 id="2-list_head">2. 認出 <code>list_head</code> 走訪</h3>
+<p>最常見的招牌。看到這些字樣,就知道在操作侵入式串列(<a class="xlink" href="P2-T02.html">P2-T02</a>):</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph signs["list_head 的招牌字樣"]
+        S1["list_for_each_entry(e, &head, member)<br/>→ 走訪串列,e 依次是每個外層 struct"]
+        S2["list_add / list_add_tail<br/>→ 加入節點"]
+        S3["list_del<br/>→ 移除節點"]
+        S4["struct list_head xxx; (在 struct 定義裡)<br/>→ 這個 struct 會被掛到某個串列"]
+    end
+    READ["讀法:看到 list_for_each_entry(e, &q->list, link),<br/>讀成『走訪 q 的 list 串列,<br/>e 依次指向每個內嵌 link 成員的外層 struct』"]
+    signs --> READ
+    style S1 fill:#e8a33d,color:#10100e
+    style READ fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>關鍵:<code>list_for_each_entry(entry, head, member)</code> 的三個參數告訴你——<code>entry</code> 是迴圈變數(外層 struct 指標)、<code>head</code> 是串列頭、<code>member</code> 是 <code>list_head</code> 成員在 struct 裡的名字。讀到它,你就知道「這裡在逐一處理串列上的每個元素」。在 block layer,你會看到大量 request、bio 用串列串接並這樣走訪。</p>
+<hr />
+<h3 id="3-container_of">3. 認出 <code>container_of</code>(以及它的偽裝)</h3>
+<p><code>container_of</code>(<a class="xlink" href="P2-T03.html">P2-T03</a>)是 kernel callback 的招牌。但要注意它常常<strong>藏在其他巨集或 inline 函式背後</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    DIRECT["直接形式:<br/>container_of(ptr, struct foo, member)<br/>→ 從 member 指標取回 struct foo"]
+    DISGUISE["偽裝形式(更常見):<br/>很多子系統定義自己的包裝,<br/>例如 to_foo(ptr) 這類 helper<br/>內部其實是 container_of"]
+    DIRECT --> RECOGNIZE["辨識訣竅:<br/>看到 to_xxx(ptr) 或某 helper<br/>把『一個通用指標』變成『一個特定 struct 指標』,<br/>背後幾乎都是 container_of"]
+    DISGUISE --> RECOGNIZE
+    EXAMPLE["典型場景:callback 第一行<br/>struct my_dev *dev = container_of(work, ...);<br/>→ 從 kernel 給的通用結構取回自己的資料"]
+    RECOGNIZE --> EXAMPLE
+    style DIRECT fill:#6fa8b8,color:#10100e
+    style RECOGNIZE fill:#e8a33d,color:#10100e
+    style EXAMPLE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>辨識訣竅:<code>container_of</code> 常被包成 <code>to_xxx()</code> 這類 helper(例如把一個通用的 <code>device*</code> 轉成你的 <code>my_device*</code>)。看到「<strong>把通用指標變成特定 struct 指標</strong>」的 helper,背後幾乎都是 <code>container_of</code>。它最常出現在 <strong>callback 函式的開頭</strong>——kernel 回呼你時給通用結構,你第一件事就是用 <code>container_of</code>(或其 helper)取回自己的私有資料(回顧 <a class="xlink" href="P2-T03.html">P2-T03</a> 第 6 節)。<strong>這是你讀 driver 程式碼最常遇到的模式之一。</strong></p>
+<hr />
+<h3 id="4-xarraybitmap">4. 認出樹、雜湊、XArray、bitmap</h3>
+<p>其餘結構的招牌字樣:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph trees["紅黑樹(P2-T05)"]
+        T["struct rb_node、rb_insert_color、<br/>rb_erase、rb_entry(= rbtree 版的 container_of)<br/>→ 在操作一棵有序的紅黑樹"]
+    end
+    subgraph hash["雜湊/hlist(P2-T04)"]
+        H["hlist_head、hlist_for_each_entry、<br/>hlist_add_head<br/>→ 在操作雜湊桶的鏈"]
+    end
+    subgraph xa["XArray(P2-T06)"]
+        X["xa_load、xa_store、struct xarray、<br/>XA_STATE<br/>→ 整數索引對應值(如 page cache)"]
+    end
+    subgraph bm["bitmap(P2-T07)"]
+        B["set_bit、test_bit、find_first_zero_bit、<br/>cpumask、DECLARE_BITMAP<br/>→ 用 bit 管理資源狀態/CPU 集合"]
+    end
+    style T fill:#e8a33d,color:#10100e
+    style H fill:#6fa8b8,color:#10100e
+    style X fill:#8a9a5b,color:#10100e
+    style B fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>各記住招牌:<code>rb_*</code>(紅黑樹,注意 <code>rb_entry</code> 就是 rbtree 版的 <code>container_of</code>)、<code>hlist_*</code>(雜湊鏈)、<code>xa_*</code>/<code>XA_STATE</code>(XArray)、<code>set_bit</code>/<code>find_first_zero_bit</code>/<code>cpumask</code>/<code>DECLARE_BITMAP</code>(bitmap)。在 block layer,你可能看到:I/O 排程器用 <code>rb_*</code>(回顧 <a class="xlink" href="P2-T05.html">P2-T05</a> mq-deadline/BFQ)、tag 配置用 bitmap/sbitmap(回顧 <a class="xlink" href="P2-T07.html">P2-T07</a>)、某些查找用 hlist 或 xarray。</p>
+<hr />
+<h3 id="5-struct">5. 對照 struct 宣告:別只看函式</h3>
+<p>一個關鍵的讀碼紀律:<strong>光看一個函式不夠,要對照它操作的 struct 宣告</strong>。因為侵入式設計(<a class="xlink" href="P2-T02.html">P2-T02</a>)的本質是「結構內嵌在 struct 裡」,你得看 struct 定義才知道「這個 struct 內嵌了哪些 <code>list_head</code>/<code>rb_node</code>,所以它會被掛到哪些串列/樹」。</p>
+<p><pre class="mermaid">flowchart TB
+    FUNC["你在讀一個函式,<br/>看到 list_for_each_entry(req, &q->requests, queuelist)"]
+    QUESTION["疑問:req 是什麼型別?queuelist 是什麼?"]
+    FUNC --> QUESTION
+    LOOKUP["★ 去查 struct 宣告 ★<br/>(用 Bootlin 點擊跳轉)<br/>看 request 的定義:<br/>struct request { ...; struct list_head queuelist; ... }<br/>→ 原來 request 內嵌 queuelist,<br/>用來掛到佇列的串列上"]
+    QUESTION --> LOOKUP
+    UNDERSTAND["現在才真懂:<br/>這個迴圈在走訪佇列上的每個 request"]
+    LOOKUP --> UNDERSTAND
+    style LOOKUP fill:#e8a33d,color:#10100e
+    style UNDERSTAND fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>「只看單一函式而忽略它操作的結構定義」是讀碼常見錯誤。</strong> 看到一個走訪或 <code>container_of</code>,務必去查相關 struct 的宣告(Bootlin 能點擊跳轉),確認「這個 struct 內嵌了什麼、那個成員是什麼型別」。同樣地,<strong>巨集背後展開的真正動作</strong>也要留意(必要時看巨集定義)——別把 <code>list_for_each_entry</code> 當黑盒,要記得它內部用 <code>container_of</code> 反推(回顧 <a class="xlink" href="P2-T02.html">P2-T02</a> 第 6 節)。</p>
+<hr />
+<h3 id="6-_safe">6. 警惕「不是普通迴圈」的慣用法:<code>_safe</code> 與其他</h3>
+<p>最後一個關鍵警覺:kernel 有些慣用法<strong>長得像普通程式碼,但語意不同</strong>,不能用直覺讀。最典型的是 <code>_safe</code> 走訪(<a class="xlink" href="P2-T02.html">P2-T02</a> 第 7 節):</p>
+<p><pre class="mermaid">flowchart TB
+    TRAP["陷阱:把 kernel 特有慣用法當普通迴圈讀"]
+    TRAP --> SAFE["list_for_each_entry_safe(e, tmp, head, member)<br/>★ 不是普通走訪 ★<br/>那個多出來的 tmp 參數,是『預先存下一個』<br/>→ 代表『這個迴圈裡會刪除節點』<br/>(回顧 P2-T02:邊走邊刪必用 _safe)"]
+    TRAP --> OTHER["其他要警覺的:<br/>rcu 版走訪(list_for_each_entry_rcu)<br/>→ 涉及 RCU 同步語意(P3 會學)<br/>各種 _lock/_unlock 包裹<br/>→ 臨界區(回顧 P1-T09)"]
+    SAFE --> READ["讀到 _safe,要讀成:<br/>『這裡會在走訪中刪除節點,<br/>所以用了安全版本』,<br/>而非普通的逐一處理"]
+    style TRAP fill:#c2603a,color:#f4ecd8
+    style SAFE fill:#e8a33d,color:#10100e
+    style READ fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>「把 kernel 特有慣用法當普通迴圈」是常見且危險的誤讀。</strong> 看到 <code>list_for_each_entry_safe</code>,要立刻意識到「這個迴圈會刪除節點」(那個 <code>tmp</code> 參數就是線索);看到 <code>_rcu</code> 版本,要意識到涉及 RCU 同步(<span class="xlink-stub" title="待撰寫">P3</span> 會深入);看到 <code>_lock</code>/<code>_unlock</code> 包裹,要意識到那是臨界區(<a class="xlink" href="P1-T09.html">P1-T09</a>)。這些慣用法承載了「普通迴圈沒有的語意」,讀碼時要認出它們,才不會誤解程式碼的行為。</p>
+<p>把前六節的方法,套用在一個示意片段上走一遍,你會看到「辨識 → 查定義 → 推意圖」如何串起來:</p>
+<p><pre class="mermaid">flowchart TB
+    SNIPPET["示意片段:<br/>spin_lock(&q->lock);<br/>list_for_each_entry_safe(rq, tmp, &q->list, qlist) {<br/>&nbsp;&nbsp;if (done(rq)) list_del(&rq->qlist);<br/>}<br/>spin_unlock(&q->lock);"]
+    SNIPPET --> A1["① spin_lock/unlock 包裹<br/>→ 這整段是臨界區(P1-T09),<br/>有並行存取需保護"]
+    SNIPPET --> A2["② list_for_each_entry_safe + tmp<br/>→ 走訪 q 的 list 串列,<br/>且『迴圈中會刪節點』(P2-T02 _safe)"]
+    SNIPPET --> A3["③ 查 struct 宣告:rq 是什麼?qlist 是什麼?<br/>→ Bootlin 跳轉,看 request 內嵌 qlist(list_head)"]
+    SNIPPET --> A4["④ list_del(&rq->qlist)<br/>→ 把完成的 request 從佇列移除"]
+    A1 --> SYNTH2["綜合:這段在『鎖保護下,<br/>走訪佇列、移除所有已完成的 request』"]
+    A2 --> SYNTH2
+    A3 --> SYNTH2
+    A4 --> SYNTH2
+    style A2 fill:#e8a33d,color:#10100e
+    style A3 fill:#6fa8b8,color:#10100e
+    style SYNTH2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>走一遍就懂:不是逐字讀,而是認出「鎖 + <code>_safe</code> 走訪 + <code>list_del</code>」這組招牌,再查 struct 確認 <code>rq</code>/<code>qlist</code> 是什麼,就推出「鎖保護下移除已完成的 request」——這就是你要在真實 code 上做的事。</p>
+<hr />
+<h2 id="kernel_1">打通關:把 kernel 讀碼能力收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    GOAL["目標:看著陌生 kernel code,認出結構與慣用法,推出意圖"]
+    GOAL --> SCAN["方法:認『招牌字樣』<br/>list_for_each_entry / container_of(及 to_xxx 偽裝)<br/>/ rb_* / hlist_* / xa_* / set_bit·cpumask"]
+    SCAN --> STRUCT["★ 對照 struct 宣告 ★<br/>(侵入式設計:要看 struct 內嵌了什麼)<br/>用 Bootlin 點擊跳轉查定義與巨集展開"]
+    SCAN --> SEMANTIC["★ 警惕非普通慣用法 ★<br/>_safe(會刪節點)、_rcu(同步)、_lock(臨界區)"]
+    STRUCT --> SYNTH["綜合 → 看懂這段在做什麼"]
+    SEMANTIC --> SYNTH
+    SYNTH --> SKILL["= 你日後讀自家 module / block layer / 追 bug 的核心技能"]
+    style SCAN fill:#e8a33d,color:#10100e
+    style STRUCT fill:#6fa8b8,color:#10100e
+    style SEMANTIC fill:#c2603a,color:#f4ecd8
+    style SKILL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>讀 kernel code 是「認招牌字樣 → 對照 struct 宣告 → 警惕非普通慣用法 → 綜合推出意圖」;Phase 2 學的每個結構都有它的招牌(<code>list_for_each_entry</code>、<code>container_of</code>、<code>rb_*</code>、<code>hlist_*</code>、<code>xa_*</code>、bitmap),認出它們、查清它們操作的 struct、留意 <code>_safe</code> 這類特殊語意,你就能讀懂真實的 kernel 程式碼——這正是 Phase 3 之後與你產品工作的核心能力。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:只看單一函式,忽略它操作的 struct 定義。</strong>
+侵入式設計下,要看 struct 宣告才知道它內嵌了哪些 <code>list_head</code>/<code>rb_node</code>、會被掛到哪。讀到走訪或 <code>container_of</code>,務必用 Bootlin 跳去查相關 struct。</p>
+<p><strong>誤區二:漏看巨集背後展開的真正動作。</strong>
+<code>list_for_each_entry</code> 內部用 <code>container_of</code> 反推、<code>rb_entry</code> 也是 <code>container_of</code>。別把巨集當黑盒;必要時看它的定義,理解它真正做了什麼。</p>
+<p><strong>誤區三:把 kernel 特有慣用法當普通迴圈。</strong>
+<code>list_for_each_entry_safe</code>(會刪節點)、<code>_rcu</code>(RCU 同步)、<code>_lock</code> 包裹(臨界區)都有普通迴圈沒有的語意。認出它們,別用直覺誤讀。</p>
+<p><strong>誤區四:看到不認識的 helper 就放棄。</strong>
+很多 helper(如 <code>to_xxx()</code>)背後是熟悉的慣用法(如 <code>container_of</code>)。用 Bootlin 點進去看它的定義,常常發現是你已學過的東西的包裝。</p>
+<hr />
+<h2 id="_5">動手實作(這就是出關驗收任務)</h2>
+<p><strong>環境</strong>:Bootlin Elixir 線上瀏覽 kernel 原始碼(https://elixir.bootlin.com/linux/v6.12/source ),<strong>純閱讀 + 註解,無系統風險</strong>。</p>
+<p><strong>任務(出關門檻):挑一段真實 kernel 程式碼,完整逐段註解</strong></p>
+<ol>
+<li>
+<p><strong>選一段程式碼</strong>:從 <code>block</code> 目錄(https://elixir.bootlin.com/linux/v6.12/source/block ）挑一段約 <strong>100–200 行</strong>、結構清晰的真實程式碼(建議與儲存相關,為 <span class="xlink-stub" title="待撰寫">P5</span> 暖身)。可以是一個函式,或一組相關的 struct + 操作它們的函式。挑「你能看出它在用多種資料結構」的片段。
+   - 提示方向:I/O 排程器相關(會用 rbtree、list)、request/bio 處理(會用 list_head、container_of)、tag 配置(會用 bitmap/sbitmap)都是好選擇。</p>
+</li>
+<li>
+<p><strong>逐段註解</strong>(這是驗收核心):對選定的程式碼,逐段寫註解,<strong>正確指認其中每一處</strong>:
+   - ☐ 每一處 <code>list_head</code> 走訪(是 <code>_safe</code> 嗎?在走訪什麼串列?)
+   - ☐ 每一處 <code>container_of</code>(或其 helper 如 <code>to_xxx</code>/<code>rb_entry</code>)——從什麼成員取回什麼外層 struct?
+   - ☐ 任何 rbtree / hlist / xarray / bitmap 的使用——在做什麼?
+   - 並說明每個的<strong>目的</strong>(這段為什麼用這個結構)。</p>
+</li>
+<li>
+<p><strong>對照 struct 宣告</strong>:對程式碼裡操作的關鍵 struct,用 Bootlin 跳去看它的定義,確認它內嵌了哪些結構成員(<code>list_head</code>、<code>rb_node</code> 等),把這個對照寫進你的註解。</p>
+</li>
+<li>
+<p><strong>辨識至少 3 種不同慣用法</strong>:你的註解要涵蓋<strong>至少 3 種</strong>不同的 kernel 資料結構慣用法(例如:list 走訪 + container_of + rbtree;或 list + bitmap + hlist)。</p>
+</li>
+</ol>
+<p><strong>驗收標準</strong>:產出一份逐段註解文件,正確指認選定程式碼裡的<strong>每一處</strong>資料結構慣用法、說明各自目的,並辨識出<strong>至少 3 種</strong>不同的慣用法。能對著你的註解,向別人講解「這段程式碼如何用這些結構達成它的目的」。</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 對選定的 100–200 行程式碼,產出逐段註解,正確指認其中<strong>每一處</strong> <code>list_head</code> 走訪、<code>container_of</code> 取用、以及任何 rbtree/hlist/xarray/bitmap 使用,並說明各自目的。
+2. ☐ 至少辨識出 <strong>3 種</strong>不同的 kernel 資料結構慣用法。
+3. ☐ 對照了相關 struct 的宣告(確認內嵌的結構成員)。</p>
+<p><strong>評分量表(出關門檻,需達 80)</strong>:
+- <strong>60</strong>:能認出程式碼裡的多數結構。
+- <strong>80(出關門檻 🚪)</strong>:能完整註解選定程式碼、正確指認每一處慣用法、辨識≥3 種,且具備閱讀 kernel 資料結構的信心。達此分數方可進入 Phase 3。
+- <strong>100</strong>:能向他人完整講解這段程式碼如何運用這些結構達成其目的(不只認出,還能說清「為什麼這樣設計」)。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這正是你日後讀自家 module 與 block layer 程式碼的核心技能。Phase 2 的所有結構知識,在這一課匯聚成「讀懂真實 kernel code」的實戰能力。</li>
+<li><strong>這課收束了</strong>:整個 Phase 2 的資料結構能力(list_head、container_of、雜湊/hlist、紅黑樹、XArray、bitmap),整合成「在真實程式碼裡認出它們」。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T01.html">P3-T01</a> 進入 Phase 3</strong>:恭喜你通過 Phase 2!你現在能讀懂 kernel 的資料結構慣用法了。<strong>Phase 3 是整個課程的重頭戲</strong>——你將真正進入 kernel 內部:理解 kernel 的整體架構、<strong>親手寫你的第一個 kernel module(LKM)</strong>、深入 kernel 的記憶體管理(SLUB 配置器)、同步機制(spinlock/mutex 選型、RCU)、中斷處理、以及 kernel 除錯。你在 Phase 1 建好的 QEMU 環境(<a class="xlink" href="P1-T11.html">P1-T11</a>)終於要全面派上用場(<strong>記得:module 只在 VM 裡測試!</strong>),Phase 2 練就的讀碼能力會讓你讀懂那些 module 範例與 kernel 機制。從這裡開始,你就是在做真正的 kernel 開發了。</li>
+</ul>
+<hr />
+<blockquote>
+<p><strong>🚪 出關提醒</strong>:確認你能完整註解一段真實 kernel 程式碼(80 分門檻),並且對「讀 kernel 資料結構」有信心,再進入 Phase 3。這個能力是後面所有 module 開發與原始碼閱讀的基礎——地基穩了,Phase 3 的重頭戲才走得動。</p>
+</blockquote>
+</article>
+<nav class="botnav"><a class="pn prev" href="P2-T07.html">← P2-T07 bitmap 與點陣圖在 kernel 的應用</a><a class="pn next" href="P3-T01.html">P3-T01 kernel 架構總覽與原始碼樹佈局 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

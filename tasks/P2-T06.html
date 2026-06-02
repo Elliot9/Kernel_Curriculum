@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2-T06 · radix tree 與 XArray</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P2 · kernel 工作所需資料結構</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p2-t06-radix-tree-xarray">P2-T06 · radix tree 與 XArray</h1>
+<blockquote>
+<p><strong>一句話</strong>:當你的「key」是整數(檔案 offset、ID),而且大量、密集,radix tree / XArray 比紅黑樹和雜湊表都更合適——它用整數的「位數」直接導航。kernel 的 <strong>page cache</strong> 就用 XArray 把「檔案 offset」對應到「記憶體裡的 page」,這跟你的儲存工作直接相關。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>前兩課給了你兩種查找結構:雜湊表(平均 O(1),無序)和紅黑樹(O(log n),有序,以「比較」為基礎)。這一課介紹第三種,專門針對一個特定但極常見的場景:<strong>用一個整數索引,快速對應到一個值(指標)。</strong></p>
+<p>當 key 是整數、而且<strong>大量又密集</strong>(例如 0, 1, 2, 3, ... 連續的檔案頁編號,或一堆 ID),radix tree / XArray 有獨特優勢:它不靠「比較大小」(像紅黑樹),也不靠「雜湊」(像雜湊表),而是直接用<strong>整數的位元/位數來導航</strong>到對應的位置。</p>
+<p>為什麼你要特別學它?因為它和你的儲存領域<strong>直接相關</strong>。kernel 的 <strong>page cache</strong>——位於 VFS 和 block layer 之間的快取層,快取著檔案的內容頁——核心就是一個 XArray:它把「<strong>檔案的 offset(以 page 為單位的索引)</strong>」對應到「<strong>那一頁資料在記憶體裡的 <code>struct page</code></strong>」。當你讀一個檔案,kernel 先查 page cache(這個 XArray)看那一頁在不在記憶體;在就直接給你(快),不在才去真正讀磁碟。理解 XArray,是你日後讀懂讀寫路徑、快取層(<span class="xlink-stub" title="待撰寫">P5</span>)的前置。</p>
+<p>這一課還要釐清一個重要的<strong>新舊交替</strong>:radix tree 是較舊的概念與 API(<code>radix_tree_*</code>),<strong>XArray 是它的現代取代介面</strong>——新程式碼應該用 XArray。你讀 kernel code 時兩者可能都會見到,但寫新東西要用 XArray。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?page cache 用 XArray 索引 page——這是讀寫路徑快取的核心,與你的儲存產品直接相關。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P2-T05.html">P2-T05</a>(你已學紅黑樹這種「以比較為基礎」的有序結構,這課對比「以整數索引為基礎」的)。</li>
+<li>自我檢測:
+  1. 你能說出「紅黑樹靠比較大小導航、雜湊表靠雜湊函式」嗎?(回顧 <a class="xlink" href="P2-T05.html">P2-T05</a>/<a class="xlink" href="P2-T04.html">P2-T04</a>。)這課的 radix tree 用第三種方式:整數的位數。
+  2. 你還記得 <a class="xlink" href="P1-T04.html">P1-T04</a> 的「page(分頁)」概念嗎?page cache 快取的就是這些 page,XArray 用 page 索引它們。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 場景:整數索引大量值 → (2) radix tree 概念:用位數導航 → (3) XArray:現代取代介面 → (4) page cache:XArray 的招牌應用 → (5) 與紅黑樹/雜湊表的取捨 → (6) XArray 內建鎖語意</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 場景:用整數索引,對應到大量的值</h3>
+<p>先明確這個結構解決的問題。設想:你有大量的「整數索引 → 值」對應,而且索引是密集的小整數。例如:</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph mapping["整數索引 → 指標"]
+        I0["index 0 → page A"]
+        I1["index 1 → page B"]
+        I2["index 2 → page C"]
+        I3["index 3 → (空)"]
+        IDOT["... 大量、密集 ..."]
+    end
+    NOTE["典型場景:<br/>檔案的第 0,1,2,... 頁 → 對應的記憶體 page<br/>或:ID → 物件指標"]
+    mapping --> NOTE
+    style I0 fill:#8a9a5b,color:#10100e
+    style NOTE fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>你可能想:「用陣列不就好了?<code>array[index]</code> = 值。」對於<strong>密集</strong>索引這沒錯,但問題是索引可能<strong>很大且稀疏</strong>(例如一個大檔案的某幾頁,index 可能到幾百萬,但只有零星幾頁在快取裡)。用一個「涵蓋所有可能 index 的大陣列」會浪費巨量記憶體(大部分是空的)。radix tree 就是來解決「<strong>索引空間大、但實際用到的稀疏</strong>」這個矛盾——既能像陣列一樣用 index 直接定位,又不必為沒用到的 index 浪費空間。</p>
+<p>把這個「大而稀疏」的矛盾畫出來,看兩種做法的記憶體差異:</p>
+<p><pre class="mermaid">flowchart TB
+    SCENARIO["需求:索引可能到 1,000,000,<br/>但實際只用了 index 3、500、999000 三個"]
+    SCENARIO --> ARRAY["✗ 平坦大陣列:<br/>配置 array[0..999999]<br/>→ 一百萬格,只有 3 格有值<br/>→ 浪費幾乎全部空間"]
+    SCENARIO --> RADIX["✓ radix tree / XArray:<br/>只為 index 3、500、999000<br/>會經過的樹節點建立<br/>→ 空間正比於『實際 3 個項目』,<br/>不是『索引範圍一百萬』"]
+    style ARRAY fill:#c2603a,color:#f4ecd8
+    style RADIX fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>關鍵差異:平坦陣列的空間正比於「索引範圍」(再大再空都要配),radix tree 的空間正比於「實際項目數」——這就是它能處理「大而稀疏」的索引空間的原因。</p>
+<p>(這個矛盾很像 <a class="xlink" href="P1-T04.html">P1-T04</a> 多級分頁解決的問題——位址空間巨大但稀疏,用多級表只為用到的部分建表。radix tree 的精神與多級分頁相通。)</p>
+<hr />
+<h3 id="2-radix-tree">2. radix tree 概念:用整數的「位數」導航</h3>
+<p>radix tree(基數樹)的核心想法:<strong>把整數索引拆成幾段,每一段決定樹的一層往哪走</strong>——用索引的「位數」來導航,而不是比較大小。</p>
+<p><pre class="mermaid">flowchart TB
+    IDX["整數索引(例如二進位拆成幾段)<br/>[ 段1 ][ 段2 ][ 段3 ]"]
+    IDX --> L1["第1層:用『段1』選一個分支"]
+    L1 --> L2["第2層:用『段2』選一個分支"]
+    L2 --> L3["第3層(葉):用『段3』找到存放的值"]
+    NOTE["關鍵:<br/>① 不比較大小(不像紅黑樹),直接用位數選分支 → 查找路徑長度固定(看索引位數)<br/>② 只為『用到的索引』建立對應的分支<br/>→ 稀疏索引不浪費空間(像多級分頁,P1-T04)"]
+    L3 --> NOTE
+    style L1 fill:#6fa8b8,color:#10100e
+    style L3 fill:#8a9a5b,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>兩個關鍵特性:
+- <strong>用位數導航,不比較大小</strong>:查找一個索引,就是把它拆段,每段選一個分支,走固定的層數(由索引的位數決定)。不像紅黑樹要一路比較。
+- <strong>稀疏友善</strong>:只有「實際用到的索引路徑」才建立對應的樹節點。沒用到的索引範圍,連節點都不建——就像 <a class="xlink" href="P1-T04.html">P1-T04</a> 多級分頁只為用到的位址範圍建表。所以「索引空間大但稀疏」時,radix tree 只花正比於「實際項目數」的空間,而非正比於「索引範圍」。</p>
+<p>直覺:radix tree 像一棵「按整數的數字一位一位往下找」的樹,介於「陣列的直接索引」和「樹的階層」之間——兼得「用 index 定位」和「稀疏省空間」。</p>
+<hr />
+<h3 id="3-xarrayradix-tree">3. XArray:radix tree 的現代取代介面</h3>
+<p>kernel 早期用 radix tree(API 叫 <code>radix_tree_*</code>)。後來推出 <strong>XArray</strong>(Extensible Array,可擴充陣列)作為<strong>現代的、更好用的取代介面</strong>。XArray 在底層仍是 radix tree 的概念,但提供更清爽的 API、更好的功能(如內建鎖、標記等)。</p>
+<p><pre class="mermaid">flowchart LR
+    OLD["舊:radix tree API<br/>radix_tree_insert/lookup...<br/>(仍在舊程式碼中)"]
+    NEW["新:XArray API<br/>xa_load(取)、xa_store(存)...<br/>★ 新程式碼用這個 ★"]
+    OLD -->|"現代取代"| NEW
+    CONCEPT["概念上都是『整數索引 → 值』<br/>底層都是 radix tree 思想<br/>XArray 介面更清爽、功能更多"]
+    NEW --> CONCEPT
+    style NEW fill:#8a9a5b,color:#10100e
+    style CONCEPT fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>把 XArray 想成「一個概念上的無限大陣列,但只為用到的索引花空間」:
+- <code>xa_store(&amp;array, index, ptr)</code>:把 <code>ptr</code> 存到索引 <code>index</code>(像 <code>array[index] = ptr</code>,但稀疏省空間)。
+- <code>xa_load(&amp;array, index)</code>:取出索引 <code>index</code> 的值(像 <code>array[index]</code>)。</p>
+<p><strong>新程式碼一律用 XArray,不要用舊的 <code>radix_tree_*</code></strong>(這是常見誤區:用過時 API 寫新東西)。但讀舊程式碼時可能遇到 radix tree API,知道它們是同一概念即可。</p>
+<hr />
+<h3 id="4-page-cachexarray">4. page cache:XArray 的招牌應用(你的儲存領域)</h3>
+<p>這是這一課對你最重要的部分。<strong>page cache</strong> 是 kernel 在記憶體裡快取檔案內容的機制,它的核心資料結構就是 XArray。</p>
+<p><pre class="mermaid">flowchart TB
+    READ["你的程式讀檔案的第 N 頁"]
+    LOOKUP["kernel 查 page cache 的 XArray:<br/>xa_load(該檔案的 XArray, N)<br/>= 用『page 索引 N』找對應的 struct page"]
+    READ --> LOOKUP
+    LOOKUP --> HIT{"那一頁在記憶體嗎?"}
+    HIT -->|"在(cache hit)"| FAST["直接從記憶體那個 page 給你資料<br/>→ 快(免讀磁碟)"]
+    HIT -->|"不在(cache miss)"| SLOW["去真正讀磁碟,<br/>讀進一個新 page,<br/>用 xa_store 存進 XArray(下次就命中)<br/>→ 慢"]
+    style LOOKUP fill:#e8a33d,color:#10100e
+    style FAST fill:#8a9a5b,color:#10100e
+    style SLOW fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>機制:每個檔案(在 kernel 裡對應一個 <code>address_space</code>)有一個 XArray,<strong>索引是「檔案的 offset,以 page 為單位」(第幾頁),值是「那一頁資料在記憶體裡的 <code>struct page</code> 指標」</strong>(回顧 <a class="xlink" href="P1-T04.html">P1-T04</a> 的 page)。當你讀檔案:
+- kernel 先用 <code>xa_load</code> 查那一頁在不在 XArray 裡(在不在記憶體)。
+- <strong>命中</strong>:直接從記憶體的 page 給你資料,飛快(不碰磁碟)。
+- <strong>未命中</strong>:去磁碟讀那一頁,讀進記憶體,用 <code>xa_store</code> 記進 XArray,下次就命中。</p>
+<p><strong>為什麼用 XArray 而非紅黑樹?</strong>(驗收點)因為 page cache 的 key 是「page 索引」——<strong>密集的小整數</strong>(一個檔案的第 0,1,2,... 頁)。對「整數索引 + 密集」這個場景,XArray 用位數導航,比紅黑樹的逐層比較更直接、更省空間,也比雜湊表更適合「按順序的整數索引」(還能高效地做「範圍查詢」,例如預讀連續幾頁)。這正是 <a class="xlink" href="P2-T01.html">P2-T01</a> 選型思維的體現:<strong>針對場景特性選最合適的結構</strong>。</p>
+<p><strong>對你的意義</strong>:page cache 是讀寫路徑的關鍵快取層(<span class="xlink-stub" title="待撰寫">P5</span> 會深入)。理解它是一個「offset → page」的 XArray,你就抓住了 kernel 快取檔案內容的核心機制——這直接關係你產品的 I/O 效能(命中 page cache 免去磁碟存取)。</p>
+<hr />
+<h3 id="5">5. 與紅黑樹/雜湊表的取捨</h3>
+<p>把三種查找結構放在一起,釐清各自的適用場景(綜合 <a class="xlink" href="P2-T01.html">P2-T01</a> 的選型思維):</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph compare["三種查找結構,各擅長什麼"]
+        HASH["雜湊表(P2-T04)<br/>key 任意型別,平均 O(1),無序<br/>適合:純『有沒有/找得到』,不需順序<br/>弱點:最壞 O(n)、不能範圍查詢"]
+        RBTREE["紅黑樹(P2-T05)<br/>key 可比較,O(log n),有序<br/>適合:需要排序、範圍、保證最壞<br/>弱點:每次比較有成本、cache 不友善"]
+        XARRAY["XArray / radix tree(本課)<br/>key 是整數索引,密集時很高效,有序<br/>適合:整數索引(offset/ID)、範圍、稀疏空間<br/>弱點:key 必須是整數索引"]
+    end
+    style HASH fill:#6fa8b8,color:#10100e
+    style RBTREE fill:#e8a33d,color:#10100e
+    style XARRAY fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>選型摘要:
+- <strong>key 是任意型別、只要快速判斷有無</strong>:雜湊表。
+- <strong>key 可比較、需要排序或範圍、需要最壞保證</strong>:紅黑樹。
+- <strong>key 是整數索引(尤其密集、需要範圍)</strong>:XArray。</p>
+<p>page cache 選 XArray,正是因為它的 key 是「整數 page 索引」且需要高效的順序/範圍存取(預讀)——這個場景下 XArray 勝過另外兩者。<strong>這再次印證 <a class="xlink" href="P2-T01.html">P2-T01</a>:沒有最好的結構,只有最適合場景的結構。</strong> kernel 在不同地方用不同結構,都是針對該場景的特性。</p>
+<hr />
+<h3 id="6-xarray">6. XArray 內建鎖語意:別自己全程加鎖</h3>
+<p>最後一個實務要點,呼應你 Phase 1 的並行知識(<a class="xlink" href="P1-T09.html">P1-T09</a>)。XArray <strong>內建了鎖語意</strong>——它自己處理了多數情況下的並行保護。</p>
+<p><pre class="mermaid">flowchart TB
+    XA["XArray 內建鎖(內部用一把鎖保護結構)"]
+    XA --> SIMPLE["簡單操作(xa_load/xa_store):<br/>XArray 自己加鎖保護<br/>→ 你不必為這些操作自己包鎖"]
+    XA --> ADVANCED["進階/複合操作:<br/>有對應的 xas_* 介面與明確的鎖規則<br/>(需要時依文件操作)"]
+    NOTE["★ 常見誤區:以為要自己全程加鎖 ★<br/>對基本操作,XArray 已處理好並行保護;<br/>過度加鎖反而可能 double-lock 或降效能"]
+    SIMPLE --> NOTE
+    style XA fill:#e8a33d,color:#10100e
+    style NOTE fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>重點:<strong>對基本的 <code>xa_load</code>/<code>xa_store</code>,XArray 內部已經加鎖保護,你不需要自己再包一層鎖</strong>。這是 XArray 比舊 radix tree 好用的地方之一。<strong>「以為要自己全程加鎖」是常見誤區</strong>——過度加鎖不只多餘,還可能造成問題(回顧 <a class="xlink" href="P1-T09.html">P1-T09</a> 的死結風險)。當然,進階的複合操作(例如「查了之後根據結果再修改」)有它自己的鎖規則(<code>xas_*</code> 介面),那時要依文件正確處理。但基本存取,放心交給 XArray 的內建保護。</p>
+<hr />
+<h2 id="xarray">打通關:把 XArray 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    SCENARIO["場景:整數索引(offset/ID)→ 值,索引大量但可能稀疏"]
+    SCENARIO --> RADIX["radix tree:用整數的位數導航(不比較大小)<br/>只為用到的索引建節點(稀疏省空間,類比多級分頁 P1-T04)"]
+    RADIX --> XARRAY["XArray = radix tree 的現代取代介面<br/>(xa_load/xa_store;新程式碼用它,別用舊 radix_tree_*)"]
+    XARRAY --> PAGECACHE["★ 招牌應用:page cache ★<br/>檔案 page 索引 → 記憶體 struct page<br/>(命中免讀磁碟;你的 I/O 效能關鍵,P5)"]
+    XARRAY --> CHOICE["選型:整數索引+密集+範圍 → XArray 勝過<br/>雜湊表(無序、無範圍)與紅黑樹(逐層比較)"]
+    XARRAY --> LOCK["內建鎖:基本 xa_load/xa_store 自帶保護<br/>(別自己全程加鎖)"]
+    style RADIX fill:#6fa8b8,color:#10100e
+    style PAGECACHE fill:#8a9a5b,color:#10100e
+    style XARRAY fill:#e8a33d,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>radix tree / XArray 專為「整數索引 → 值」設計,用位數導航、稀疏省空間(精神同多級分頁);XArray 是現代介面,新程式碼用它;它最著名的應用是 page cache(檔案 offset → 記憶體 page,命中免讀磁碟),這跟你的儲存 I/O 效能直接相關;基本操作有內建鎖,不必自己包。針對整數索引這個場景,它勝過雜湊表與紅黑樹——又一個 kernel 因場景制宜的選擇。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:用舊的 radix tree API(<code>radix_tree_*</code>)寫新程式。</strong>
+應用 XArray(<code>xa_load</code>/<code>xa_store</code> 等)。舊 API 仍在舊程式碼中,但新東西用 XArray。</p>
+<p><strong>誤區二:以為要自己全程為 XArray 操作加鎖。</strong>
+基本的 <code>xa_load</code>/<code>xa_store</code> 已有內建鎖保護,不必自己包。過度加鎖多餘且可能出問題(回顧 <a class="xlink" href="P1-T09.html">P1-T09</a>)。進階複合操作才需依文件處理鎖。</p>
+<p><strong>誤區三:混淆 XArray(整數索引→指標)與一般雜湊表的用途。</strong>
+XArray 專為「整數索引」設計(用位數導航、支援範圍/順序);雜湊表是任意 key、無序。page cache 用 XArray 正因 key 是 page 索引。</p>
+<p><strong>誤區四:以為密集整數就該用大陣列。</strong>
+若索引空間大但稀疏(如大檔案的零星幾頁),大陣列浪費巨量空間。XArray 只為用到的索引花空間,兼得「index 直接定位」與「稀疏省空間」。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。(XArray 是 kernel 內部結構,使用者態主要透過閱讀文件與概念範例理解。)</p>
+<p><strong>任務 A — 用 XArray 概念 API 存取(驗收點)</strong>
+閱讀 kernel XArray 文件(https://docs.kernel.org/core-api/xarray.html )。寫出(或在能模擬的環境裡實作)一個「用整數 index 存入/取出值」的概念範例:用類似 <code>xa_store(&amp;xa, 5, ptr)</code> 存、<code>xa_load(&amp;xa, 5)</code> 取,至少存 3 個不同 index 的值並正確讀回。<strong>驗收:3 個 index 的值都能正確存取。</strong>(若無法在 user space 跑真 XArray,可用一個簡化的「稀疏整數索引 → 值」結構模擬其語意,重點是理解介面。)</p>
+<p><strong>任務 B — 說明 page cache 的映射(驗收點)</strong>
+用一句話說明:page cache 如何用 XArray 做「檔案 offset(以 page 為單位)→ struct page」的映射?讀檔案時,命中與未命中分別發生什麼?(對照第 4 節。)<strong>驗收:能正確描述這個映射與命中/未命中流程。</strong></p>
+<p><strong>任務 C — 說明選型優勢(驗收點)</strong>
+用一句話說明:在「以整數索引大量項目」的場景(如 page cache),XArray 相對紅黑樹有什麼優勢?(提示:整數索引用位數導航 vs 逐層比較;順序/範圍存取。)<strong>驗收:能說出至少一個 XArray 在此場景勝過紅黑樹的理由。</strong></p>
+<p><strong>任務 D(連結)— XArray vs 多級分頁</strong>
+寫一兩句話:XArray「只為用到的索引建節點」的稀疏特性,和 <a class="xlink" href="P1-T04.html">P1-T04</a> 多級分頁「只為用到的位址範圍建表」有什麼相似之處?(體會兩者精神相通。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 用 XArray 概念 API 以整數 index 存入/取出至少 3 個值並正確讀回。
+2. ☐ 用一句話說明 page cache 如何用「檔案 offset(以 page 為單位)→ struct page」的映射。
+3. ☐ 說出 XArray 相對紅黑樹在「以整數索引大量項目」場景的優勢。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能複述 radix tree/XArray 的用途。
+- <strong>80(熟練)</strong>:能讀懂 XArray API 範例。
+- <strong>100(精通)</strong>:能說明為何 page cache 用 XArray 而非紅黑樹。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——page cache(VFS→block 之間的快取層,<span class="xlink-stub" title="待撰寫">P5</span>)以 XArray 索引 page;理解它是讀懂讀寫路徑快取的前置,直接關係你產品的 I/O 效能。</li>
+<li><strong>這課餵給未來的</strong>:XArray/page cache → <span class="xlink-stub" title="待撰寫">P5</span> 的儲存堆疊與讀寫路徑(page cache 是其中關鍵一層);「稀疏整數索引」精神 → 回收並呼應 <a class="xlink" href="P1-T04.html">P1-T04</a> 多級分頁;選型思維 → <a class="xlink" href="P2-T01.html">P2-T01</a> 的延續。</li>
+<li><strong>下一步 → <a class="xlink" href="P2-T07.html">P2-T07</a> bitmap 與點陣圖在 kernel 的應用</strong>:你已經學了幾種「查找/對應」結構。下一課回到一個更底層、源自 <a class="xlink" href="P0-T11.html">P0-T11</a> 位元操作的工具——<strong>bitmap(點陣圖)</strong>:用每一個 bit 代表一個資源的「已用/空閒」狀態,高效地管理大量資源的配置。kernel 用它做 CPU 親和性遮罩(cpumask)、區塊配置等。這跟你的儲存工作<strong>直接相關</strong>——blk-mq 用 tag(基於 bitmap 的 sbitmap)管理 in-flight 的 I/O request,NVMe 佇列深度也靠類似機制。這是理解 <span class="xlink-stub" title="待撰寫">P5</span> tag 機制的前置。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P2-T05.html">← P2-T05 二元搜尋樹到紅黑樹</a><a class="pn next" href="P2-T07.html">P2-T07 bitmap 與點陣圖在 kernel 的應用 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

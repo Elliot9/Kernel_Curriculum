@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P0-T07 · 函式指標與 callback —— kernel「ops 結構」的根</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P0 · 深度 C、記憶體與未定義行為</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p0-t07-callback">P0-T07 · 函式指標與 callback</h1>
+<blockquote>
+<p><strong>一句話</strong>:指標不只能指向資料,也能指向「一段程式碼」。把一組函式指標裝進一個 struct,你就得到了 kernel 用來實現「物件導向式多型」的核心手法——你寫的每一個驅動,都會填這樣一張表。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>在 JS 裡,你天天傳函式:<code>arr.map(x =&gt; x * 2)</code>、<code>button.onclick = handler</code>、<code>setTimeout(fn, 1000)</code>。函式是「一等公民」,可以當參數、當回傳值、塞進物件。你早就熟悉這個概念,只是從沒想過它在底層怎麼運作。</p>
+<p>C 也能做到同樣的事,工具叫<strong>函式指標(function pointer)</strong>。原理和你已學的指標完全一樣:函式編譯後是一段機器碼,住在 text 區(回顧 <a class="xlink" href="P0-T05.html">P0-T05</a>),有個起始位址。<strong>函式指標就是「存放這個位址的變數」</strong>。透過它,你可以「呼叫一個事先不知道是哪個」的函式。</p>
+<p>為什麼這對 kernel 至關重要?因為 kernel 是純 C 寫的,<strong>沒有 class、沒有繼承、沒有 virtual method</strong>。但 kernel 偏偏需要「多型」——同一個 <code>read()</code> 系統呼叫,對普通檔案、對你的裝置、對網路 socket,要執行<strong>完全不同</strong>的程式碼。kernel 怎麼做到?</p>
+<p>答案就是<strong>函式指標</strong>:每個裝置驅動填一張「函式指標表」(例如 <code>file_operations</code>),裡面放各自的 read / write / open 實作。當使用者對某個裝置呼叫 <code>read</code>,kernel 就透過那張表裡的 <code>.read</code> 函式指標,呼叫到「這個裝置專屬的」read。<strong>這就是 kernel 的「物件導向」,而它的全部魔法就是函式指標。</strong> 看懂函式指標,你才看得懂半個 kernel。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P0-T06.html">P0-T06</a>(你已掌握指標的核心觀念、解參考)。</li>
+<li>自我檢測:
+  1. 你在 JS 裡寫過 callback(<code>setTimeout(fn, ...)</code>、<code>arr.sort(compareFn)</code>)嗎?那個「把函式當參數傳」的感覺,就是這課的目標,只是換成 C 的寫法。
+  2. 你還記得 <a class="xlink" href="P0-T05.html">P0-T05</a> 說「程式碼住在 text 區、有位址」嗎?函式指標就是存那個位址。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 函式也有位址 → (2) 宣告一個函式指標(拆解嚇人語法)→ (3) 透過函式指標呼叫 → (4) callback:把函式當參數傳 → (5) 高潮:函式指標 struct = kernel 的物件 → (6) file_operations 的 dispatch 流程</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 函式也有位址</h3>
+<pre><code class="language-c">int add(int a, int b) { return a + b; }
+
+int main(void) {
+    printf(&quot;add 的位址 = %p\n&quot;, (void*)add);  // 函式名 add 就是它的位址
+    return 0;
+}
+</code></pre>
+<p>就像陣列名會退化成指向開頭的指標(<a class="xlink" href="P0-T03.html">P0-T03</a>),<strong>函式名也代表函式的位址</strong>。<code>add</code> 和 <code>&amp;add</code> 在 C 裡等價——都是那段機器碼在 text 區的起始位址。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph text["text 區(程式碼,唯讀)"]
+        ADD["add 函式的機器碼<br/>@ 0x4005"]
+        SUB["sub 函式的機器碼<br/>@ 0x4030"]
+    end
+    NAME["你寫 add"] -->|"代表"| ADDR["位址 0x4005"]
+    ADDR -.指向.-> ADD
+    style ADD fill:#8a9a5b,color:#10100e
+    style ADDR fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>既然函式有位址,你就能用一個變數存這個位址——那個變數就是函式指標。</p>
+<hr />
+<h3 id="2">2. 宣告一個函式指標:拆解這個嚇人的語法</h3>
+<p>函式指標的宣告語法,是 C 裡最容易嚇退新手的部分。我們一層一層拆:</p>
+<pre><code class="language-c">int (*fp)(int, int);
+</code></pre>
+<p><strong>由內而外</strong>讀:</p>
+<p><pre class="mermaid">flowchart TB
+    L1["fp<br/>『fp 是個…』"]
+    L2["(*fp)<br/>『…指標,指向…』"]
+    L3["(*fp)(int, int)<br/>『…一個吃兩個 int 參數的函式…』"]
+    L4["int (*fp)(int, int)<br/>『…且回傳 int』"]
+    L1 --> L2 --> L3 --> L4
+    RESULT["合起來:fp 是『指向「吃兩個 int、回傳 int」的函式』的指標"]
+    L4 --> RESULT
+    style L2 fill:#6fa8b8,color:#10100e
+    style RESULT fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>那對括號 <code>(*fp)</code> 絕對不能少。</strong> 它是分水嶺:
+- <code>int (*fp)(int);</code> → fp 是「指向函式的指標」(正確)
+- <code>int *fp(int);</code> → 完全不同!這是宣告一個「<strong>回傳 int* 的函式</strong> fp」</p>
+<p>差別在於 <code>*</code> 是先和 <code>fp</code> 結合(加括號 → 指標),還是先和回傳型別結合(不加括號 → 回傳指標的函式)。這個坑下面誤區還會強調。</p>
+<hr />
+<h3 id="3">3. 透過函式指標呼叫</h3>
+<pre><code class="language-c">int add(int a, int b) { return a + b; }
+
+int (*fp)(int, int) = add;   // 讓 fp 指向 add
+int result = fp(3, 4);       // 透過指標呼叫,等同 add(3, 4),得 7
+</code></pre>
+<p><pre class="mermaid">flowchart LR
+    A["fp = add<br/>(fp 存了 add 的位址)"]
+    B["fp(3, 4)"]
+    C["照 fp 存的位址,<br/>跳去執行那段機器碼<br/>(就是 add)"]
+    D["回傳 7"]
+    A --> B --> C --> D
+    style A fill:#6fa8b8,color:#10100e
+    style D fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>注意:<code>fp(3, 4)</code> 和 <code>(*fp)(3, 4)</code> 在 C 裡等價(C 對函式指標的呼叫語法很寬容,兩種都對)。你用哪種都行,知道兩者等價即可。</p>
+<p>把「函式指標」和你已熟悉的「資料指標」(<a class="xlink" href="P0-T02.html">P0-T02</a>)並排,就能看清它們是同一個概念、只是指向的東西不同:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph data["資料指標(P0-T02)"]
+        DP["int *p"] -->|"指向"| DV["data 區/heap/stack<br/>上的一個『資料』<br/>*p 取出/改寫那個值"]
+    end
+    subgraph code["函式指標(這課)"]
+        CP["int (*fp)(int,int)"] -->|"指向"| CV["text 區的一段『機器碼』<br/>fp(...) 跳去執行那段碼"]
+    end
+    NOTE["同一個『指標』概念:<br/>都是存位址的變數。<br/>差別只在指向『資料』還是『程式碼』"]
+    data --> NOTE
+    code --> NOTE
+    style DV fill:#8a9a5b,color:#10100e
+    style CV fill:#6fa8b8,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<hr />
+<h3 id="4-callback">4. callback:把函式當參數傳</h3>
+<p>這就是你熟悉的 JS callback,換成 C。一個函式可以<strong>接受另一個函式當參數</strong>,在需要時呼叫它:</p>
+<pre><code class="language-c">// 一個排序函式,接受「怎麼比較」當參數
+void sort_with(int *arr, int n, int (*compare)(int, int)) {
+    // ... 排序邏輯中,每當需要比較兩個元素,就呼叫 compare(a, b) ...
+}
+</code></pre>
+<p><pre class="mermaid">flowchart TB
+    GENERIC["sort_with:知道『怎麼排序』<br/>但不知道『你想怎麼比較』"]
+    GENERIC -->|"你把比較函式當參數傳進去"| CB["compare 函式指標"]
+    CB --> EX1["傳升冪比較 → 排成升冪"]
+    CB --> EX2["傳降冪比較 → 排成降冪"]
+    CB --> EX3["傳『比長度』→ 按長度排"]
+    NOTE["一套排序碼,<br/>靠不同的 callback,<br/>達成不同行為"]
+    EX1 --> NOTE
+    EX2 --> NOTE
+    EX3 --> NOTE
+    style GENERIC fill:#6fa8b8,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>標準庫的 <code>qsort</code> 就是這樣設計的——它知道「怎麼排序」,但不知道「怎麼比較你的資料」,所以要你傳一個比較函式進去。這讓 <code>qsort</code> 一套程式碼能排任何型別的資料。<strong>這就是 callback 的核心價值:把「通用流程」和「可變的細節」分離。</strong></p>
+<hr />
+<h3 id="5-struct-kernel">5. 高潮:把一組函式指標裝進 struct = kernel 的「物件」</h3>
+<p>這是本課最重要的觀念,請慢讀。</p>
+<p>把多個函式指標<strong>裝進一個 struct</strong>:</p>
+<pre><code class="language-c">struct operations {
+    int (*add)(int, int);
+    int (*sub)(int, int);
+};
+
+int my_add(int a, int b) { return a + b; }
+int my_sub(int a, int b) { return a - b; }
+
+int main(void) {
+    struct operations ops = { .add = my_add, .sub = my_sub };
+    printf(&quot;%d\n&quot;, ops.add(3, 4));   // 透過 struct 成員呼叫 → 7
+    printf(&quot;%d\n&quot;, ops.sub(9, 2));   // → 7
+    return 0;
+}
+</code></pre>
+<p>看出來了嗎?<code>ops</code> 這個 struct 就像一個「物件」,<code>ops.add(...)</code> 就像呼叫「物件的方法」。但底層<strong>沒有任何 class 機制</strong>——只是「一個裝著函式指標的 struct」。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph oop["物件導向語言(JS/Java)"]
+        OBJ["物件<br/>obj.method()"]
+    end
+    subgraph c["C 用函式指標手刻"]
+        STRUCT["struct ops<br/>{ add, sub }<br/>ops.add()"]
+    end
+    oop -.“概念上等價,<br/>但 C 沒有 class，<br/>只有函式指標 struct”.-> c
+    style OBJ fill:#6fa8b8,color:#10100e
+    style STRUCT fill:#e8a33d,color:#10100e
+</pre></p>
+<p>kernel 把這個手法用到極致。最經典的就是 <code>file_operations</code>:</p>
+<pre><code class="language-c">// kernel 裡(簡化版)
+struct file_operations {
+    ssize_t (*read)(struct file *, char __user *, size_t, loff_t *);
+    ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
+    int (*open)(struct inode *, struct file *);
+    // ... 還有幾十個函式指標 ...
+};
+</code></pre>
+<p>每個裝置驅動建立自己的 <code>file_operations</code>,填入自己的 read / write / open 函式。<strong>這就是「介面與實作分離」</strong>:<code>file_operations</code> 是介面(承諾「我有 read/write/open」),每個驅動是實作(各自填入不同內容)。</p>
+<hr />
+<h3 id="6-file_operations-dispatch-read-read">6. file_operations 的 dispatch:一次 read 怎麼找到「你的」read</h3>
+<p>把「使用者呼叫 read」到「執行你寫的 read」的完整路徑拆開:</p>
+<p><pre class="mermaid">flowchart TB
+    U["使用者程式:read(fd, buf, n)"]
+    K1["kernel:用 fd 查出<br/>這個檔案/裝置對應的<br/>file_operations 表在哪"]
+    T["該裝置的 file_operations<br/>.read = your_read ← 函式指標<br/>.write = your_write<br/>.open = your_open"]
+    K2["kernel 透過 .read 這個<br/>函式指標,間接呼叫"]
+    F["執行 your_read()<br/>(你在驅動裡寫的那個函式)"]
+    U --> K1 --> T
+    T -->|"取出 .read 的位址"| K2 --> F
+    style T fill:#6fa8b8,color:#10100e
+    style F fill:#e8a33d,color:#10100e
+</pre></p>
+<p>關鍵在中間那步:<strong>kernel 不需要知道「是哪個驅動」</strong>。它只認 <code>file_operations</code> 這個介面、透過 <code>.read</code> 函式指標呼叫,執行期自然跳到「這個裝置填的那個 read」。換一個裝置,同樣的 <code>read()</code> 呼叫就跳到另一個驅動的 read——這正是物件導向「多型」的本質,只是用 C 的函式指標手刻出來。</p>
+<p>你日後寫字元裝置 / 區塊裝置驅動(Phase 4),做的第一件事之一,就是<strong>填一張這樣的函式指標表</strong>。今天你理解了它的原理,到時候就不是照抄範本,而是知道每個欄位為什麼存在。</p>
+<hr />
+<h2 id="_4">打通關:把函式指標收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    BASE["函式編譯後是 text 區的機器碼,有位址<br/>→ 函式名 = 該位址"]
+    BASE --> FP["函式指標:存函式位址的變數<br/>(語法 int (*fp)(...),括號不能少)"]
+    FP --> CALL["fp(args):照位址跳去執行那段碼"]
+    FP --> CB["當參數傳 = callback<br/>(分離『通用流程』與『可變細節』,如 qsort)"]
+    FP --> OPS["裝進 struct = ops 表<br/>(介面與實作分離 = C 的多型)"]
+    OPS --> KERNEL["kernel 的 file_operations 等<br/>→ 一次 read 透過函式指標<br/>dispatch 到對應驅動的實作"]
+    style FP fill:#6fa8b8,color:#10100e
+    style OPS fill:#e8a33d,color:#10100e
+    style KERNEL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>函式指標讓「程式碼」也能像資料一樣被存放與傳遞;而『一組函式指標裝進 struct』就是 kernel 在沒有 class 的情況下,實現「介面/實作分離」與「多型」的全部祕密。</strong> 你之後在 kernel 裡看到的每一張 <code>*_operations</code> 表,都是這個心智模型的實例。</p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:函式指標宣告的括號漏了。</strong></p>
+<pre><code class="language-c">int (*fp)(int);   // 正確:fp 是「指向函式的指標」
+int *fp(int);     // 完全不同!這是宣告一個「回傳 int* 的函式 fp」
+</code></pre>
+<p>那對 <code>(*fp)</code> 的括號是分水嶺。漏了,意思就從「函式指標變數」變成「回傳指標的函式宣告」。編譯器可能不報錯(因為兩者都是合法宣告),但你的意圖全錯了。</p>
+<p><strong>誤區二:以為要寫 <code>&amp;func</code> 才能取得函式位址。</strong>
+函式名本身就是位址,<code>func</code> 和 <code>&amp;func</code> 等價;呼叫時 <code>fp(x)</code> 和 <code>(*fp)(x)</code> 也等價。C 對函式指標的取址與呼叫特別寬容,兩種寫法都對,別困惑。</p>
+<p><strong>誤區三:callback 的簽章不符卻硬塞。</strong>
+如果一個函式指標宣告為 <code>int (*)(int, int)</code>,你卻塞一個 <code>int (*)(int)</code> 進去並呼叫,是未定義行為(參數對不上,stack 會亂)。傳 callback 時,函式的參數與回傳型別必須和指標宣告<strong>完全一致</strong>。</p>
+<p><strong>誤區四:忘記 ops 結構裡沒填的函式指標是 NULL。</strong>
+如果你建立一個 <code>file_operations</code> 只填了 <code>.read</code>,沒填的成員預設是 NULL。kernel 在呼叫前通常會檢查「這個函式指標是不是 NULL」,但你自己設計 ops 表時,要記得「沒填 = NULL = 呼叫會崩潰」,該檢查就檢查。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。</p>
+<p><strong>任務 A — 用標準庫 qsort 傳 callback</strong></p>
+<pre><code class="language-c">#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+int cmp(const void *a, const void *b) {   // qsort 要求的比較函式簽章
+    return (*(int*)a) - (*(int*)b);       // 升冪
+}
+int main(void) {
+    int arr[5] = {3, 1, 4, 1, 5};
+    qsort(arr, 5, sizeof(int), cmp);      // 把 cmp 當 callback 傳給 qsort
+    for (int i = 0; i &lt; 5; i++) printf(&quot;%d &quot;, arr[i]);  // 1 1 3 4 5
+    return 0;
+}
+</code></pre>
+<p>(<code>qsort</code> 的比較函式用 <code>const void*</code> 是為了通用任何型別,你在裡面轉回 <code>int*</code>——這個「通用指標 void<em>」的手法,回顧 <a class="xlink" href="P0-T02.html">P0-T02</a> 誤區提過,之後在 kernel 也常見。)</em><em>進階</em>*:再寫一個降冪的 <code>cmp_desc</code>,只換傳入的 callback,不動 qsort,看陣列變降冪——親身體會「一套流程、不同 callback、不同結果」。</p>
+<p><strong>任務 B — 自己的 ops 結構</strong>
+完成本課那個 <code>struct operations</code>,填入 <code>my_add</code>/<code>my_sub</code>,透過 struct 成員呼叫,驗證結果。然後<strong>故意不填 <code>.sub</code></strong>,呼叫 <code>ops.sub(...)</code> 看會怎樣(在 VM 裡:對 NULL 函式指標呼叫 → 崩潰),體會誤區四。</p>
+<p><strong>任務 C — 讀懂 kernel 的 file_operations</strong>
+打開 kernel 原始碼的 <code>include/linux/fs.h</code>(用 Bootlin Elixir:https://elixir.bootlin.com/linux/v6.12/source/include/linux/fs.h ),找到 <code>struct file_operations</code>。<strong>先別怕那幾十個成員</strong>——挑出 <code>.read</code> 或 <code>.write</code>,用本課第 2 節的「由內而外讀法」說出它的型別:它是個指向什麼樣函式的指標?(這就是你之後寫驅動要填的東西。)</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 用標準 <code>qsort</code> 傳入自寫比較函式,對 5 個整數正確升冪排序;並能換一個 callback 得到降冪。
+2. ☐ 定義 <code>struct ops { int (*add)(int,int); int (*sub)(int,int); }</code>,填入實作後透過 struct 成員呼叫得到正確結果。
+3. ☐ 能用「由內而外讀法」讀懂並解釋 <code>file_operations</code> 中任一函式指標成員的型別。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用內建 qsort 傳 callback。
+- <strong>80(熟練)</strong>:能自寫接受函式指標的函式,並讀懂函式指標宣告語法。
+- <strong>100(精通)</strong>:能說明 kernel 的 ops 結構如何用函式指標達成「介面/實作分離」與多型,並能描述一次 read 的 dispatch 路徑。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>。你寫的字元 / 區塊驅動都要填一張 <code>file_operations</code> / <code>block_device_operations</code> 函式指標表;這是 kernel「多型」的核心慣用法,你寫驅動(Phase 4)時天天用。</li>
+<li><strong>這課餵給未來的</strong>:ops 結構的概念 → <a class="xlink" href="P4-T01.html">P4-T01</a> 字元裝置驅動、<a class="xlink" href="P5-T05.html">P5-T05</a> 區塊裝置;函式指標 → kernel 中無數的回呼機制(中斷處理常式、workqueue 的工作函式等)。</li>
+<li><strong>下一步 → <a class="xlink" href="P0-T08.html">P0-T08</a> 前處理器與巨集</strong>:你已經能讀懂函式指標這種「進階語法」。下一課處理 kernel 原始碼的另一個攔路虎——巨集(macro)。kernel 滿是巨集(<code>container_of</code>、<code>list_for_each_entry</code>…),不懂巨集就讀不懂 kernel。我們會拆解它「純文字替換」的本質與三大陷阱。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P0-T06.html">← P0-T06 手動記憶體管理與常見記憶體錯誤</a><a class="pn next" href="P0-T08.html">P0-T08 前處理器與巨集 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

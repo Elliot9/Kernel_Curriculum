@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T10 · 原子操作、memory ordering 與 memory barrier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t10-memory-ordering-memory-barrier">P1-T10 · 原子操作、memory ordering 與 memory barrier</h1>
+<blockquote>
+<p><strong>一句話</strong>:你寫的程式碼順序,<strong>不是</strong>它實際執行的順序——編譯器和 CPU 都會為了效能「重排」你的記憶體存取。在多執行緒下,這意味著別人可能看到「不符合你程式碼順序」的詭異結果。這一課不求精通,只求讓你建立正確的直覺與<strong>恰當的敬畏</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這是 Phase 1 最硬的主題,所以先說清楚目標:<strong>這一課只求「建立正確直覺與恐懼感」,不求精通。</strong> 真正的深入在 <a class="xlink" href="P3-T11.html">P3-T11</a>(Linux 核心記憶體模型 LKMM)。現在你只要在腦中種下一個正確的、會讓你保持警惕的認知種子。</p>
+<p>那個種子是:<strong>「程式碼順序 = 執行順序」這個你深信不疑的假設,是錯的。</strong></p>
+<p>回顧 <a class="xlink" href="P1-T09.html">P1-T09</a>:你學會用鎖保護共享狀態。鎖能用,是因為它在背後幫你處理了一件你還沒意識到的事——記憶體順序。這一課揭開那層幕布。真相是:為了效能,<strong>編譯器</strong>會重排你的指令(編譯期重排),<strong>CPU</strong>也會重排記憶體存取的實際發生順序(執行期重排)。在單執行緒裡,這些重排被保證「不改變你看到的結果」,所以你從沒察覺。但在<strong>多執行緒</strong>裡,一個執行緒能觀察到另一個執行緒的記憶體操作「以重排後的順序」發生——導致違反直覺的結果。</p>
+<p>要駕馭這個,需要兩個工具:<strong>原子操作(atomic)</strong>(讓 <code>++</code> 這類操作不可分割,且不用鎖)和 <strong>memory barrier(記憶體屏障)</strong>(強制某些順序不被重排)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為這是你那條「記憶體順序/可見性」主線的關鍵一站(<a class="xlink" href="P1-T03.html">P1-T03</a> → 本課 → <a class="xlink" href="P3-T11.html">P3-T11</a> → <a class="xlink" href="P6-T03.html">P6-T03</a>),而它<strong>直接關係你的 DMA 工作</strong>:當你準備好一個 DMA 描述子(告訴裝置要做什麼),然後「按門鈴」(寫一個暫存器通知裝置開工),你<strong>必須保證描述子的內容在門鈴之前就對裝置可見</strong>。如果 CPU 重排了這兩個寫入(門鈴先被裝置看到、描述子還沒),裝置會讀到垃圾描述子——對儲存產品是資料災難。這需要 memory barrier。kernel 的 lock-free 結構、RCU、裝置暫存器存取,全靠正確的 barrier。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T09.html">P1-T09</a>(你會用鎖)、<a class="xlink" href="P1-T03.html">P1-T03</a>(你已知「coherence ≠ memory ordering」這個伏筆——本課就是 ordering)、<a class="xlink" href="P1-T08.html">P1-T08</a>(race、讀-改-寫)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P1-T03.html">P1-T03</a> 第 5 節說「cache coherence 保證單一變數一致,但不保證多變數的可見順序」嗎?<strong>本課就是在講那個「順序」。</strong> 如果忘了,回去看一眼。
+  2. 你能接受「我寫 <code>a=1; b=2;</code>,但 CPU 可能讓別的核心先看到 <code>b=2</code> 才看到 <code>a=1</code>」這種事嗎?讀完你會懂為什麼。</li>
+<li>心態提醒:這課燒腦是正常的。目標是「直覺 + 敬畏」,不是「全懂」。看不懂某個細節沒關係,記住「重排會發生、需要 barrier」這個核心就夠了。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 原子操作:不可分割的 ++ → (2) 編譯期重排 → (3) 執行期重排 → (4) store buffer:經典的違反直覺範例 → (5) memory barrier:強制順序 → (6) acquire/release 入門 → (7) 為什麼 volatile 不夠</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 原子操作:不用鎖,讓 <code>++</code> 不可分割</h3>
+<p>回顧 <a class="xlink" href="P1-T08.html">P1-T08</a>:<code>count++</code> 是「讀-改-寫」三步,並行下會交錯出錯。<a class="xlink" href="P1-T09.html">P1-T09</a> 用鎖解決(把三步圍在臨界區裡序列化)。但鎖有成本(取得/釋放、可能阻塞)。對「就是想安全地加個一」這種簡單操作,有更輕量的工具:<strong>原子操作(atomic operation)</strong>。</p>
+<p>原子操作由<strong>硬體保證不可分割</strong>——CPU 提供特殊指令,讓「讀-改-寫」一氣呵成,中間絕不被打斷,也不需要鎖:</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph nonatomic["普通 count++(P1-T08)"]
+        N1["讀"] --> N2["改"] --> N3["寫"]
+        NX["三步可被打斷 → race"]
+    end
+    subgraph atomic["原子 atomic_fetch_add(&count, 1)"]
+        A1["硬體保證:讀-改-寫<br/>一條不可分割的操作<br/>中間不被打斷"]
+        AX["→ 不會 race,且不用鎖"]
+    end
+    style NX fill:#c2603a,color:#f4ecd8
+    style A1 fill:#8a9a5b,color:#10100e
+    style AX fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>C11 提供 <code>&lt;stdatomic.h&gt;</code>:用 <code>atomic_int</code> 宣告原子變數,用 <code>atomic_fetch_add(&amp;count, 1)</code> 做原子加。這能修好 <a class="xlink" href="P1-T08.html">P1-T08</a> 的 race,而且比鎖輕量(對單一變數的簡單操作)。</p>
+<p><strong>但這只是故事的一半。</strong> 原子操作保證「單一操作」不可分割,但當你有<strong>多個</strong>變數、多個操作,它們之間的<strong>順序</strong>如何被別的執行緒看見?這就進入本課真正燒腦的核心——重排。</p>
+<hr />
+<h3 id="2">2. 編譯期重排:編譯器會調換你的指令</h3>
+<p>第一個顛覆直覺的事實:<strong>編譯器為了優化,會調換你程式碼裡指令的順序</strong>(只要它判斷「在單執行緒下不改變結果」)。</p>
+<p><pre class="mermaid">flowchart TB
+    SRC["你寫的程式碼順序:<br/>a = 1;<br/>b = 2;"]
+    COMPILER["編譯器優化:<br/>判斷 a、b 互不相干,<br/>調換順序不影響單執行緒結果<br/>→ 可能產生『先 b=2 再 a=1』的機器碼"]
+    SRC --> COMPILER
+    SINGLE["單執行緒:完全無感<br/>(反正最後 a、b 都對)"]
+    MULTI["多執行緒:另一個執行緒<br/>可能先看到 b=2,a 還是舊值!<br/>→ 若它依賴『a 先設好』就會出錯"]
+    COMPILER --> SINGLE
+    COMPILER --> MULTI
+    style COMPILER fill:#e8a33d,color:#10100e
+    style MULTI fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>編譯器這樣做完全合法——它的承諾只是「<strong>單執行緒</strong>的可觀察結果不變」。它不知道、也不保證你的多執行緒意圖。所以在單執行緒下你永遠看不出重排;但多執行緒下,另一個執行緒可能觀察到「b 已更新、a 還沒」這種違反你程式碼順序的中間狀態。</p>
+<p><strong>重點:即使是單核心,編譯期重排也存在</strong>(它發生在編譯時,與幾個核心無關)。所以「我只有單核就不用擔心順序」是錯的——這是常見誤區。</p>
+<hr />
+<h3 id="3-cpu">3. 執行期重排:CPU 也會調換實際發生的順序</h3>
+<p>第二個顛覆直覺的事實:<strong>就算編譯器沒重排,CPU 在執行時也會為了效能,讓記憶體操作的「實際發生順序」與指令順序不同。</strong></p>
+<p>現代 CPU 有各種優化(像把寫入暫存在緩衝區、預測執行等),使得「寫入記憶體」這個動作,<strong>何時被別的核心看見</strong>,不一定按指令順序:</p>
+<p><pre class="mermaid">flowchart TB
+    CPU["CPU 執行:<br/>store a = 1<br/>store b = 2"]
+    REORDER["CPU 優化(如 store buffer):<br/>這兩個寫入『被其他核心看見』的順序<br/>可能顛倒<br/>(b 的新值先傳播出去,a 的還在緩衝)"]
+    CPU --> REORDER
+    OTHER["另一個核心:<br/>可能先觀察到 b=2,<br/>當下 a 還是舊值"]
+    REORDER --> OTHER
+    NOTE["這與編譯期重排疊加:<br/>兩層重排都可能發生<br/>→ 別人看到的順序,可能跟你寫的差很遠"]
+    OTHER --> NOTE
+    style REORDER fill:#e8a33d,color:#10100e
+    style OTHER fill:#c2603a,color:#f4ecd8
+    style NOTE fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>不同 CPU 架構的「重排有多自由」不一樣(x86 相對嚴格,ARM/POWER 較寬鬆),但<strong>重點是:你不能假設記憶體操作以程式碼順序被其他核心看見</strong>。這就是 <a class="xlink" href="P1-T03.html">P1-T03</a> 第 5 節埋下的伏筆——coherence 保證「單一變數最終一致」,但<strong>多個變數的可見順序</strong>,要靠 memory ordering 規範,而預設情況下 CPU 是允許重排的。</p>
+<hr />
+<h3 id="4-store-buffer">4. store buffer:一個經典的違反直覺範例</h3>
+<p>把前面的抽象變成一個具體、經典、會讓你「啊?!」的範例。兩個執行緒,兩個變數 <code>x</code>、<code>y</code> 初始都是 0:</p>
+<p><pre class="mermaid">flowchart TB
+    INIT["初始:x = 0, y = 0"]
+    subgraph t1["執行緒1"]
+        A1["x = 1;&nbsp;&nbsp;(寫 x)"]
+        A2["r1 = y;&nbsp;(讀 y)"]
+        A1 --> A2
+    end
+    subgraph t2["執行緒2"]
+        B1["y = 1;&nbsp;&nbsp;(寫 y)"]
+        B2["r2 = x;&nbsp;(讀 x)"]
+        B1 --> B2
+    end
+    INIT --> t1
+    INIT --> t2
+    style A1 fill:#6fa8b8,color:#10100e
+    style B1 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>直覺推理:「至少有一個執行緒會先寫再讀,所以 <code>r1</code> 和 <code>r2</code> <strong>不可能都是 0</strong>」——因為若執行緒 1 先跑完(x=1, 讀 y),執行緒 2 再跑就會讀到 x=1;反之亦然。無論怎麼交錯,似乎總有一個會讀到對方寫的 1。</p>
+<p><strong>但實際上,<code>r1</code> 和 <code>r2</code> 可能都是 0!</strong> 為什麼?</p>
+<p><pre class="mermaid">flowchart TB
+    EXPLAIN["重排的解釋(store buffer):<br/>CPU 把『寫 x=1』暫存在執行緒1的 store buffer,<br/>還沒傳播到記憶體/別的核心,<br/>就先執行了『讀 y』(讀到還是 0)"]
+    SAME["執行緒2同理:<br/>『寫 y=1』還在它的 store buffer,<br/>就先『讀 x』(讀到還是 0,因為執行緒1的 x=1 也還沒傳播)"]
+    RESULT["結果:r1=0 且 r2=0<br/>✗ 違反『先寫再讀就該看到』的直覺<br/>= 兩個『讀』都被重排到各自的『寫』之前(被別人觀察到的效果)"]
+    EXPLAIN --> SAME --> RESULT
+    style EXPLAIN fill:#e8a33d,color:#10100e
+    style RESULT fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>這就是重排的威力(與恐怖)</strong>:每個執行緒的「寫」還沒對外可見,「讀」就先發生了,於是兩個都讀到舊值 0。這在現實 CPU 上<strong>真的會發生</strong>(在允許這種重排的架構上)。它徹底打破了「程式碼順序 = 可見順序」的直覺。<strong>你不需要完全推導出細節,只要被這個例子嚇到、記住「重排會導致違反直覺的結果」就達到本課目的了。</strong></p>
+<hr />
+<h3 id="5-memory-barrier">5. memory barrier:強制順序不被重排</h3>
+<p>既然重排會出問題,我們需要一個工具來<strong>強制某些順序</strong>:<strong>memory barrier(記憶體屏障,又叫 fence)</strong>。它像一道牆,告訴編譯器和 CPU:「<strong>屏障之前的記憶體操作,必須在屏障之後的操作之前完成(且對其他核心可見)</strong>」——不准跨過這道牆重排。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph without["沒有 barrier"]
+        W1["a = 1;"]
+        W2["b = 2;"]
+        WX["可被重排:別人可能先看到 b"]
+    end
+    subgraph with["有 barrier"]
+        B1["a = 1;"]
+        BAR["─── memory barrier ───<br/>(一道不可跨越的牆)"]
+        B2["b = 2;"]
+        BX["保證:別人看到 b=2 時,<br/>一定也已看到 a=1"]
+        B1 --> BAR --> B2
+    end
+    style WX fill:#c2603a,color:#f4ecd8
+    style BAR fill:#e8a33d,color:#10100e
+    style BX fill:#8a9a5b,color:#10100e
+</pre></p>
+<blockquote>
+<p><strong>比喻(借用 Jeff Preshing 的版本級控制比喻)</strong>:把記憶體操作想成「提交程式碼到版本庫」。沒有 barrier 時,你的多次提交可能以任意順序被別人「拉取」看到。memory barrier 就像一個「同步點」:它保證屏障前的所有提交,會在屏障後的提交「之前」被所有人看到。它強制了一個大家都同意的順序。</p>
+</blockquote>
+<p><strong>直接連到你的 DMA 工作</strong>:準備 DMA 描述子、然後按門鈴(寫暫存器通知裝置),中間<strong>必須</strong>有一道 barrier,保證「描述子的寫入」在「門鈴的寫入」之前對裝置可見。否則裝置可能先看到門鈴、去讀還沒寫好的描述子 → 災難。kernel 提供 <code>smp_mb()</code>、<code>wmb()</code>(寫屏障)、<code>rmb()</code>(讀屏障)等(以及裝置 I/O 專用的屏障)正是幹這個的。你現在懂了為什麼非要它不可。</p>
+<hr />
+<h3 id="6-acquire-release">6. acquire / release:一種常見的順序語意</h3>
+<p>barrier 有不同「強度」。一種極常用、也較好理解的成對語意是 <strong>acquire / release</strong>,它特別適合「一個執行緒準備好資料、設個旗標;另一個執行緒看到旗標、就讀資料」這種模式:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph producer["生產方(release)"]
+        P1["準備資料:data = 42;"]
+        P2["release 寫旗標:ready = 1;<br/>(release 語意:保證『此寫入之前的所有寫入』<br/>都先完成且可見)"]
+        P1 --> P2
+    end
+    subgraph consumer["消費方(acquire)"]
+        C1["acquire 讀旗標:while(ready==0);<br/>(acquire 語意:保證『此讀取之後的所有讀取』<br/>都在看到旗標之後才進行)"]
+        C2["讀資料:use(data);  ← 保證讀到 42"]
+        C1 --> C2
+    end
+    producer -.“release 配 acquire”.-> consumer
+    GUARANTEE["配對保證:消費方一旦看到 ready=1(acquire),<br/>就一定也看到 data=42<br/>→ 不會發生『看到旗標卻讀到舊 data』"]
+    consumer --> GUARANTEE
+    style P2 fill:#8a9a5b,color:#10100e
+    style C1 fill:#6fa8b8,color:#10100e
+    style GUARANTEE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>直覺:
+- <strong>release</strong>(用在「寫旗標/解鎖」):保證「在我之前的所有寫入」都已完成並可見,才讓這個 release 寫入生效。像「我發布前,確保所有準備工作都做完並公開」。
+- <strong>acquire</strong>(用在「讀旗標/上鎖」):保證「在我之後的所有讀取」都發生在我之後。像「我確認拿到入場券後,才開始看裡面的東西」。</p>
+<p><strong>這正是鎖背後的魔法</strong>:<a class="xlink" href="P1-T09.html">P1-T09</a> 的 mutex,其 lock 帶 acquire 語意、unlock 帶 release 語意——所以鎖不只互斥,還順便保證了「臨界區內的記憶體操作」對下一個拿到鎖的執行緒正確可見。你用鎖時,memory ordering 被鎖默默處理好了;但當你想 <strong>不用鎖</strong>(lock-free)時,就得自己用 acquire/release 或 barrier 來保證順序——這是 kernel lock-free 結構與 RCU 的核心(<a class="xlink" href="P3-T11.html">P3-T11</a> 深入)。你現在只要有這個直覺即可。</p>
+<hr />
+<h3 id="7-volatile">7. 為什麼 <code>volatile</code> 不夠(破除最大的誤解)</h3>
+<p>C 有個 <code>volatile</code> 關鍵字,很多人<strong>誤以為</strong>它能解決並行問題。<strong>它不能。</strong> 這個誤解很危險,單獨拉出來破除。</p>
+<p><code>volatile</code> 的作用只有一個:<strong>告訴編譯器「這個變數的值可能在編譯器看不到的地方被改變,所以每次都要從記憶體重新讀,別把它快取在暫存器、別優化掉對它的存取」</strong>。它<strong>不提供</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    VOL["volatile 提供的:<br/>✓ 每次從記憶體讀(不被編譯器快取/優化掉)<br/>(用途:讀取會被硬體改變的東西,如某些暫存器)"]
+    VOL --> NOT["volatile 不提供的:"]
+    NOT --> N1["✗ 原子性<br/>volatile 的 count++ 仍是讀-改-寫三步,仍會 race"]
+    NOT --> N2["✗ memory barrier / 順序保證<br/>不阻止 CPU 重排,不保證對其他核心的可見順序"]
+    CONCLUSION["結論:volatile 解決不了 race,也解決不了 ordering<br/>→ 並行要用『原子操作』和『barrier』,不是 volatile"]
+    N1 --> CONCLUSION
+    N2 --> CONCLUSION
+    style VOL fill:#6fa8b8,color:#10100e
+    style NOT fill:#c2603a,color:#f4ecd8
+    style CONCLUSION fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>三個「volatile 救不了」的事實</strong>:
+1. <strong>不保證原子性</strong>:<code>volatile int count; count++;</code> 仍是讀-改-寫三步,並行下仍會遺失更新(回顧 <a class="xlink" href="P1-T08.html">P1-T08</a>)。
+2. <strong>不是 memory barrier</strong>:它不阻止 CPU 重排其他記憶體操作,不保證跨核心的可見順序。
+3. <strong>單核也不夠</strong>:它連編譯期重排都不全管(它只管「對 volatile 變數本身的存取不被優化掉」,不管別的)。</p>
+<p>那 <code>volatile</code> 到底何時用?用在「這個記憶體位置會被編譯器無法預知的外部因素改變」——例如<strong>記憶體映射的硬體暫存器</strong>(裝置可能改變它的值),你要確保每次都真的去讀那個位址而非用快取的舊值。但<strong>並行同步</strong>不是它的工作。<strong>要解決 race 用原子操作;要解決順序用 barrier。把 <code>volatile</code> 當並行工具是經典錯誤。</strong></p>
+<hr />
+<h2 id="memory-ordering">打通關:把 memory ordering 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    MYTH["要打破的迷思:程式碼順序 = 執行/可見順序"]
+    MYTH --> REORDER["真相:兩層重排<br/>① 編譯期(編譯器調換指令,單核也有)<br/>② 執行期(CPU 讓寫入的可見順序變動)"]
+    REORDER --> SYMPTOM["後果:多執行緒下別人看到違反直覺的順序<br/>(store buffer 範例:r1、r2 可能都是 0)"]
+    SYMPTOM --> TOOLS["駕馭工具:"]
+    TOOLS --> ATOMIC["原子操作:單一操作不可分割(解決 race,不用鎖)"]
+    TOOLS --> BARRIER["memory barrier:強制順序,不准跨牆重排"]
+    BARRIER --> AR["acquire/release:成對的順序語意<br/>(鎖背後的魔法;lock-free 要自己用)"]
+    MYTH --> NOTVOL["✗ volatile 不是解法<br/>(不保證原子性,不是 barrier)"]
+    BARRIER --> DMA["★ 你的 DMA:描述子寫入必須在門鈴之前可見<br/>→ 需要 barrier(否則裝置讀到垃圾)★"]
+    style REORDER fill:#e8a33d,color:#10100e
+    style SYMPTOM fill:#c2603a,color:#f4ecd8
+    style BARRIER fill:#8a9a5b,color:#10100e
+    style DMA fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>一句話總結:<strong>「程式碼順序 = 可見順序」是錯覺——編譯器和 CPU 都會重排記憶體存取,讓多執行緒看到違反直覺的順序;原子操作解決「單一操作的不可分割」,memory barrier(及 acquire/release)強制必要的順序,而 <code>volatile</code> 兩者都給不了。這課只求你記住「重排會發生、需要 barrier」這份敬畏——它是 kernel lock-free、RCU,以及你 DMA『描述子須在門鈴前可見』的根,真正的精通留待 P3-T11。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一(最核心):以為「程式碼順序 = 執行順序」。</strong>
+編譯器與 CPU 都會重排。單執行緒下無感(結果被保證不變),多執行緒下另一個執行緒可能看到重排後的順序。</p>
+<p><strong>誤區二(最危險):以為 <code>volatile</code> 提供原子性或 memory barrier。</strong>
+都不提供。<code>volatile</code> 只保證「每次從記憶體讀、不被編譯器優化掉」,用於硬體暫存器之類。並行同步要用原子操作(解決 race)和 barrier(解決順序)。</p>
+<p><strong>誤區三:以為單核心就不必擔心 ordering。</strong>
+編譯期重排在單核一樣存在(它發生在編譯時)。而且即使單核,中斷處理常式與被中斷的程式之間也有順序問題。</p>
+<p><strong>誤區四:以為原子操作就解決了一切順序問題。</strong>
+原子操作保證「單一操作不可分割」,但多個原子操作之間的順序,仍需要適當的 memory ordering(acquire/release 等)來規範。原子 ≠ 自動正確的順序。</p>
+<p><strong>誤區五:把這課當成「要全部精通」。</strong>
+本課目標是「正確直覺 + 敬畏感」。記住「重排會發生、需要 barrier、volatile 不是解法」就夠了。完整的形式化模型在 <a class="xlink" href="P3-T11.html">P3-T11</a>。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。需要 pthread 與支援 C11 atomics 的編譯器。</p>
+<p><strong>任務 A — 用 atomic 修好 race(對比鎖)</strong>
+拿 <a class="xlink" href="P1-T08.html">P1-T08</a> 的 race 程式,這次用 C11 原子操作修:</p>
+<pre><code class="language-c">#include &lt;stdatomic.h&gt;
+atomic_long counter = 0;
+void *worker(void *_) {
+    for (int i = 0; i &lt; 1000000; i++)
+        atomic_fetch_add(&amp;counter, 1);   // 原子加,不用鎖
+    return NULL;
+}
+</code></pre>
+<p>確認結果穩定等於 2000000。對比 <a class="xlink" href="P1-T09.html">P1-T09</a> 用鎖的版本——兩種都對,但原子操作對「單一變數的簡單操作」更輕量。寫一句話:原子操作和鎖,各適合什麼場景?</p>
+<p><strong>任務 B — 閱讀並解釋 store-buffer 範例</strong>
+仔細讀第 4 節的 store-buffer 範例(兩執行緒各寫一變數再讀對方)。用你自己的話寫出:<strong>為什麼 <code>r1</code> 和 <code>r2</code> 可能都是 0?</strong> 這是驗收的核心——要能解釋「兩個讀都被重排到各自的寫之前(就其他執行緒的觀察而言)」。(註:要在真實硬體穩定重現此現象不容易且依架構而定,本任務重點是「理解為何可能」,不是「一定重現」。)</p>
+<p><strong>任務 C — 說明為什麼 volatile 救不了 race</strong>
+寫一段話(驗收點):為什麼把 <a class="xlink" href="P1-T08.html">P1-T08</a> 的 <code>counter</code> 宣告成 <code>volatile</code> <strong>仍然</strong>會遺失更新?(提示:volatile 不保證原子性,<code>counter++</code> 仍是三步。)</p>
+<p><strong>任務 D(閱讀,建立直覺)— Preshing 的兩篇</strong>
+讀指定資源 Jeff Preshing 的兩篇文章(編譯期重排、memory barrier 像版本控制操作)。不要求全懂,目標是強化「重排是真的、barrier 在強制順序」這個直覺。讀完寫一兩句你的理解。</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 用 <code>atomic_int</code>/<code>atomic_long</code> + <code>atomic_fetch_add</code> 改寫計數,兩執行緒各加 1,000,000 後結果穩定為 2,000,000。
+2. ☐ 閱讀 store-buffer 範例,用文字解釋為何兩執行緒可能都讀到舊值(都是 0)。
+3. ☐ 說出 <code>volatile</code> 為何不能解決 race(不保證原子性,也非 barrier)。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用原子操作修好 race。
+- <strong>80(熟練)</strong>:能解釋重排現象(編譯期 + 執行期),知道 barrier 在做什麼。
+- <strong>100(精通)</strong>:能說明 acquire/release 直覺,並知道這在 kernel 會以 <code>smp_mb()</code>/<code>wmb()</code>/<code>rmb()</code> 等形式再出現(連結 <a class="xlink" href="P3-T11.html">P3-T11</a> LKMM),以及它如何關係到 DMA 的可見性。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——kernel 的 lock-free 結構、RCU、DMA 與裝置暫存器存取都依賴正確的 barrier;<strong>你的 DMA 描述子必須在按門鈴前對裝置可見</strong>(<span class="xlink-stub" title="待撰寫">P6</span>),這正是 barrier 的職責。</li>
+<li><strong>這課餵給未來的(你的記憶體順序主線)</strong>:<a class="xlink" href="P1-T03.html">P1-T03</a>(coherence≠ordering)→ 本課(重排與 barrier 的直覺)→ <a class="xlink" href="P3-T11.html">P3-T11</a> LKMM(完整形式化)→ <a class="xlink" href="P6-T03.html">P6-T03</a> DMA 的記憶體屏障(實戰)。原子操作 → kernel 的 <code>atomic_t</code>、lock-free。</li>
+<li><strong>下一步 → <a class="xlink" href="P1-T11.html">P1-T11</a>【環境里程碑】建置 QEMU/KVM kernel 開發環境</strong>:你已經走完 Phase 1 的所有理論——從 CPU、記憶體、虛擬記憶體、行程執行緒、到並行同步。最後一課是<strong>動手搭建你日後的開發環境</strong>:從原始碼編譯一個 Linux kernel、在 QEMU 虛擬機裡開機、接上 GDB 做源碼級除錯。這是 Phase 3 之後你<strong>每天</strong>都會用的工作迴圈,也是你能安全測試自家 kernel module 的隔離環境(<strong>絕不在主機上測試 module!</strong>)。理論到此為止,接下來要真正碰 kernel 了。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T09.html">← P1-T09 鎖、互斥與條件變數</a><a class="pn next" href="P1-T11.html">P1-T11 【環境里程碑】建置 QEMU/KVM kernel 開發環境 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

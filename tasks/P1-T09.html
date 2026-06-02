@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T09 · 鎖、互斥與條件變數</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t09">P1-T09 · 鎖、互斥與條件變數</h1>
+<blockquote>
+<p><strong>一句話</strong>:鎖(mutex)讓臨界區「一次只有一人進入」,修好上一課的 race;條件變數讓執行緒高效地「等待某個條件成立」;而當兩個執行緒以不同順序搶兩把鎖,就會卡死成死結——理解這三件事,你就掌握了同步的核心工具與最大陷阱。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>上一課 <a class="xlink" href="P1-T08.html">P1-T08</a> 讓你深刻理解了<strong>問題</strong>:共享狀態在並行下會 race。這一課給你<strong>解法</strong>:同步機制。</p>
+<p>核心工具是 <strong>mutex(互斥鎖)</strong>:把臨界區「圍起來」,確保同一時間只有一個執行緒能進入。回想 <a class="xlink" href="P1-T08.html">P1-T08</a> 的試衣間比喻——mutex 就是那扇門的鎖,一次只放一個人進去。用它把 <code>count++</code> 圍起來,race 就消失了,因為「讀-改-寫」三步在鎖的保護下會一氣呵成,不被別人插入。</p>
+<p>但同步不只是「加鎖」這麼簡單。你還會遇到:
+- 有時執行緒需要<strong>等待某個條件</strong>(例如「等緩衝區有資料才能取」),光有鎖不夠,需要 <strong>條件變數(condition variable)</strong>。
+- 用鎖會帶來一個新的、惡名昭彰的陷阱——<strong>死結(deadlock)</strong>:兩個執行緒互相等對方手裡的鎖,永遠卡死。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為 <strong>kernel 的同步機制(mutex、spinlock、semaphore)直接建立在這些概念上</strong>。你寫 kernel module 保護共享資料時,要在這些鎖之間選型;kernel 還有專門偵測死結的工具 <strong>lockdep</strong>(<span class="xlink-stub" title="待撰寫">P3</span>)。這一課建立的「鎖、條件變數、死結」概念,是你日後在 kernel 裡做正確同步的基礎。你產品的多執行緒 app 也必須用這些工具保護共享狀態。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T08.html">P1-T08</a>(你已深刻理解 race condition、臨界區、為何需要互斥與原子性)。</li>
+<li>自我檢測:
+  1. 你能解釋「為什麼 <code>count++</code> 在並行下會遺失更新」嗎?(讀-改-寫三步交錯。)這課就是要修好它。
+  2. 你還記得「臨界區」和「原子性」的定義嗎?(回顧 <a class="xlink" href="P1-T08.html">P1-T08</a> 第 5 節。)mutex 就是用來保護臨界區的。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) mutex:互斥鎖修好 race → (2) 鎖的紀律(忘記解鎖、error path)→ (3) 條件變數:高效等待 → (4) producer-consumer:bounded buffer → (5) 死結與四條件 → (6) 固定加鎖順序避免死結 → (7) 鎖的粒度</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-mutex">1. mutex:互斥鎖,一次只有一人進入臨界區</h3>
+<p><strong>mutex(mutual exclusion,互斥鎖)</strong> 是最基本的同步工具。它有兩個動作:<strong>lock(上鎖)</strong> 和 <strong>unlock(解鎖)</strong>。規則是:<strong>同一時間只有一個執行緒能持有這把鎖</strong>;當一個執行緒持有鎖時,其他想 lock 同一把鎖的執行緒會被<strong>擋住(阻塞)</strong>,直到持鎖者 unlock。</p>
+<p>用它把臨界區圍起來,就能保證「一次只有一人進入」:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph protected["用 mutex 保護 count++"]
+        L["pthread_mutex_lock(&m)<br/>← 想進臨界區先取得鎖"]
+        CS["count++<br/>(臨界區:讀-改-寫,<br/>此刻只有我在做,不被插入)"]
+        U["pthread_mutex_unlock(&m)<br/>← 做完釋放鎖"]
+        L --> CS --> U
+    end
+    style L fill:#6fa8b8,color:#10100e
+    style CS fill:#e8a33d,color:#10100e
+    style U fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>看一次兩執行緒競爭的流程,理解為什麼 race 消失了:</p>
+<p><pre class="mermaid">flowchart TB
+    S1["執行緒1:lock(m) 成功,持有鎖"]
+    S2["執行緒2:想 lock(m)<br/>→ 鎖已被持有 → 被阻塞,等待"]
+    S3["執行緒1:完整做完 count++<br/>(讀-改-寫一氣呵成,執行緒2進不來)"]
+    S4["執行緒1:unlock(m) 釋放鎖"]
+    S5["執行緒2:此時才取得鎖,<br/>讀到的是執行緒1已寫回的最新值<br/>→ 完整做它的 count++"]
+    RESULT["兩次 ++ 都生效 → 結果正確<br/>(回到 P1-T08 的實驗:現在穩定等於 2000000)"]
+    S1 --> S2 --> S3 --> S4 --> S5 --> RESULT
+    style S2 fill:#e8a33d,color:#10100e
+    style S3 fill:#8a9a5b,color:#10100e
+    style RESULT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>關鍵:鎖讓臨界區「序列化」了</strong>——本來會交錯的讀-改-寫,現在被迫一個做完才換下一個。第 3 節 <a class="xlink" href="P1-T08.html">P1-T08</a> 的更新遺失,根源是「執行緒 2 讀到執行緒 1 還沒寫回的舊值」;有了鎖,執行緒 2 根本進不來,直到執行緒 1 寫回並解鎖,所以它讀到的永遠是最新值。race 消失。</p>
+<hr />
+<h3 id="2-error-path">2. 鎖的紀律:忘記解鎖與 error path</h3>
+<p>鎖很有效,但用錯會製造新問題。最常見的紀律問題:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph bugs["鎖的常見紀律錯誤"]
+        FORGET["忘記解鎖:<br/>lock 後某條路徑沒 unlock<br/>→ 別的執行緒永遠等不到鎖(卡死)"]
+        ERRPATH["error path 漏解鎖:<br/>lock 後,中途出錯提早 return,<br/>卻忘了在 return 前 unlock<br/>→ 同樣鎖永遠不釋放"]
+    end
+    style FORGET fill:#c2603a,color:#f4ecd8
+    style ERRPATH fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>特別是 <strong>error path 漏解鎖</strong>:</p>
+<pre><code class="language-c">pthread_mutex_lock(&amp;m);
+if (something_failed) {
+    return -1;        // ✗ 災難:沒 unlock 就 return,鎖永遠卡住
+}
+// ...
+pthread_mutex_unlock(&amp;m);
+</code></pre>
+<p>正確做法是確保<strong>所有</strong>離開臨界區的路徑(包括錯誤提早返回)都有 unlock。這在 kernel 程式碼裡是常見的 bug 來源(kernel 甚至發展出 <code>goto</code> 錯誤處理慣例、以及自動清理機制來對付它)。</p>
+<p><strong>核心原則:每個 lock 都要有對應的 unlock,且涵蓋所有退出路徑。</strong> 這呼應 <a class="xlink" href="P0-T06.html">P0-T06</a> 的「每個 malloc 對應一個 free」——資源的取得與釋放要配對,鎖也是一種資源。</p>
+<hr />
+<h3 id="3">3. 條件變數:高效地等待某個條件</h3>
+<p>有時執行緒需要<strong>等待某個條件成立</strong>才能繼續。例如「等緩衝區有資料才能取」。一個笨方法是<strong>忙碌等待(busy-wait)</strong>:</p>
+<pre><code class="language-c">while (buffer_is_empty()) { }   // ✗ 笨方法:空轉,瘋狂佔用 CPU 檢查
+</code></pre>
+<p>這浪費大量 CPU——執行緒不停地「看一下、還沒、再看一下」,空轉燒 CPU 卻什麼也沒做。<strong>條件變數(condition variable)</strong> 解決這個問題:它讓執行緒<strong>睡眠等待</strong>,直到別的執行緒「通知」條件可能成立了才被喚醒。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph cv["條件變數:睡著等,不空轉"]
+        WAIT["執行緒:條件不成立<br/>→ wait(cond):釋放鎖並睡眠<br/>(不佔 CPU)"]
+        SIGNAL["另一個執行緒:讓條件成立後<br/>→ signal(cond):喚醒等待者"]
+        WAKE["被喚醒的執行緒:<br/>重新取得鎖,再檢查條件<br/>(成立就繼續,否則再睡)"]
+        WAIT -.被通知.-> WAKE
+        SIGNAL --> WAKE
+    end
+    style WAIT fill:#6fa8b8,color:#10100e
+    style SIGNAL fill:#e8a33d,color:#10100e
+    style WAKE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>條件變數總是和 mutex 搭配使用,典型用法:</p>
+<pre><code class="language-c">pthread_mutex_lock(&amp;m);
+while (!condition)                    // 用 while 不是 if(下面解釋)
+    pthread_cond_wait(&amp;cond, &amp;m);     // 原子地:釋放鎖 + 睡眠;被喚醒時重新持鎖
+// 此時 condition 成立,且持有鎖,可安全操作共享資料
+pthread_mutex_unlock(&amp;m);
+</code></pre>
+<p><strong>為什麼用 <code>while</code> 而非 <code>if</code> 檢查條件?</strong> 因為執行緒被喚醒後,條件<strong>不保證</strong>仍然成立(可能有別的執行緒搶先把資源用掉了,或發生了「偽喚醒」)。所以醒來要<strong>重新檢查</strong>條件,不成立就再睡——用 <code>while</code> 迴圈才能做到「醒來再驗一次」。用 <code>if</code> 只檢查一次,可能在條件其實不成立時往下走,造成 bug。這是條件變數最經典的正確用法。</p>
+<hr />
+<h3 id="4-producer-consumer-bounded-buffer">4. producer-consumer:用鎖與條件變數實作 bounded buffer</h3>
+<p>把鎖和條件變數組合起來,實作一個經典又實用的並行模式:<strong>生產者-消費者(producer-consumer)</strong> 配上一個<strong>容量有限的緩衝區(bounded buffer)</strong>。</p>
+<p>場景:一些執行緒(生產者)往緩衝區放資料,另一些(消費者)從緩衝區取資料。緩衝區容量有限,所以:<strong>滿了,生產者要等</strong>(等消費者取走騰出空間);<strong>空了,消費者要等</strong>(等生產者放入)。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph system["bounded buffer(容量 N)"]
+        BUF["緩衝區<br/>[ ][ ][x][x][ ]"]
+    end
+    PROD["生產者<br/>放資料"] -->|"滿了就 wait<br/>(等『不滿』條件)"| BUF
+    BUF -->|"空了就 wait<br/>(等『不空』條件)"| CONS["消費者<br/>取資料"]
+    NOTE["用 1 把 mutex 保護緩衝區(臨界區),<br/>2 個條件變數:<br/>『不滿』(放入後 signal 給生產者)<br/>『不空』(取出後 signal 給消費者)"]
+    system --> NOTE
+    style BUF fill:#e8a33d,color:#10100e
+    style NOTE fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>運作邏輯:
+- <strong>生產者</strong>:lock → 若緩衝區滿,wait「不滿」條件 → 放入資料 → signal「不空」(通知消費者有東西了)→ unlock。
+- <strong>消費者</strong>:lock → 若緩衝區空,wait「不空」條件 → 取出資料 → signal「不滿」(通知生產者有空間了)→ unlock。</p>
+<p>這個模式<strong>直接對應你的工作</strong>:你的 I/O 路徑就是典型的生產者-消費者——例如一端產生 I/O 請求、另一端處理它們,中間用佇列(緩衝區)銜接。理解 bounded buffer,你就理解了這類資料流的同步骨架。kernel 裡大量使用類似的「佇列 + 同步」結構。</p>
+<hr />
+<h3 id="5-deadlock">5. 死結(deadlock)與它的四個成因</h3>
+<p>鎖解決了 race,但引入了並行程式設計最惡名昭彰的陷阱:<strong>死結(deadlock)</strong>——多個執行緒互相等待對方持有的資源,結果<strong>全部永遠卡住</strong>。</p>
+<p>最經典的場景:兩個執行緒,兩把鎖,以<strong>不同順序</strong>取得:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph deadlock["典型死結:兩執行緒以相反順序取兩把鎖"]
+        T1["執行緒1:<br/>① lock(A) 成功<br/>② 想 lock(B)...等待"]
+        T2["執行緒2:<br/>① lock(B) 成功<br/>② 想 lock(A)...等待"]
+    end
+    T1 -.“等執行緒2手上的 B”.-> T2
+    T2 -.“等執行緒1手上的 A”.-> T1
+    RESULT["互相等待 → 兩個都永遠卡死<br/>(誰都不肯放手,誰都拿不到第二把)"]
+    deadlock --> RESULT
+    style T1 fill:#c2603a,color:#f4ecd8
+    style T2 fill:#c2603a,color:#f4ecd8
+    style RESULT fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>死結的發生,需要<strong>同時滿足四個條件</strong>(經典的 Coffman 條件)。理解它們,因為「破壞任一個」就能避免死結:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph four["死結的四個必要條件(全滿足才會死結)"]
+        C1["① 互斥(mutual exclusion)<br/>資源一次只能一人持有<br/>(鎖的本質,難消除)"]
+        C2["② 持有並等待(hold and wait)<br/>持有一個資源的同時,<br/>還在等另一個"]
+        C3["③ 不可搶奪(no preemption)<br/>資源不能被強行奪走,<br/>只能由持有者主動釋放"]
+        C4["④ 循環等待(circular wait)<br/>形成一個環:<br/>A 等 B 持有的、B 等 A 持有的"]
+    end
+    style C1 fill:#6fa8b8,color:#10100e
+    style C2 fill:#6fa8b8,color:#10100e
+    style C3 fill:#6fa8b8,color:#10100e
+    style C4 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>關鍵:<strong>這四個條件必須「同時」成立才會死結;破壞其中任何一個,死結就不會發生。</strong> 最常用、最實用的破壞點是<strong>第④個「循環等待」</strong>——下一節說明怎麼破壞它。</p>
+<hr />
+<h3 id="6">6. 破解死結:固定加鎖順序</h3>
+<p>破壞「循環等待」最簡單有效的方法:<strong>規定所有執行緒都以「相同的固定順序」取得鎖</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph fix["固定加鎖順序:永遠先 A 後 B"]
+        T1["執行緒1:<br/>lock(A) → lock(B)"]
+        T2["執行緒2:<br/>lock(A) → lock(B)<br/>(也是先 A 後 B,不再相反)"]
+    end
+    WHY["為什麼有效:<br/>若執行緒2也要先拿 A,<br/>那它在拿到 A 之前不會去碰 B<br/>→ 不可能形成『1等B、2等A』的環<br/>→ 破壞了循環等待條件"]
+    fix --> WHY
+    style T1 fill:#8a9a5b,color:#10100e
+    style T2 fill:#8a9a5b,color:#10100e
+    style WHY fill:#e8a33d,color:#10100e
+</pre></p>
+<p>原理:如果規定「<strong>永遠先拿 A 再拿 B</strong>」,那就不可能出現「執行緒 1 拿了 A 等 B、執行緒 2 拿了 B 等 A」的環——因為執行緒 2 要拿 B 之前,必須先拿到 A,而 A 在執行緒 1 手上,所以執行緒 2 會卡在「等 A」,但它<strong>還沒拿任何鎖</strong>(沒有 hold and wait 的環),執行緒 1 因此能順利拿到 B、做完、釋放,執行緒 2 再接手。循環被打破。</p>
+<p><strong>這就是「固定加鎖順序」原則</strong>:在你的程式裡,為所有的鎖定義一個全域的取得順序,所有執行緒都遵守。<strong>違反固定加鎖順序(不同地方以不同順序取鎖)是死結最常見的成因。</strong> kernel 對此極其嚴格,還有 lockdep 工具自動偵測「加鎖順序不一致」的潛在死結(<span class="xlink-stub" title="待撰寫">P3</span>)。</p>
+<hr />
+<h3 id="7">7. 鎖的粒度:粗與細的權衡</h3>
+<p>最後一個重要概念:<strong>鎖的粒度(granularity)</strong>——你用一把鎖保護「多大範圍」的資料?</p>
+<p><pre class="mermaid">flowchart TB
+    Q{"鎖的粒度?"}
+    Q -->|"粗粒度(coarse):<br/>一把大鎖保護所有共享資料"| COARSE["優點:簡單、不易出錯、不易死結<br/>缺點:序列化嚴重<br/>(大家都搶這一把,並行度低)"]
+    Q -->|"細粒度(fine):<br/>很多小鎖各保護一小塊"| FINE["優點:並行度高<br/>(操作不同資料的執行緒不互相擋)<br/>缺點:複雜、易出錯、易死結<br/>(多把鎖 → 加鎖順序問題)"]
+    style COARSE fill:#6fa8b8,color:#10100e
+    style FINE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>這是一個經典權衡:
+- <strong>粗粒度鎖</strong>(一把大鎖管全部):簡單、安全,但所有執行緒都得搶同一把鎖,並行度低——退化成「大家排隊一個一個來」,失去多核心的好處。
+- <strong>細粒度鎖</strong>(多把小鎖各管一塊):並行度高(操作不同資料的執行緒可同時進行),但複雜得多——多把鎖意味著更容易違反加鎖順序、更容易死結、更難維護。</p>
+<p><strong>沒有絕對的對錯,要看場景權衡。</strong> 一般原則:先用粗粒度確保正確,有效能瓶頸再考慮細化。kernel 的演進史就是一部「鎖粒度不斷細化」的歷史(從早期的大內核鎖 BKL,到如今高度細粒度的鎖)——這是為了在多核心上擴展效能,代價是巨大的複雜度。你日後為產品的共享資料選鎖時,也要做這個權衡。</p>
+<hr />
+<h2 id="_4">打通關:把同步機制收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    PROBLEM["問題(P1-T08):共享狀態 race"]
+    PROBLEM --> MUTEX["mutex:鎖住臨界區,一次一人進入<br/>→ 序列化讀-改-寫,race 消失"]
+    MUTEX --> DISCIPLINE["紀律:每個 lock 對應 unlock<br/>(涵蓋所有退出路徑,含 error path)"]
+    MUTEX --> CV["需要等條件 → 條件變數<br/>(睡眠等待,不忙碌空轉;醒來用 while 重檢)"]
+    CV --> PC["組合應用:producer-consumer / bounded buffer<br/>(= 你 I/O 路徑的同步骨架)"]
+    MUTEX --> DEADLOCK["新陷阱:死結<br/>(四條件同時成立;互等對方的鎖)"]
+    DEADLOCK --> ORDER["破解:固定加鎖順序(破壞循環等待)"]
+    MUTEX --> GRAN["鎖粒度權衡:粗(簡單但序列化)vs 細(並行但複雜易死結)"]
+    ORDER --> KERNEL["→ kernel:mutex/spinlock/semaphore 選型、<br/>lockdep 偵測死結(P3)"]
+    GRAN --> KERNEL
+    style MUTEX fill:#8a9a5b,color:#10100e
+    style DEADLOCK fill:#c2603a,color:#f4ecd8
+    style KERNEL fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>mutex 透過「一次一人進入臨界區」修好 race,條件變數讓執行緒高效等待條件(producer-consumer 是其經典組合),但鎖引入了死結這個大陷阱——破壞「循環等待」(固定加鎖順序)是最實用的解法,而鎖粒度則是「簡單安全 vs 高並行」的權衡;這些正是你日後在 kernel 裡選鎖、避死結的基礎。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:兩鎖以不同順序取得 → 死結。</strong>
+這是死結最常見的成因(違反固定加鎖順序)。解法:為所有鎖定義全域固定的取得順序,所有執行緒遵守。</p>
+<p><strong>誤區二:忘記解鎖,或 error path 漏解鎖。</strong>
+lock 後若某條路徑(尤其中途出錯提早 return)沒 unlock,鎖永遠卡住,別的執行緒餓死。確保所有退出路徑都解鎖。</p>
+<p><strong>誤區三:用 busy-wait 取代條件變數。</strong>
+<code>while(!condition){}</code> 空轉燒 CPU。要等條件用條件變數(睡眠等待 + 被喚醒),別空轉。</p>
+<p><strong>誤區四:條件變數用 <code>if</code> 而非 <code>while</code> 檢查條件。</strong>
+被喚醒後條件不保證仍成立(可能被搶先、或偽喚醒),要用 <code>while</code> 迴圈醒來重新檢查。用 <code>if</code> 可能在條件不成立時往下走,造成 bug。</p>
+<p><strong>誤區五:鎖粒度過大(序列化)或過小(難維護、易死結)。</strong>
+粗粒度簡單但並行度低;細粒度並行度高但複雜易死結。先求正確(粗),有瓶頸再謹慎細化。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:Linux 終端機,使用者態,<strong>安全,不需 root、不動系統</strong>。需要 pthread。</p>
+<p><strong>任務 A — 用 mutex 修好 P1-T08 的 race</strong>
+拿 <a class="xlink" href="P1-T08.html">P1-T08</a> 任務 A 的程式,在 <code>counter++</code> 外面加上 mutex:</p>
+<pre><code class="language-c">pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+void *worker(void *_) {
+    for (int i = 0; i &lt; N; i++) {
+        pthread_mutex_lock(&amp;m);
+        counter++;
+        pthread_mutex_unlock(&amp;m);
+    }
+    return NULL;
+}
+</code></pre>
+<p>跑,確認結果<strong>穩定等於 2000000</strong>(多跑幾次都一樣)。對比 <a class="xlink" href="P1-T08.html">P1-T08</a> 沒加鎖時的隨機小於 2000000——這就是鎖的威力。</p>
+<p><strong>任務 B — 實作 bounded buffer(producer-consumer)</strong>
+實作一個容量為 N 的環形緩衝區,用 1 把 mutex + 2 個條件變數(「不滿」「不空」)。開幾個生產者執行緒、幾個消費者執行緒,生產者放入連續整數、消費者取出並累計。驗收:<strong>不丟資料、不死結、不 busy-wait</strong>(消費者空時要 <code>cond_wait</code> 睡眠而非空轉)。記得條件檢查用 <code>while</code>。</p>
+<p><strong>任務 C — 製造一個死結,再修好它</strong>
+故意寫一個必然死結的雙鎖程式:</p>
+<pre><code class="language-c">// 執行緒1:lock(A); sleep(1); lock(B); ...
+// 執行緒2:lock(B); sleep(1); lock(A); ...   ← 相反順序
+</code></pre>
+<p>(加 <code>sleep</code> 是為了讓死結幾乎必然發生。)在 VM 裡跑,觀察程式卡死(兩執行緒都不結束)。然後<strong>寫出死結的四個條件</strong>如何在此滿足,再<strong>修正</strong>:讓執行緒 2 也以「先 A 後 B」的順序取鎖,確認程式不再卡死。</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 加 mutex 後 <a class="xlink" href="P1-T08.html">P1-T08</a> 的結果穩定等於 2,000,000。
+2. ☐ 實作容量為 N 的 bounded buffer,多 producer/consumer 下不丟資料、不死結、不 busy-wait。
+3. ☐ 寫出一個必然死結的雙鎖程式並說明四條件,再以固定加鎖順序修正。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用鎖修好 race。
+- <strong>80(熟練)</strong>:能實作 producer-consumer(bounded buffer)。
+- <strong>100(精通)</strong>:能分析鎖粒度取捨,並預示 kernel 的鎖選型(mutex/spinlock/semaphore)。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——kernel 的 mutex/spinlock/semaphore 選型、死結預防(lockdep,見 <span class="xlink-stub" title="待撰寫">P3</span>)直接建立在這些概念上。你產品的多執行緒 app 也要用這些工具保護共享狀態。</li>
+<li><strong>這課餵給未來的(你的並行主線)</strong>:鎖/死結 → <a class="xlink" href="P3-T08.html">P3-T08</a> kernel 鎖機制與選型、<a class="xlink" href="P3-T10.html">P3-T10</a> 進階同步、lockdep;producer-consumer → 你的 I/O 佇列同步;「鎖只是同步的一種」→ <a class="xlink" href="P1-T10.html">P1-T10</a> 原子操作與 lock-free 的入門。</li>
+<li><strong>下一步 → <a class="xlink" href="P1-T10.html">P1-T10</a> 原子操作、memory ordering 與 memory barrier</strong>:你已經會用鎖保護臨界區。但鎖有成本(取得/釋放、可能阻塞)。下一課進入更底層、也更燒腦的主題:<strong>原子操作</strong>(不用鎖就能安全地 <code>++</code>)、以及一個會顛覆你直覺的事實——<strong>編譯器和 CPU 會「重排」你的記憶體存取順序</strong>,使得多執行緒看到的順序不符合你寫的程式碼。這需要 <strong>memory barrier</strong> 來駕馭。這課只求建立正確直覺與「敬畏感」,但它是 kernel lock-free 結構、以及你 DMA 工作(描述子必須在按門鈴前對裝置可見)的根。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T08.html">← P1-T08 並行基礎與 race condition</a><a class="pn next" href="P1-T10.html">P1-T10 原子操作、memory ordering 與 memory barrier →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

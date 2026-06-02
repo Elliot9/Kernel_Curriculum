@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P5-T06 · Linux NVMe 驅動原始碼(drivers/nvme/host/)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P5 · Block Layer、儲存堆疊與 NVMe</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  <span class="gate-pill">🚪 出關門檻</span>
+</nav>
+<article class="paper">
+<h1 id="p5-t06-linux-nvme-driversnvmehost">P5-T06 · Linux NVMe 驅動原始碼(drivers/nvme/host/)</h1>
+<blockquote>
+<p><strong>一句話</strong>:把 NVMe 協定對到真實程式碼——<code>drivers/nvme/host/pci.c</code> 是 PCIe 傳輸層、<code>core.c</code> 是控制器核心;命令提交入口是 <code>nvme_queue_rq</code>,而 <code>nvme_queue</code>(一對 SQ/CQ)1:1 對應 blk-mq 硬體佇列。從「一次 I/O」單一路徑切入,別被龐大原始碼淹沒。</p>
+</blockquote>
+<hr />
+<h2 id="phase-5">🚪 這是 Phase 5 出關門檻</h2>
+<p>這是 Phase 5 的<strong>關卡(gate)</strong>。本 task 達 <strong>80 分</strong>——能在 NVMe 驅動原始碼中<strong>追一次 I/O 並解釋佇列對應</strong>——才算掌握了你產品核心領域的程式碼閱讀能力,方可進入 Phase 6(DMA)。</p>
+<p>為什麼設這道關?因為 <strong>這是你工作中最常閱讀/修改的程式碼之一</strong>。你的產品可能要修改或旁路 NVMe 驅動,把 queue I/O 導向 GPU。如果你不能在這份龐大的原始碼裡定位關鍵流程、追一次 I/O 的提交/完成路徑、理解佇列對應,你就無法在你的核心領域工作。這道關確保你具備這個能力——它也是前面所有功課(資料結構、blk-mq、NVMe 協定、PCI)的綜合兌現。</p>
+<hr />
+<h2 id="nvme">為什麼是「讀 NVMe 驅動原始碼」(導讀)</h2>
+<p><a class="xlink" href="P5-T05.html">P5-T05</a> 你懂了 NVMe 協定(SQ/CQ、doorbell、PRP/SGL)。這一課把協定對到<strong>真實的 Linux NVMe 驅動原始碼</strong>——你工作中最常碰的程式碼。</p>
+<p><code>drivers/nvme/host/</code> 的結構:
+- <strong><code>pci.c</code></strong>:<strong>PCIe 傳輸層</strong>——NVMe over PCIe 的實作(用 <a class="xlink" href="P4-T04.html">P4-T04</a> 的 pci_driver、BAR、MSI-X)。命令提交、佇列管理、中斷處理在這。
+- <strong><code>core.c</code></strong>:<strong>控制器核心/通用層</strong>——控制器狀態機、identify、namespace 掃描等,跨傳輸層(PCIe/TCP/RDMA)通用的部分。
+- <strong><code>nvme.h</code></strong>:核心結構定義。</p>
+<p>關鍵的對應(這一課的核心):
+- <strong><code>nvme_queue</code></strong>:驅動裡代表<strong>一對 SQ/CQ</strong>(<a class="xlink" href="P5-T05.html">P5-T05</a>)的結構。
+- <strong>它 1:1 對應 blk-mq 硬體佇列</strong>(<a class="xlink" href="P5-T03.html">P5-T03</a>)——這把你 Phase 5 學的兩端(blk-mq 的硬體佇列、NVMe 的 SQ/CQ)在程式碼裡接起來了。
+- <strong><code>nvme_queue_rq</code></strong>:命令提交入口——blk-mq 要派發一個 request 時,呼叫驅動的這個函式(就是 <a class="xlink" href="P5-T03.html">P5-T03</a> 的 <code>queue_rq</code> ops,<a class="xlink" href="P0-T07.html">P0-T07</a> callback),它把 request 轉成 NVMe 命令、放進 SQ、按 doorbell。</p>
+<p><strong>最重要的讀碼策略(常見誤區:被龐大原始碼淹沒)</strong>:NVMe 驅動程式碼很多,<strong>不要試圖一次讀完</strong>。<strong>從「一次 I/O 的提交/完成」這條單一路徑切入</strong>——追一個 read/write 怎麼從 <code>nvme_queue_rq</code> 進去、變成 SQ 命令、按 doorbell、裝置完成、CQ 處理、<code>bi_end_io</code> 回呼。沿著這一條路,你會碰到所有關鍵結構,而不會在無關的程式碼裡迷路。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?如上——這是你最常讀/改的程式碼,你產品可能修改或旁路它把 I/O 導向 GPU。這道出關門檻確保你能在這裡工作。</p>
+<p>(這一課是 <a class="xlink" href="P2-T08.html">P2-T08</a>「讀真實 kernel 子系統」能力的終極應用——用 Bootlin 交叉參照、認結構、追路徑。)</p>
+<hr />
+<h2 id="_1">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P5-T05.html">P5-T05</a>(NVMe 協定:SQ/CQ、doorbell、PRP/SGL)、<a class="xlink" href="P5-T03.html">P5-T03</a>(blk-mq 硬體佇列)、<a class="xlink" href="P4-T04.html">P4-T04</a>(PCI/BAR/MSI-X)。也用到 <a class="xlink" href="P2-T08.html">P2-T08</a>(讀真實 kernel 原始碼)、<a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a>(ftrace/kgdb 追路徑)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P5-T05.html">P5-T05</a> 的「SQ/CQ、按 doorbell 提交、CQ + phase bit 完成」嗎?這課看驅動怎麼實作這些。
+  2. 你還記得 <a class="xlink" href="P2-T08.html">P2-T08</a> 的讀碼法(從單一路徑切入、用 Elixir 交叉參照、認結構)嗎?這課是它的終極應用。</li>
+<li>工具:Bootlin(<code>drivers/nvme/host/pci.c</code>、<code>core.c</code>、<code>nvme.h</code>)、ftrace/kgdb(回顧 <a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a>)。</li>
+<li>環境:<strong>QEMU <code>-device nvme</code>(模擬 NVMe)+ 帶 debug info 的 NVMe 驅動。所有實驗只在 VM。</strong></li>
+</ul>
+<hr />
+<h2 id="_2">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 原始碼樹結構 → (2) nvme_queue 對應 blk-mq 硬體佇列 → (3) 提交路徑:nvme_queue_rq → (4) 完成路徑:CQ 處理 → (5) 初始化/identify/namespace 掃描 → (6) 讀碼策略:單一路徑切入</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-pcic-vs-corec">1. 原始碼樹結構:pci.c vs core.c</h3>
+<p>先認識 <code>drivers/nvme/host/</code> 的分工——這避免你混淆「傳輸層」和「通用核心」。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph host3["drivers/nvme/host/"]
+        PCI4["pci.c:PCIe 傳輸層<br/>NVMe over PCIe 的實作<br/>(pci_driver、BAR、MSI-X,P4-T04;<br/>nvme_queue、提交 nvme_queue_rq、中斷處理)"]
+        CORE2["core.c:控制器核心/通用層<br/>控制器狀態機、identify、namespace 掃描<br/>(跨傳輸層通用:PCIe/TCP/RDMA 共用)"]
+        H["nvme.h:核心結構定義<br/>(nvme_dev、nvme_queue、nvme_command...)"]
+    end
+    NOTE23["★ 常見誤區:混淆 pci.c(PCIe 傳輸層)與 core.c(通用核心)★<br/>pci.c = 『怎麼透過 PCIe 跟這個裝置溝通』(傳輸層)<br/>core.c = 『NVMe 控制器/命名空間的通用邏輯』(不分傳輸)<br/>你產品(PCIe NVMe)最常動的是 pci.c"]
+    host3 --> NOTE23
+    style PCI4 fill:#e8a33d,color:#10100e
+    style CORE2 fill:#6fa8b8,color:#10100e
+    style NOTE23 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>分工:
+- <strong><code>pci.c</code></strong>:<strong>PCIe 傳輸層</strong>——「怎麼透過 PCIe 跟這個 NVMe 裝置溝通」。用 <a class="xlink" href="P4-T04.html">P4-T04</a> 的 pci_driver、BAR、MSI-X;實作 <code>nvme_queue</code>、提交 <code>nvme_queue_rq</code>、中斷處理。<strong>你產品(PCIe NVMe)最常動這裡。</strong>
+- <strong><code>core.c</code></strong>:<strong>控制器核心/通用層</strong>——NVMe 控制器/命名空間的通用邏輯(狀態機、identify、namespace 掃描),<strong>不分傳輸層</strong>(PCIe、TCP、RDMA 共用)。
+- <strong><code>nvme.h</code></strong>:核心結構定義(<code>nvme_dev</code>、<code>nvme_queue</code>、<code>nvme_command</code> 等)。</p>
+<p><strong>常見誤區:混淆 pci.c 與 core.c</strong>——pci.c 是「PCIe 傳輸怎麼做」,core.c 是「NVMe 通用邏輯」。NVMe 支援多種傳輸(PCIe/TCP/RDMA),通用的放 core.c、PCIe 專屬的放 pci.c。你讀碼時要知道自己在哪一層。</p>
+<hr />
+<h3 id="2-nvme_queue-blk-mq">2. <code>nvme_queue</code> 對應 blk-mq 硬體佇列</h3>
+<p>這是這一課的<strong>核心對應</strong>——把你 Phase 5 學的兩端接起來。</p>
+<p><pre class="mermaid">flowchart TB
+    BLKMQ2["blk-mq 硬體佇列(P5-T03)<br/>(blk_mq_hw_ctx)"]
+    BLKMQ2 -->|"1:1 對應"| NVMEQ["nvme_queue(drivers/nvme/host/pci.c)<br/>= 驅動裡代表一對 SQ/CQ 的結構(P5-T05)"]
+    NVMEQ --> CONTAINS["nvme_queue 內含:<br/>① SQ 的記憶體(命令環)+ SQ doorbell<br/>② CQ 的記憶體(完成環)+ CQ doorbell<br/>③ 目前的 phase、head/tail 指標<br/>④ 對應的 MSI-X 中斷向量(P4-T04)"]
+    NVMEQ --> MAPPING2["★ 對應關係(精通目標)★<br/>每個 blk-mq 硬體佇列 ↔ 一個 nvme_queue ↔ 一對 NVMe SQ/CQ<br/>→ 常見『每核一個』:CPU N → 硬體佇列 N → nvme_queue N → SQ/CQ N<br/>整條路徑並行不爭搶(P5-T03)"]
+    style NVMEQ fill:#e8a33d,color:#10100e
+    style MAPPING2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>核心對應(驗收點:說明 blk-mq 硬體佇列與 <code>nvme_queue</code>(SQ/CQ 對)的 1:1 對應)</strong>:
+- <strong><code>nvme_queue</code></strong> 是驅動裡代表<strong>一對 SQ/CQ</strong>(<a class="xlink" href="P5-T05.html">P5-T05</a>)的結構。
+- 它 <strong>1:1 對應一個 blk-mq 硬體佇列</strong>(<a class="xlink" href="P5-T03.html">P5-T03</a>)。
+- <code>nvme_queue</code> 內含:SQ 的記憶體(命令環)+ SQ doorbell、CQ 的記憶體(完成環)+ CQ doorbell、目前的 phase 與 head/tail 指標、對應的 MSI-X 中斷向量(<a class="xlink" href="P4-T04.html">P4-T04</a>)。</p>
+<p>所以整條對應鏈是:<strong>CPU N → blk-mq 硬體佇列 N → <code>nvme_queue</code> N → NVMe SQ/CQ 對 N</strong>(常見「每核一個」)。這就是 <a class="xlink" href="P5-T03.html">P5-T03</a> 說的「blk-mq 硬體佇列 1:1 對應 NVMe SQ/CQ」在程式碼裡的實體——<code>nvme_queue</code> 是那個對應的載體。<strong>這把你 Phase 5 學的 blk-mq(P5-T03)和 NVMe 協定(P5-T05)在驅動程式碼裡接起來了。</strong></p>
+<p><strong>常見誤區:忽略 NVMe 驅動把硬體佇列建在 blk-mq 之上</strong>——NVMe 驅動不是自己另搞一套佇列,而是<strong>實作 blk-mq 的介面</strong>(<code>blk_mq_ops</code>),把它的 <code>nvme_queue</code> 對應到 blk-mq 硬體佇列。理解這個「建在 blk-mq 之上」的關係,是讀懂驅動的關鍵。</p>
+<hr />
+<h3 id="3-nvme_queue_rq">3. 提交路徑:<code>nvme_queue_rq</code></h3>
+<p>順著「一次 I/O」走——<strong>提交</strong>端的入口是 <strong><code>nvme_queue_rq</code></strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    BLKMQ3["blk-mq 要派發一個 request(P5-T03)"]
+    BLKMQ3 --> QUEUERQ["呼叫驅動的 nvme_queue_rq(pci.c)<br/>(這是 blk_mq_ops.queue_rq,P0-T07 callback,P5-T03)"]
+    QUEUERQ --> STEPS["nvme_queue_rq 裡(一次提交):<br/>① 從 request(P5-T02)取出 I/O 資訊(sector、長度、方向)<br/>② 建立 NVMe 命令(64-byte,P5-T05)<br/>③ 把 bio_vec(P5-T02)轉成 PRP/SGL(P5-T05)<br/>④ 把命令寫進 nvme_queue 的 SQ<br/>⑤ ★ 屏障 ★ 確保命令對裝置可見(dma_wmb,P3-T11 命門)<br/>⑥ 寫 SQ doorbell 通知裝置(writel,P4-T04)"]
+    STEPS --> DEVICE5["裝置 DMA 讀 SQ 命令 → 執行"]
+    style QUEUERQ fill:#e8a33d,color:#10100e
+    style STEPS fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>提交路徑(驗收點:正確指出命令提交入口 <code>nvme_queue_rq</code> 與其所屬檔案 <code>pci.c</code>)</strong>:
+- blk-mq 要派發一個 request → 呼叫驅動的 <strong><code>nvme_queue_rq</code></strong>(在 <code>pci.c</code>,這是 <code>blk_mq_ops.queue_rq</code>,<a class="xlink" href="P0-T07.html">P0-T07</a> callback)。
+- <code>nvme_queue_rq</code> 裡做一次提交:① 從 request(<a class="xlink" href="P5-T02.html">P5-T02</a>)取 I/O 資訊 → ② 建立 NVMe 命令(64-byte,<a class="xlink" href="P5-T05.html">P5-T05</a>)→ ③ <strong>把 <code>bio_vec</code>(<a class="xlink" href="P5-T02.html">P5-T02</a>)轉成 PRP/SGL(<a class="xlink" href="P5-T05.html">P5-T05</a>)</strong> → ④ 命令寫進 SQ → ⑤ <strong>屏障</strong>(dma_wmb,回收 <a class="xlink" href="P3-T11.html">P3-T11</a> 命門!)→ ⑥ 寫 SQ doorbell(<a class="xlink" href="P4-T04.html">P4-T04</a>)。
+- 裝置 DMA 讀 SQ 命令、執行。</p>
+<p><strong>看這條路徑,你 Phase 5 的所有功課都兌現了</strong>:request(<a class="xlink" href="P5-T02.html">P5-T02</a>)、PRP/SGL 轉換(<a class="xlink" href="P5-T05.html">P5-T05</a>)、doorbell(<a class="xlink" href="P4-T04.html">P4-T04</a>/<a class="xlink" href="P5-T05.html">P5-T05</a>)、屏障(<a class="xlink" href="P3-T11.html">P3-T11</a>)。第 3 步「bio_vec → PRP/SGL」正是你產品資料路徑的關鍵一環(你可能在這附近介入,把資料導向 GPU)。</p>
+<hr />
+<h3 id="4-cq">4. 完成路徑:CQ 處理</h3>
+<p>提交之後,<strong>完成</strong>端——裝置做完、發中斷、驅動處理 CQ。</p>
+<p><pre class="mermaid">flowchart TB
+    DEVICE6["裝置執行完 → DMA 寫完成項(16-byte)進 CQ → 發 MSI-X 中斷(P4-T04)"]
+    DEVICE6 --> ISR3["驅動的中斷 handler(ISR,上半部,P3-T10):"]
+    ISR3 --> CQPROC["處理 CQ:<br/>① 看 CQ 當前位置的完成項<br/>② 檢查 phase bit(P5-T05)== 期望值?<br/>&nbsp;&nbsp;是 → 新完成項,處理;否 → 沒有新的,停<br/>③ 對每個完成項:找到對應的 request、標記完成<br/>④ 推進 CQ head、寫 CQ doorbell<br/>⑤ 呼叫 request 的完成 → 最終 bio 的 bi_end_io(P5-T02/P0-T07)"]
+    CQPROC --> DEFER["★ 重活延後(P3-T10)★<br/>ISR 只做最緊急的(認完成);<br/>耗時處理(你產品的 parity/GPU)延後到 workqueue"]
+    style ISR3 fill:#e8a33d,color:#10100e
+    style CQPROC fill:#6fa8b8,color:#10100e
+    style DEFER fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>完成路徑</strong>:
+- 裝置執行完 → DMA 寫完成項(16-byte)進 CQ → 發 MSI-X 中斷(<a class="xlink" href="P4-T04.html">P4-T04</a>)。
+- 驅動的中斷 handler(ISR,上半部,<a class="xlink" href="P3-T10.html">P3-T10</a>)處理 CQ:① 看當前完成項 → ② <strong>檢查 phase bit</strong>(<a class="xlink" href="P5-T05.html">P5-T05</a>)判斷是否新完成項 → ③ 對每個新完成項,找到對應的 request、標記完成 → ④ 推進 CQ head、寫 CQ doorbell → ⑤ 呼叫 request 完成 → 最終 <code>bio</code> 的 <code>bi_end_io</code>(<a class="xlink" href="P5-T02.html">P5-T02</a>/<a class="xlink" href="P0-T07.html">P0-T07</a> callback)。</p>
+<p><strong>重活延後(回收 <a class="xlink" href="P3-T10.html">P3-T10</a>)</strong>:ISR 只做最緊急的(認出完成、推進佇列);<strong>耗時的處理延後到 workqueue</strong>。對你產品:NVMe I/O 完成後的 <strong>parity 計算、GPU 提交</strong>這些重活,就在這個「延後」環節——ISR 認出「某個底層 NVMe I/O 完成了」,把後續(算 parity、提交 GPU)排到 workqueue 做(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a> 的設計)。這是你產品介入完成路徑的地方。</p>
+<p>(這條路徑你會用 ftrace/kgdb 實際追一遍——驗收要求擷取一次提交路徑的關鍵函式序列。)</p>
+<hr />
+<h3 id="5-identifynamespace">5. 初始化、identify、namespace 掃描</h3>
+<p>除了 I/O 路徑,驅動還有<strong>初始化</strong>流程(主要在 <code>core.c</code> + <code>pci.c</code> 配合)——讓你知道「裝置怎麼從插上到可用」。</p>
+<p><pre class="mermaid">flowchart TB
+    PROBE8["PCI probe(pci.c,回顧 P4-T04):<br/>enable device、map BAR、設 MSI-X、pci_set_master"]
+    PROBE8 --> ADMINQ["建立 admin queue(P5-T05):<br/>分配 SQ/CQ 記憶體、告訴裝置 admin queue 位置"]
+    ADMINQ --> IDENTIFY["identify(core.c):<br/>用 admin queue 下 identify 命令<br/>→ 取得控制器能力(支援幾個 I/O queue、PRP/SGL...)"]
+    IDENTIFY --> IOQ["建立 I/O queues(P5-T05):<br/>依控制器能力 + CPU 數,建立多對 SQ/CQ<br/>(對應 blk-mq 硬體佇列,第2節)"]
+    IOQ --> SCAN["namespace 掃描(core.c):<br/>找出有哪些 namespace → 為每個建立 block 裝置<br/>(出現 /dev/nvme0n1...,經 P4-T01 device model)"]
+    SCAN --> READY4["裝置就緒,可做 I/O"]
+    style IDENTIFY fill:#6fa8b8,color:#10100e
+    style IOQ fill:#e8a33d,color:#10100e
+    style SCAN fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>初始化流程:
+- <strong>PCI probe</strong>(<code>pci.c</code>,回顧 <a class="xlink" href="P4-T04.html">P4-T04</a>):enable device、map BAR、設 MSI-X、<code>pci_set_master</code>。
+- <strong>建 admin queue</strong>(<a class="xlink" href="P5-T05.html">P5-T05</a>):分配 SQ/CQ 記憶體、告訴裝置 admin queue 位置。
+- <strong>identify</strong>(<code>core.c</code>):用 admin queue 下 identify 命令,取得控制器能力(支援幾個 I/O queue、PRP/SGL 等)。
+- <strong>建 I/O queues</strong>:依控制器能力 + CPU 數,建立多對 SQ/CQ(對應 blk-mq 硬體佇列)。
+- <strong>namespace 掃描</strong>(<code>core.c</code>):找出 namespace,為每個建立 block 裝置(出現 <code>/dev/nvme0n1</code>,經 <a class="xlink" href="P4-T01.html">P4-T01</a> device model)。</p>
+<p>這條初始化路徑串起了你前面學的:PCI probe(<a class="xlink" href="P4-T04.html">P4-T04</a>)、admin/I-O queue(<a class="xlink" href="P5-T05.html">P5-T05</a>)、device model 建節點(<a class="xlink" href="P4-T01.html">P4-T01</a>)。理解它,你才懂「插上 NVMe 到出現 <code>/dev/nvme0n1</code> 可用」整個過程。</p>
+<p>把「你的產品可能在 NVMe 驅動的哪些點介入」標出來(這是你讀這份驅動的最終目的):</p>
+<p><pre class="mermaid">flowchart TB
+    SUBMIT_P["提交:nvme_queue_rq<br/>bio_vec → PRP/SGL → 寫 SQ → 屏障 → doorbell"]
+    SUBMIT_P --> POINT1["★ 介入點 A:bio_vec → PRP/SGL 這步附近 ★<br/>把資料導向 GPU(P2PDMA / GDS,P7)"]
+    COMPLETE_P["完成:中斷 handler → phase bit → bi_end_io"]
+    COMPLETE_P --> POINT2["★ 介入點 B:完成處理的延後(workqueue,P3-T10)★<br/>NVMe I/O 完成 → 觸發 parity 計算 / GPU 提交"]
+    NOTE_I["你產品『把 queue I/O 餵給 GPU』= 在這條路徑上介入<br/>(修改或旁路驅動,需先能讀懂這條路徑 → 本課的意義)"]
+    POINT1 --> NOTE_I
+    POINT2 --> NOTE_I
+    style POINT1 fill:#e8a33d,color:#10100e
+    style POINT2 fill:#e8a33d,color:#10100e
+    style NOTE_I fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h3 id="6">6. 讀碼策略:單一路徑切入,別被淹沒</h3>
+<p>最後是這一課最重要的<strong>方法論</strong>——怎麼讀這份龐大原始碼而不迷路。</p>
+<p><pre class="mermaid">flowchart TB
+    HUGE["NVMe 驅動原始碼很龐大(pci.c + core.c 數千行)"]
+    HUGE --> WRONG4["✗ 試圖從頭到尾讀完 → 被淹沒、迷路、放棄"]
+    HUGE --> RIGHT4["✓ 從『一次 I/O』單一路徑切入(P2-T08 的讀碼法):"]
+    RIGHT4 --> PATH2["① 提交:nvme_queue_rq 進去 → 追到寫 SQ + doorbell<br/>② 完成:中斷 handler → 追到 phase bit + bi_end_io<br/>沿這一條路,碰到的結構才去查(nvme_queue、nvme_command...)"]
+    PATH2 --> TOOLS2["工具:<br/>① Bootlin 交叉參照(點函式/結構跳定義,P2-T08)<br/>② ftrace function_graph 追實際呼叫序列(P3-T13)<br/>③ kgdb 在 nvme_queue_rq 設中斷點看變數(P3-T14)"]
+    style WRONG4 fill:#c2603a,color:#f4ecd8
+    style RIGHT4 fill:#8a9a5b,color:#10100e
+    style TOOLS2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>讀碼策略(回收 <a class="xlink" href="P2-T08.html">P2-T08</a>,並對應這一課的所有誤區)</strong>:
+- <strong>不要從頭讀到尾</strong>(常見誤區:被龐大原始碼淹沒)——會迷路。
+- <strong>從「一次 I/O」單一路徑切入</strong>:提交(<code>nvme_queue_rq</code> → 寫 SQ + doorbell)、完成(中斷 handler → phase bit → <code>bi_end_io</code>)。沿這一條路,碰到的結構才去查。
+- <strong>用工具</strong>:Bootlin 交叉參照(點函式/結構跳定義,<a class="xlink" href="P2-T08.html">P2-T08</a>;<strong>常見誤區:追程式碼不用 Elixir 交叉參照而迷路</strong>)、ftrace function_graph 追實際呼叫序列(<a class="xlink" href="P3-T13.html">P3-T13</a>)、kgdb 在 <code>nvme_queue_rq</code> 設中斷點看變數(<a class="xlink" href="P3-T14.html">P3-T14</a>)。</p>
+<p>這套方法是你日後讀<strong>任何</strong>龐大 kernel 子系統的通用法。NVMe 驅動只是第一個真正大的——掌握「單一路徑 + 交叉參照 + 動態追蹤」,你就能啃下任何 kernel 程式碼。對你產品:你要修改/旁路這份驅動把 I/O 導向 GPU,而你介入的點(<code>nvme_queue_rq</code> 附近的提交、完成處理的延後)正是這條單一路徑上的關鍵環節。</p>
+<hr />
+<h2 id="nvme_1">打通關:把 NVMe 驅動原始碼收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    TREE2["drivers/nvme/host/:pci.c(PCIe 傳輸層)+ core.c(通用核心)+ nvme.h"]
+    TREE2 --> MAPPING3["★ nvme_queue(一對 SQ/CQ,P5-T05)1:1 對應 blk-mq 硬體佇列(P5-T03)★<br/>(驅動建在 blk-mq 之上;每核一個:CPU→硬體佇列→nvme_queue→SQ/CQ)"]
+    MAPPING3 --> SUBMIT5["提交:nvme_queue_rq(pci.c,blk_mq_ops.queue_rq)<br/>request→NVMe 命令→bio_vec 轉 PRP/SGL→寫 SQ→★屏障★→doorbell"]
+    SUBMIT5 --> COMPLETE3["完成:中斷 handler → 檢查 phase bit → 找 request 標完成<br/>→ bi_end_io;★ 重活(parity/GPU)延後 workqueue(P3-T10)★"]
+    TREE2 --> INIT3["初始化:PCI probe(P4-T04)→ admin queue → identify<br/>→ 建 I/O queues → namespace 掃描 → /dev/nvme0n1"]
+    COMPLETE3 --> STRATEGY["★ 讀碼策略:單一路徑切入(別被淹沒)★<br/>+ Bootlin 交叉參照(P2-T08)+ ftrace/kgdb(P3-T13/14)"]
+    style MAPPING3 fill:#e8a33d,color:#10100e
+    style SUBMIT5 fill:#8a9a5b,color:#10100e
+    style STRATEGY fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>Linux NVMe 驅動在 <code>drivers/nvme/host/</code>(pci.c 傳輸層、core.c 通用核心),<code>nvme_queue</code>(一對 SQ/CQ)1:1 對應 blk-mq 硬體佇列(把 P5-T03 和 P5-T05 接起來);提交走 <code>nvme_queue_rq</code>(request→命令→bio_vec 轉 PRP/SGL→寫 SQ→屏障→doorbell),完成走中斷 handler(查 phase bit→bi_end_io,重活延後 workqueue);讀這份龐大原始碼要從「一次 I/O」單一路徑切入、用 Bootlin 交叉參照與 ftrace/kgdb,別從頭讀到尾。這是你產品介入點所在。</strong></p>
+<hr />
+<h2 id="_3">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:被龐大原始碼淹沒。</strong>
+不要從頭讀到尾。從「一次 I/O 提交/完成」單一路徑切入(<code>nvme_queue_rq</code> → SQ/doorbell;中斷 → phase bit → bi_end_io),碰到的結構才去查。</p>
+<p><strong>誤區二:混淆 PCIe 傳輸層(pci.c)與通用核心(core.c)。</strong>
+pci.c 是「PCIe 怎麼跟裝置溝通」;core.c 是「NVMe 通用邏輯」(跨 PCIe/TCP/RDMA)。你產品(PCIe NVMe)最常動 pci.c。</p>
+<p><strong>誤區三:忽略 NVMe 驅動把硬體佇列建在 blk-mq 之上。</strong>
+驅動實作 blk-mq 介面(<code>blk_mq_ops</code>),<code>nvme_queue</code> 1:1 對應 blk-mq 硬體佇列(也就是 SQ/CQ)。不是另搞一套佇列。</p>
+<p><strong>誤區四:追程式碼不用 Elixir 交叉參照而迷路。</strong>
+用 Bootlin 點函式/結構跳定義(回顧 <a class="xlink" href="P2-T08.html">P2-T08</a>)、用 ftrace/kgdb 追實際路徑。光用眼睛在數千行裡找會迷路。</p>
+<hr />
+<h2 id="_4">動手實作(出關驗收任務)</h2>
+<p><strong>環境</strong>:<strong>QEMU <code>-device nvme</code>(模擬 NVMe)+ 帶 debug info 的 NVMe 驅動。所有實驗只在 VM。</strong> 用 Bootlin 對照原始碼。</p>
+<p><strong>任務(出關門檻):在 NVMe 驅動原始碼中追一次 I/O</strong></p>
+<ol>
+<li>
+<p><strong>定位提交入口</strong>:在 <code>drivers/nvme/host/pci.c</code>(https://elixir.bootlin.com/linux/v6.12/source/drivers/nvme/host/pci.c ）找到命令提交入口 <strong><code>nvme_queue_rq</code></strong>,確認它所屬的檔案,並讀懂它做的事(取 request、建命令、轉 PRP/SGL、寫 SQ、doorbell)。</p>
+</li>
+<li>
+<p><strong>說明佇列對應</strong>:在原始碼中找到 <code>nvme_queue</code> 結構(<code>pci.c</code>/<code>nvme.h</code>),用文字說明它如何 <strong>1:1 對應 blk-mq 硬體佇列</strong>(也就是一對 SQ/CQ)。</p>
+</li>
+<li>
+<p><strong>追一次提交路徑</strong>:在 QEMU 裡(<code>-device nvme</code>),用 <strong>ftrace function_graph</strong>(回顧 <a class="xlink" href="P3-T13.html">P3-T13</a>)或 <strong>kgdb</strong>(回顧 <a class="xlink" href="P3-T14.html">P3-T14</a>)對一次 I/O 擷取<strong>從 <code>nvme_queue_rq</code> 開始的關鍵函式序列</strong>。</p>
+</li>
+</ol>
+<p><strong>驗收檢核點</strong>:
+- <strong>(1)</strong> 在原始碼中正確指出命令提交入口(<strong><code>nvme_queue_rq</code></strong>)與其所屬檔案(<code>pci.c</code>)。
+- <strong>(2)</strong> 用文字說明 blk-mq 硬體佇列與 <code>nvme_queue</code>(SQ/CQ 對)的 <strong>1:1 對應</strong>。
+- <strong>(3)</strong> 用 ftrace/kgdb 擷取一次提交路徑的<strong>關鍵函式序列</strong>。</p>
+<hr />
+<h2 id="_5">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 在原始碼中正確指出命令提交入口(<code>nvme_queue_rq</code>)與其所屬檔案。
+2. ☐ 用文字說明 blk-mq 硬體佇列與 <code>nvme_queue</code>(SQ/CQ 對)的 1:1 對應。
+3. ☐ 用 ftrace/kgdb 擷取一次提交路徑的關鍵函式序列。</p>
+<p><strong>評分量表(出關門檻,需達 80)</strong>:
+- <strong>60</strong>:能在原始碼定位關鍵函式。
+- <strong>80(出關門檻 🚪)</strong>:能追一次 I/O 路徑並解釋佇列對應。達此分數方可進入 Phase 6。
+- <strong>100</strong>:能解讀完整提交/完成路徑並對應到自家產品的介入點。</p>
+<hr />
+<h2 id="_6">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——這是你工作中最常閱讀/修改的程式碼之一;你產品可能修改或旁路此驅動把 queue I/O 導向 GPU。</li>
+<li><strong>這課收束了(I/O 物件流動主線)</strong>:<a class="xlink" href="P5-T01.html">P5-T01</a> 堆疊 → <a class="xlink" href="P5-T02.html">P5-T02</a> bio/request → <a class="xlink" href="P5-T03.html">P5-T03</a> blk-mq → <a class="xlink" href="P5-T05.html">P5-T05</a> NVMe 協定 → 本課 NVMe 驅動(把全部接起來),銜接 <a class="xlink" href="P6-T02.html">P6-T02</a> DMA。提交路徑的 bio_vec→PRP/SGL、doorbell 屏障 → 直接通往 <span class="xlink-stub" title="待撰寫">P6</span> DMA。</li>
+<li><strong>下一步 → <a class="xlink" href="P5-T07.html">P5-T07</a> 近期 block/storage 演進(LWN,2023–2025)</strong>:你已通過 Phase 5 出關門檻——能在 NVMe 驅動原始碼裡追一次 I/O。最後一課拉到<strong>前沿</strong>:讀近期(2023–2025)block/NVMe 的重要變更,理解一個變更如何貫穿 VFS→block→NVMe。重點包括 <strong>atomic block writes / torn-write protection</strong>(我已查證:block+NVMe/SCSI 支援在 6.12 合併、VFS+EXT4/XFS 在 6.13)、<strong>computational storage 與 device-initiated I/O</strong>(與 P2PDMA/GDS 呼應——正是你產品所在的前沿)、以及 <strong>phyr</strong>(scatterlist 的潛在後繼,呼應 <a class="xlink" href="P5-T02.html">P5-T02</a> bio_vec)。追蹤這些討論能讓你預判技術走向。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P5-T05.html">← P5-T05 NVMe 協定基礎(控制器/命名空間、SQ/CQ、doorbell、PRP/SGL)</a><a class="pn next" href="P5-T07.html">P5-T07 近期 block/storage 演進(LWN,2023–2025) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P0-T04 · struct、union、bitfield 與記憶體對齊</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P0 · 深度 C、記憶體與未定義行為</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p0-t04-structunionbitfield">P0-T04 · struct、union、bitfield 與記憶體對齊</h1>
+<blockquote>
+<p><strong>一句話</strong>:struct 的大小,常常不等於成員大小的總和——中間藏著編譯器偷塞的「填充(padding)」。搞懂為什麼,你就懂了硬體為何挑剔記憶體位址,也就能讀懂 NVMe 那種一個 byte 都不能錯的命令格式。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這一課是 Phase 0 裡第一個標記「<strong>直接對應你工作</strong>」的主題,值得你多花一倍力氣。</p>
+<p>你的產品要跟 NVMe 裝置溝通。NVMe 的每一條命令,是一個<strong>精確定義的 64-byte 結構</strong>:第 0 個 byte 放什麼、第 4 到 7 byte 是哪個欄位,規格書釘死,差一個 byte 裝置就讀錯、就送錯資料。完成項(completion entry)是 16-byte,同樣錙銖必較。這些在 C 裡都是 struct,而且是<strong>對齊極度敏感</strong>的 struct。</p>
+<p>更廣地說,所有「硬體暫存器佈局」「網路封包格式」「磁碟上的 metadata」都是這種 byte 層級精確的結構。要正確操作它們,你必須能在腦中精準推算三件事:</p>
+<ol>
+<li>這個 struct 在記憶體裡<strong>實際</strong>長什麼樣?</li>
+<li>每個成員落在<strong>第幾個 byte</strong>(它的 offset)?</li>
+<li>整個 struct <strong>多大</strong>?</li>
+</ol>
+<p>而這裡藏著一個會讓你算錯的陷阱:<strong>C 編譯器會偷偷插入「填充 bytes(padding)」</strong>,讓 struct 的實際大小和你天真把成員相加的結果不一樣。不懂這件事,你算出來的每個 offset 都會錯位,你的程式會把資料寫到 NVMe 命令的錯誤欄位——這在儲存系統是災難級的 bug。</p>
+<p>這一課就是要把「struct 在記憶體裡到底長怎樣」這件事,從「編譯器的黑魔法」變成「你能用紙筆精準推算的機械流程」。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P0-T03.html">P0-T03</a>(你已懂陣列是連續記憶體、<code>sizeof</code> 的意義、指標如何走訪)。</li>
+<li>自我檢測(若不確定,先補):
+  1. <code>sizeof(char)</code> 是多少?(永遠是 1,這是 C 的定義)
+  2. <code>sizeof(int)</code> 在你的機器上是多少?(現代 64 位元系統通常是 4)
+  3. 你能用 <code>printf("%zu", sizeof(x))</code> 印出某型別的大小嗎?(這課會一直用到)
+  4. 「位址」是什麼?(回顧 <a class="xlink" href="P0-T02.html">P0-T02</a>:記憶體每個 byte 有一個編號)</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>這課的核心內容拆成八個小節,由淺到深:<strong>(1) struct 是什麼 → (2) 對齊是什麼、為什麼硬體要它 → (3) padding 怎麼來 → (4) 手算 struct 大小的標準流程 → (5) 重排成員省空間 → (6) offsetof → (7) packed 的威力與代價 → (8) union 與 bitfield</strong>。每一節都有圖和帶數字的範例。</p>
+<hr />
+<h3 id="1-struct">1. struct:把不同型別的東西打包成一個整體</h3>
+<p>陣列(P0-T03)的限制是「裡面只能放同一種型別」。但真實世界的資料常常是混合的:一個「點」有 x 和 y(都是 int),一個「使用者」有年齡(int)、名字首字母(char)、帳戶餘額(double)。<code>struct</code> 就是把這些不同型別的東西<strong>黏成一個整體</strong>的工具。</p>
+<pre><code class="language-c">struct point {
+    int x;
+    int y;
+};
+</code></pre>
+<p>宣告一個 struct 變數、存取成員,用 <code>.</code>:</p>
+<pre><code class="language-c">struct point p;
+p.x = 3;
+p.y = 4;
+</code></pre>
+<p><strong>關鍵規則:成員在記憶體裡,依「宣告順序」由低位址往高位址排列。</strong> 你寫 x 在前、y 在後,記憶體裡就是 x 在低位址、y 在高位址。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph mem["struct point 在記憶體中"]
+        direction LR
+        x["offset 0-3<br/>x (int)<br/>值 3"]
+        y["offset 4-7<br/>y (int)<br/>值 4"]
+    end
+    style x fill:#8a9a5b,color:#10100e
+    style y fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>這個例子很乾淨:兩個 int 各 4 bytes,排在 offset 0 和 4,總共 8 bytes。<code>sizeof(struct point)</code> 就是 8。<strong>但這是因為「剛好對齊」,下一節你會看到不對齊時會發生什麼。</strong></p>
+<blockquote>
+<p><strong>與你熟悉的語言對照</strong>:JS 的物件 <code>{x: 3, y: 4}</code> 概念上類似,但 JS 物件在記憶體裡怎麼擺、佔多大,你完全碰不到也不需要知道——引擎全權處理。C 的 struct 則是「你能、也必須」知道它的精確記憶體佈局,因為硬體會直接讀這塊記憶體。</p>
+</blockquote>
+<hr />
+<h3 id="2-alignment">2. 對齊(alignment):硬體的挑剔,以及為什麼</h3>
+<p>這是整課最核心的觀念,慢慢讀。</p>
+<h4 id="cpu-byte-byte">CPU 不是一個 byte 一個 byte 讀記憶體的</h4>
+<p>直覺上你可能以為,CPU 要讀記憶體裡的某個 byte,就直接去那個位址拿那一個 byte。<strong>錯。</strong> 現代 CPU 為了效率,是<strong>一次讀一整塊</strong>(一個「字組 word」,常是 4 或 8 bytes,且這塊的起始位址是該大小的倍數)。</p>
+<p>打個比方:把記憶體想成一排<strong>棧板(pallet)</strong>,每塊棧板裝 4 個箱子,堆高機(CPU)一次只能搬整塊棧板,不能只抽中間一個箱子。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph 記憶體棧板["記憶體:每塊棧板 4 bytes,CPU 一次搬一整塊"]
+        direction LR
+        p0["棧板 A<br/>位址 0,1,2,3"]
+        p1["棧板 B<br/>位址 4,5,6,7"]
+        p2["棧板 C<br/>位址 8,9,10,11"]
+    end
+    style p0 fill:#24221d,color:#cfc6b0
+    style p1 fill:#24221d,color:#cfc6b0
+    style p2 fill:#24221d,color:#cfc6b0
+</pre></p>
+<h4 id="_4">對齊的資料:一次搬完</h4>
+<p>如果一個 4-byte 的 int 剛好坐落在一塊棧板裡(起始位址是 4 的倍數:0、4、8、12……),CPU 搬一塊棧板就拿到完整的它。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph good["✓ 對齊:int 坐在位址 4,完整落在棧板 B"]
+        direction LR
+        gA["棧板 A<br/>0-3"]
+        gB["棧板 B<br/>4-7<br/>★ int 完整在此"]
+    end
+    style gB fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>CPU:搬棧板 B,完成。<strong>一次記憶體存取。</strong></p>
+<h4 id="_5">未對齊的資料:要搬兩塊再拼</h4>
+<p>但如果這個 int 從位址 2 開始(佔 2、3、4、5),它就<strong>跨在棧板 A 和棧板 B 之間</strong>:</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph bad["✗ 未對齊:int 從位址 2 開始,橫跨兩塊棧板"]
+        direction LR
+        bA["棧板 A<br/>0,1,(2,3)<br/>int 的前半"]
+        bB["棧板 B<br/>(4,5),6,7<br/>int 的後半"]
+    end
+    style bA fill:#c2603a,color:#f4ecd8
+    style bB fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>CPU 得搬棧板 A、再搬棧板 B、丟掉各自不要的部分、把要的兩半拼起來——<strong>兩次記憶體存取加上拼接工作</strong>,慢得多。更糟的是:<strong>有些 CPU 架構(如部分 ARM)根本拒絕做未對齊存取,直接觸發例外(alignment trap)讓程式當掉。</strong></p>
+<h4 id="_6">結論:自然對齊規則</h4>
+<p>所以編譯器訂了一條規矩,叫<strong>自然對齊(natural alignment)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>型別</th>
+<th>大小</th>
+<th>起始位址必須是…的倍數</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>char</code></td>
+<td>1</td>
+<td>1(任何位址都行)</td>
+</tr>
+<tr>
+<td><code>short</code></td>
+<td>2</td>
+<td>2</td>
+</tr>
+<tr>
+<td><code>int</code></td>
+<td>4</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>long</code> / 指標 / <code>double</code></td>
+<td>8</td>
+<td>8</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>比喻的極限</strong>:棧板比喻很好,但別把它想成「記憶體實體上真的被切成棧板」——記憶體本身是平的、連續編號的。所謂「棧板」是 CPU <strong>存取記憶體時的行為模式</strong>(它傾向以對齊的區塊為單位讀寫),不是記憶體的物理結構。對齊規則是「為了配合 CPU 這個行為模式而做的安排」,不是記憶體本身有格線。</p>
+</blockquote>
+<hr />
+<h3 id="3-padding">3. 填充(padding):為了滿足對齊,編譯器偷塞的空白</h3>
+<p>現在你懂了「每個型別有它的對齊要求」。問題來了:當 struct 裡混著不同型別,要讓<strong>每個成員都落在它該對齊的位址上</strong>,編譯器就得在成員之間<strong>插入沒有用途的 bytes</strong>——這就是 padding。</p>
+<p>看這個會嚇到人的例子:</p>
+<pre><code class="language-c">struct mixed {
+    char  a;    // 1 byte
+    int   b;    // 4 bytes
+    char  c;    // 1 byte
+};
+</code></pre>
+<p>你天真相加:1 + 4 + 1 = 6。<strong>但 <code>sizeof(struct mixed)</code> 在標準 64 位元系統上是 12!</strong> 多出來的 6 bytes 是哪來的?</p>
+<p>下圖逐格還原編譯器的排列過程:</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph layout["struct mixed 實際佈局(共 12 bytes)"]
+        direction LR
+        a["offset 0<br/>a (char)<br/>1 byte"]
+        pad1["offset 1,2,3<br/>PADDING<br/>3 bytes 空白"]
+        b["offset 4,5,6,7<br/>b (int)<br/>4 bytes"]
+        c["offset 8<br/>c (char)<br/>1 byte"]
+        pad2["offset 9,10,11<br/>PADDING<br/>3 bytes 空白"]
+    end
+    style a fill:#8a9a5b,color:#10100e
+    style b fill:#8a9a5b,color:#10100e
+    style c fill:#8a9a5b,color:#10100e
+    style pad1 fill:#c2603a,color:#f4ecd8
+    style pad2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>紅色的就是編譯器偷塞的 padding。下一節我們把「為什麼是這樣排」的推理過程,變成一套你能照著走的流程。</p>
+<hr />
+<h3 id="4-struct">4. 手算 struct 大小:一套你能照著走的流程</h3>
+<p>這是本課最該練到變成反射的技能。給定一個 struct,照下面的步驟,你就能在紙上算出它的精確佈局,不必靠編譯器。</p>
+<p><strong>規則只有兩條:</strong>
+- <strong>規則 A(成員對齊)</strong>:每個成員的起始 offset,必須是「該成員型別大小」的倍數。不夠就往後補 padding,直到對齊。
+- <strong>規則 B(整體對齊)</strong>:整個 struct 的總大小,必須是「struct 中最大對齊需求成員」的倍數。不夠就在尾端補 padding。</p>
+<blockquote>
+<p><strong>規則 B 為什麼存在?</strong> 因為你可能會做一個 struct 的<strong>陣列</strong>。陣列要求每個元素緊鄰排列,所以「下一個元素的開頭」= 前一個元素的開頭 + struct 大小。如果 struct 大小不是最大成員對齊的倍數,那陣列裡第二個、第三個元素的成員就會錯位、不對齊。規則 B 保證「陣列中每一個元素的每個成員都仍然對齊」。</p>
+</blockquote>
+<p>用 <code>struct mixed { char a; int b; char c; }</code> 走一遍:</p>
+<p><pre class="mermaid">flowchart TB
+    s1["步驟1:放 a(char,需對齊到1)<br/>offset 0 是 1 的倍數 ✓<br/>a 佔 offset 0。游標移到 offset 1"]
+    s2["步驟2:放 b(int,需對齊到4)<br/>offset 1 不是 4 的倍數 ✗<br/>補 padding 到 offset 4(塞了 1,2,3 三格)<br/>b 佔 offset 4-7。游標移到 offset 8"]
+    s3["步驟3:放 c(char,需對齊到1)<br/>offset 8 是 1 的倍數 ✓<br/>c 佔 offset 8。游標移到 offset 9"]
+    s4["步驟4:套用規則B(整體對齊)<br/>最大成員是 int(對齊4)<br/>目前大小 9,不是 4 的倍數<br/>補 padding 到 12(塞了 9,10,11)"]
+    s5["結果:sizeof = 12<br/>offsetof(a)=0, offsetof(b)=4, offsetof(c)=8"]
+    s1 --> s2 --> s3 --> s4 --> s5
+    style s2 fill:#c2603a,color:#f4ecd8
+    style s4 fill:#c2603a,color:#f4ecd8
+    style s5 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>再練一個</strong>(這次自己先算,再看答案):<code>struct demo { char a; short b; int c; double d; };</code></p>
+<p>逐步:
+- <code>a</code>(char,對齊1):offset 0。游標→1。
+- <code>b</code>(short,對齊2):offset 1 不是 2 的倍數 → 補 1 格 padding 到 offset 2。<code>b</code> 佔 2-3。游標→4。
+- <code>c</code>(int,對齊4):offset 4 是 4 的倍數 ✓。<code>c</code> 佔 4-7。游標→8。
+- <code>d</code>(double,對齊8):offset 8 是 8 的倍數 ✓。<code>d</code> 佔 8-15。游標→16。
+- 規則 B:最大成員 double(對齊8),目前大小 16 是 8 的倍數 ✓,不必補。
+- <strong>結果:sizeof = 16,只有 1 個 byte 的 padding(在 offset 1)。</strong></p>
+<p>看出來了嗎?<strong>這個 struct 幾乎沒浪費</strong>,因為它的成員「從小排到大」剛好讓對齊自然滿足。這正是下一節的重點。</p>
+<hr />
+<h3 id="5-struct">5. 重排成員順序:同樣的欄位,更小的 struct</h3>
+<p>既然 padding 是「為了把後面的成員推到對齊位址」而生,那麼<strong>成員的排列順序會直接影響 padding 的多寡</strong>,進而影響 struct 大小。</p>
+<p>回到那個浪費的 <code>struct mixed</code>(12 bytes)。如果把成員<strong>從大到小重排</strong>:</p>
+<pre><code class="language-c">struct packed_better {
+    int   b;    // offset 0-3
+    char  a;    // offset 4
+    char  c;    // offset 5
+    // 規則B:最大成員 int(對齊4),目前大小 6 → 補到 8
+};
+</code></pre>
+<p><pre class="mermaid">flowchart LR
+    subgraph reordered["重排後(共 8 bytes,省了 4)"]
+        direction LR
+        b["offset 0-3<br/>b (int)"]
+        a["offset 4<br/>a (char)"]
+        c["offset 5<br/>c (char)"]
+        pad["offset 6,7<br/>PADDING<br/>2 bytes"]
+    end
+    style b fill:#8a9a5b,color:#10100e
+    style a fill:#8a9a5b,color:#10100e
+    style c fill:#8a9a5b,color:#10100e
+    style pad fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>同樣三個欄位(一個 int、兩個 char),只是換個順序,從 <strong>12 bytes 變 8 bytes</strong>,省下 1/3。</p>
+<p><strong>口訣:把成員「由大到小」宣告,通常能讓 padding 最少。</strong> 直覺是:大的先放好(它們對齊要求高、最挑位址),小的(char)塞在縫隙裡。</p>
+<blockquote>
+<p><strong>這對你的工作的真實意義</strong>:當你設計一個會被<strong>大量複製</strong>的結構(例如每個 I/O 都要帶一份的 metadata、或要塞滿一個 buffer 的描述元陣列),省下的每個 byte 都會乘以「複製的次數」。在高吞吐的儲存路徑上,struct 從 12 變 8 可能就是可觀的記憶體頻寬節省。</p>
+</blockquote>
+<hr />
+<h3 id="6-offsetof-byte">6. offsetof:讓編譯器告訴你成員在第幾個 byte</h3>
+<p>手算很重要(你要有能力驗算),但日常寫程式時,C 標準庫提供一個巨集 <code>offsetof</code>,直接告訴你某成員的 offset,不必自己數:</p>
+<pre><code class="language-c">#include &lt;stddef.h&gt;
+
+struct mixed { char a; int b; char c; };
+
+offsetof(struct mixed, a);   // → 0
+offsetof(struct mixed, b);   // → 4
+offsetof(struct mixed, c);   // → 8
+</code></pre>
+<p><code>offsetof(型別, 成員)</code> 回傳「該成員從 struct 開頭算起的 byte 數」。</p>
+<p><strong>為什麼這個小工具值得你記住?</strong> 因為它是 kernel 裡一個極核心魔法 <code>container_of</code> 的基石——<code>container_of</code> 能「從一個成員的位址,反推出包含它的整個 struct 的位址」。這在 kernel 的鏈結串列(Phase 2 的核心)中無所不在。你現在先記住 <code>offsetof</code> 做什麼;到 <a class="xlink" href="P2-T03.html">P2-T03</a> 你會看到它怎麼變成那個魔法。</p>
+<p><pre class="mermaid">flowchart LR
+    A["offsetof(struct mixed, b)"] -->|"問:b 離 struct 開頭幾個 byte?"| B["編譯器查佈局"]
+    B --> C["答:4"]
+    C -.之後會用於.-> D["container_of:<br/>已知 b 的位址,<br/>減掉 4,<br/>就得到整個 struct 的位址"]
+    style C fill:#e8a33d,color:#10100e
+    style D fill:#6fa8b8,color:#10100e
+</pre></p>
+<hr />
+<h3 id="7-attributepacked-padding">7. <strong>attribute</strong>((packed)):強制取消 padding——以及它的代價</h3>
+<p>有時你<strong>必須</strong>讓 struct 的佈局精確符合外部規格(硬體暫存器、磁碟格式、網路協定),<strong>一個 padding byte 都不能有</strong>,否則欄位就對不上對方的定義。這時用 GCC 的 <code>packed</code> 屬性:</p>
+<pre><code class="language-c">struct mixed_packed {
+    char  a;
+    int   b;
+    char  c;
+} __attribute__((packed));   // sizeof = 6,沒有任何 padding
+</code></pre>
+<p><code>packed</code> 告訴編譯器:「別插任何 padding,照我寫的緊密排。」於是:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph normal["一般(對齊優先)sizeof=12"]
+        direction LR
+        na["a@0"] --- np1["pad 1-3"] --- nb["b@4-7"] --- nc["c@8"] --- np2["pad 9-11"]
+    end
+    subgraph packed["packed(緊密優先)sizeof=6"]
+        direction LR
+        pa["a@0"] --- pb["b@1-4 ← 沒對齊!"] --- pc["c@5"]
+    end
+    style np1 fill:#c2603a,color:#f4ecd8
+    style np2 fill:#c2603a,color:#f4ecd8
+    style pb fill:#e8a33d,color:#10100e
+</pre></p>
+<p>注意 packed 版裡,<code>b</code> 落在 <strong>offset 1</strong>——它是個 4-byte int,卻沒有對齊到 4 的倍數。這正是上一節說的「未對齊存取」。</p>
+<p><strong>所以 packed 不是免費的</strong>,它的代價正是第 2 節講的那些:
+- CPU 存取 <code>b</code> 可能要做兩次記憶體存取再拼接 → <strong>變慢</strong>。
+- 在嚴格的架構上,可能<strong>觸發 alignment trap → 當掉</strong>。</p>
+<p><strong>什麼時候該用 packed?</strong> 只在「佈局精確性是硬需求」時——例如你要把一塊記憶體直接當成磁碟上的某個固定格式來解析,欄位位置必須分毫不差。<strong>什麼時候不該用?</strong> 為了「讓 struct 小一點」這種隨手優化——那應該用第 5 節的「重排成員」來達成,而不是犧牲對齊。</p>
+<blockquote>
+<p><strong>NVMe 的現實</strong>:NVMe 命令結構本身是<strong>設計成天然對齊</strong>的(規格制定者刻意讓欄位落在對齊位址),所以你通常<strong>不需要</strong>對它加 packed——硬要加反而可能引入未對齊存取。packed 更常用在那些「沒有為對齊著想」的舊格式或緊湊協定上。這個區別很重要:不是「所有硬體結構都要 packed」,而是「當格式本身不對齊、你又必須精確匹配時才 packed」。</p>
+</blockquote>
+<hr />
+<h3 id="8-union-bitfield">8. union 與 bitfield:兩個特殊但你會遇到的工具</h3>
+<h4 id="union">union:同一塊記憶體,多種解讀方式</h4>
+<pre><code class="language-c">union value {
+    int   as_int;
+    float as_float;
+    unsigned char as_bytes[4];
+};
+</code></pre>
+<p>和 struct「每個成員各佔一塊、依序排列」相反,<strong>union 的所有成員共用同一塊記憶體</strong>(大小 = 最大的那個成員)。你往 <code>as_int</code> 寫一個值,再讀 <code>as_bytes</code>,讀到的是「同一份 4 bytes,用不同型別去解讀」。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph union_mem["union value:全部成員疊在同一塊 4 bytes 上"]
+        M["這 4 bytes 的記憶體"]
+    end
+    M -->|"當 int 讀"| I["as_int:一個整數"]
+    M -->|"當 float 讀"| F["as_float:一個浮點數"]
+    M -->|"當 byte 陣列讀"| B["as_bytes[0..3]:四個位元組"]
+    style M fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>用途:當「同一塊資料,視情況要當不同型別看」時。例如解析一個協定欄位,有時要整體當數字、有時要逐 byte 檢查。<strong>注意</strong>:同時間只有一個成員的解讀是「有意義」的——你寫了 <code>as_int</code> 又去讀 <code>as_float</code>,讀到的是那串 bits 被當成 float 的(通常無意義的)結果,不是型別轉換。</p>
+<h4 id="bitfield">bitfield:控制到「位元」層級</h4>
+<pre><code class="language-c">struct status_reg {
+    unsigned int ready    : 1;   // 只佔 1 個 bit
+    unsigned int error    : 1;   // 只佔 1 個 bit
+    unsigned int count    : 6;   // 佔 6 個 bits
+};
+</code></pre>
+<p>到目前為止我們的最小單位都是 byte。但硬體的狀態暫存器常把<strong>多個旗標擠在一個 byte 的不同 bit 裡</strong>:第 0 bit 是「就緒」、第 1 bit 是「錯誤」、接下來 6 個 bit 合起來是一個計數。bitfield 讓你用「成員名字」直接存取這些 bit,不必自己做位元運算(位元運算是 <a class="xlink" href="P0-T11.html">P0-T11</a> 的主題)。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph onebyte["一個 byte 的 8 個 bits"]
+        direction LR
+        b0["bit0<br/>ready"]
+        b1["bit1<br/>error"]
+        b27["bit2-7<br/>count(6 bits)"]
+    end
+    style b0 fill:#8a9a5b,color:#10100e
+    style b1 fill:#c2603a,color:#f4ecd8
+    style b27 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><code>reg.ready = 1;</code> 就只設那一個 bit。<strong>但有個大坑</strong>:bitfield 裡「哪個成員對應到 byte 的高位還是低位、跨 byte 怎麼排」,是<strong>實作定義(implementation-defined)</strong>的——換一個編譯器、換一種位元序(endianness),擺法可能就不同。所以<strong>拿 bitfield 直接對應真實硬體暫存器是危險的</strong>,可移植性差。更穩健的做法,是用明確的位元遮罩 + 位元運算(<a class="xlink" href="P0-T11.html">P0-T11</a>)。bitfield 你要認得、讀得懂,但對應硬體時要格外謹慎。</p>
+<hr />
+<h2 id="_7">打通關:把這課的概念串成一個心智模型</h2>
+<p>學到這裡你手上有一堆零件:對齊、padding、重排、offsetof、packed、union、bitfield。它們不是七個獨立知識點,而是<strong>圍繞一個核心問題的不同面向</strong>:「一塊記憶體,要怎麼擺放與解讀,才能既配合硬體、又精確匹配外部規格?」</p>
+<p>下面這張總圖把它們收攏成一個決策心智模型:</p>
+<p><pre class="mermaid">flowchart TB
+    START["我要定義一個 struct"]
+    Q1{"這個 struct 要不要<br/>精確匹配外部規格?<br/>(硬體/磁碟/協定)"}
+
+    START --> Q1
+    Q1 -->|"否,只是程式內部用"| FREE["讓編譯器自然對齊<br/>(預設行為,存取最快)"]
+    FREE --> OPT["想省空間?<br/>→ 成員由大到小重排<br/>(第5節,不犧牲對齊)"]
+
+    Q1 -->|"是,欄位位置不能錯"| Q2{"這個外部格式<br/>本身是對齊的嗎?"}
+    Q2 -->|"是(如 NVMe 命令)"| MATCH["直接定義對應 struct<br/>通常不需 packed<br/>(硬加反而引入未對齊)"]
+    Q2 -->|"否(緊湊的舊格式)"| PACK["用 __attribute__((packed))<br/>接受未對齊存取的代價"]
+
+    VERIFY["驗算:用 offsetof / sizeof<br/>確認每個欄位落在預期位置"]
+    OPT --> VERIFY
+    MATCH --> VERIFY
+    PACK --> VERIFY
+
+    style FREE fill:#8a9a5b,color:#10100e
+    style MATCH fill:#8a9a5b,color:#10100e
+    style PACK fill:#e8a33d,color:#10100e
+    style VERIFY fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>把這張圖記住,你以後每次定義一個會碰到記憶體佈局的 struct,就有一條清楚的決策路徑。而 union 和 bitfield 是這個模型裡的「特殊解讀工具」:union 處理「同一塊記憶體多種型別」,bitfield 處理「比 byte 更細的 bit 級欄位」。</p>
+<hr />
+<h2 id="_8">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為 struct 大小 = 成員大小總和。</strong>
+這是最根本的誤解。<code>{char; int; char;}</code> 不是 6 而是 12,因為有 padding。要算對,必須對每個成員套用「對齊規則 A」、最後套用「整體對齊規則 B」。<strong>養成習慣:看到 struct,先在腦中跑一遍第 4 節的步驟流程。</strong></p>
+<p><strong>誤區二:為了「讓 struct 變小」就隨手加 packed。</strong>
+<code>packed</code> 會犧牲對齊,可能讓存取變慢、甚至在某些架構觸發 trap 當掉。想省空間,正解是「重排成員順序」(第 5 節),那是無代價的。<code>packed</code> 只保留給「必須精確匹配不對齊的外部格式」這種硬需求。</p>
+<p><strong>誤區三:假設所有硬體結構都需要 packed。</strong>
+不對。許多現代硬體結構(如 NVMe 命令)本身就設計成天然對齊,你直接定義對應 struct 即可,硬加 packed 反而引入未對齊存取。判斷準則是「這個外部格式本身對不對齊」,不是「它是不是硬體」。</p>
+<p><strong>誤區四:假設 bitfield 的位元排列跨平台一致。</strong>
+不保證。同一份 bitfield 定義,在不同編譯器/位元序下,bit 的擺放可能不同。要對應真實硬體暫存器時,務必查清楚目標平台行為,或改用明確的位元遮罩(<a class="xlink" href="P0-T11.html">P0-T11</a>)。</p>
+<p><strong>誤區五:忘記「struct 裡放指標」時,指標本身是 8 bytes(64 位元)。</strong>
+新手有時以為指標很小。在 64 位元系統上,任何指標都是 8 bytes,且對齊到 8。一個 struct 裡放了指標,它的整體對齊就被拉高到 8,可能產生比你預期更多的 padding。</p>
+<hr />
+<h2 id="_9">動手實作</h2>
+<p><strong>環境</strong>:任何 Linux 終端機,使用者態,<strong>全程不需 root、不會動到系統</strong>。</p>
+<p><strong>任務 A — 預測再驗證(練手算)</strong>
+先<strong>用紙筆</strong>,照第 4 節的步驟流程,手算下面 struct 的 <code>sizeof</code> 與每個成員的 <code>offsetof</code>,寫在紙上。然後才用程式驗證:</p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;stddef.h&gt;
+struct mixed { char a; int b; char c; };
+struct demo  { char a; short b; int c; double d; };
+int main(void) {
+    printf(&quot;mixed: size=%zu  a@%zu b@%zu c@%zu\n&quot;,
+        sizeof(struct mixed), offsetof(struct mixed,a),
+        offsetof(struct mixed,b), offsetof(struct mixed,c));
+    printf(&quot;demo : size=%zu  a@%zu b@%zu c@%zu d@%zu\n&quot;,
+        sizeof(struct demo), offsetof(struct demo,a), offsetof(struct demo,b),
+        offsetof(struct demo,c), offsetof(struct demo,d));
+    return 0;
+}
+</code></pre>
+<p><strong>驗收你的手算</strong>:mixed 應為 size=12 (0,4,8);demo 應為 size=16 (0,2,4,8)。算錯的話,回第 4 節找出你哪一步漏了對齊。</p>
+<p><strong>任務 B — 重排省空間</strong>
+把 <code>struct mixed</code> 的成員重排成 <code>{int b; char a; char c;}</code>,印 <code>sizeof</code>(應為 8)。寫一句話說明:省下的 4 bytes 是哪來的(原本哪些 padding 消失了)?</p>
+<p><strong>任務 C — 見證 packed 的威力與代價</strong>
+對原本的 <code>struct mixed</code> 加 <code>__attribute__((packed))</code>,印 <code>sizeof</code>(應為 6)與 <code>offsetof(b)</code>(應為 1)。然後寫兩句話:(1) 這 6 bytes 比 12 省在哪?(2) <code>b</code> 現在落在 offset 1,這帶來什麼風險?</p>
+<p><strong>任務 D — union 的「同記憶體多解讀」</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+union value { int as_int; unsigned char as_bytes[4]; };
+int main(void) {
+    union value v;
+    v.as_int = 0x41424344;   // 寫入一個整數
+    printf(&quot;as_int = 0x%X\n&quot;, v.as_int);
+    for (int i = 0; i &lt; 4; i++)
+        printf(&quot;as_bytes[%d] = 0x%X ('%c')\n&quot;, i, v.as_bytes[i], v.as_bytes[i]);
+    return 0;
+}
+</code></pre>
+<p>觀察:同一份 4 bytes,當 int 讀是 <code>0x41424344</code>,當 byte 陣列讀則拆成四個 byte。<strong>注意印出的 byte 順序</strong>——它會洩漏你機器的「位元組順序(endianness)」:小端序(x86)會看到 44 43 42 41,大端序則是 41 42 43 44。(endianness 之後會再深入,這裡先親眼見一次。)</p>
+<p><strong>任務 E(進階)— sizeof 一個含指標的 struct</strong>
+定義 <code>struct withptr { char c; int *p; };</code>,印 <code>sizeof</code>(在 64 位元系統應為 16,不是 9)。用第 4 節流程解釋為什麼:指標對齊到 8,所以 <code>c</code> 後面補了 7 bytes padding。</p>
+<hr />
+<h2 id="_10">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+給定 <code>struct { char a; int b; char c; };</code>——
+1. ☐ <strong>不靠工具</strong>,用紙筆手算其 <code>sizeof</code>(12)與 <code>offsetof(b)</code>(4),再用程式驗證一致。
+2. ☐ 重排成員後 <code>sizeof</code> 降為 8,並能說明省下的 padding 來源。
+3. ☐ 加上 <code>__attribute__((packed))</code> 後 <code>sizeof</code> 變為 6,並能解釋差異與代價(犧牲對齊 → 可能變慢或 trap)。
+4. ☐ 用 union 寫入一個 int、逐 byte 讀出,並能說明這展示了「同記憶體多解讀」。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用工具(sizeof / offsetof)看出佈局,知道 padding 存在。
+- <strong>80(熟練)</strong>:能<strong>徒手</strong>算出任意 struct 的佈局(含 padding 推理),能解釋 packed 的代價與重排的好處。
+- <strong>100(精通)</strong>:能解釋對齊對硬體 I/O 結構為何重要、能判斷「何時該/不該用 packed」,並把整套概念連結到 NVMe 命令格式與 <code>container_of</code>。</p>
+<hr />
+<h2 id="_11">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>。NVMe 的 64-byte 命令、16-byte 完成項都是嚴格定義的對齊結構;DMA 緩衝區也常有對齊要求。這一課是你日後(P5-T05、P5-T06)讀懂 <code>nvme.h</code> 裡那些結構定義的前置。等你真的看到 NVMe 命令 struct,你會慶幸現在把對齊弄懂了——你能一眼看出每個欄位在第幾個 byte。</li>
+<li><strong>這課餵給未來的</strong>:<code>offsetof</code>(第6節)→ <a class="xlink" href="P2-T03.html">P2-T03</a> 的 <code>container_of</code> 魔法;對齊概念 → <a class="xlink" href="P6-T01.html">P6-T01</a> DMA 緩衝區的對齊要求。</li>
+<li><strong>下一步 → <a class="xlink" href="P0-T05.html">P0-T05</a> 行程記憶體佈局</strong>:你已經會看「一個 struct 在記憶體裡的佈局」。下一課把尺度放大,看「一整支程式在記憶體裡的佈局」——程式碼、全域變數、heap、stack 各住哪一區,以及它們的生命週期。這是理解虛擬記憶體(Phase 1)與 user/kernel 邊界的起點。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P0-T03.html">← P0-T03 陣列、字串與指標的關係</a><a class="pn next" href="P0-T05.html">P0-T05 行程記憶體佈局(stack / heap / BSS / data / text) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

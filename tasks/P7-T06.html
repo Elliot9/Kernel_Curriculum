@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P7-T06 · CUDA 基礎與 parity offload 的端到端理解(整合驗收/課程總結業)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P7 · GPU/CUDA 整合與 RAID parity 數學</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  <span class="gate-pill">🚪 出關門檻</span>
+</nav>
+<article class="paper">
+<h1 id="p7-t06-cuda-parity-offload">P7-T06 · CUDA 基礎與 parity offload 的端到端理解(整合驗收/課程總結業)</h1>
+<blockquote>
+<p><strong>一句話</strong>:這是整套課程的終點——把 NVMe I/O →（P2PDMA/GDS）→ GPU → parity（XOR/GF）→ 回寫,串成一條你能完整推理的資料路徑。CUDA kernel 是「同一段程式,數千 thread 平行各算一個 byte」;你產品的價值,就是把 P7-T02/T03 那個逐 byte 獨立的 parity 數學,丟給 GPU 的數千 thread 同時算。</p>
+</blockquote>
+<hr />
+<h2 id="phase-7">🚪 這是 Phase 7 出關門檻——也是整套課程的總結業</h2>
+<p>這是<strong>整套養成課程的最後一課、最終關卡(gate)</strong>。本 task 達 <strong>80 分</strong>——能讀懂 parity kernel 並完整描述 NVMe→GPU→parity 端到端路徑、對應到自家產品——<strong>即完成整套養成路徑</strong>。</p>
+<p>為什麼這是總結業?因為它<strong>就是你產品的完整縮影</strong>:把前面所有 phase(C 功底/UB、記憶體、同步、驅動、block/NVMe、DMA/P2PDMA、RAID 數學)<strong>收斂成一條可推理的資料路徑</strong>。你從一張白紙走到這裡——這一課要你證明:你能把所有片段組成一個整體,推理你產品從「NVMe 上的資料」到「GPU 算出 parity 回寫」的每一步,並指出瓶頸與正確性風險。</p>
+<p><strong>優先序提醒</strong>:CUDA 本身是<strong>最低優先</strong>——它只是「讀懂 parity kernel + 理解 offload 路徑」的應用脈絡。重點不是讓你成為 CUDA 專家,而是讓你<strong>理解整條路徑</strong>,知道 GPU 那一段在做什麼、怎麼接上前面所有的東西。</p>
+<hr />
+<h2 id="cuda">為什麼是「CUDA + 端到端」(導讀)</h2>
+<p>資料透過 GDS/P2PDMA 到了 GPU(<a class="xlink" href="P7-T05.html">P7-T05</a>),最後一步是<strong>用 CUDA 把 parity 算出來</strong>,並把<strong>整條路徑串成一個端到端的心智模型</strong>。</p>
+<p>要學的(CUDA 部分,輕量):
+- <strong>host/device 模型</strong>:CPU(host)和 GPU(device)是兩個世界——host 準備資料/啟動工作,device(GPU)平行執行。
+- <strong>kernel 啟動 <code>&lt;&lt;&lt;grid, block&gt;&gt;&gt;</code> 與 thread 階層</strong>:GPU 的「kernel」是一段被<strong>數千 thread 同時執行</strong>的程式;thread 組織成 block、block 組成 grid。
+- <strong>device memory 與 <code>cudaMemcpy</code></strong>:GPU 有自己的記憶體;傳統要 <code>cudaMemcpy</code> 在 host↔device 間搬(而 GDS/P2PDMA 正是要<strong>省掉這個拷貝</strong>,<a class="xlink" href="P7-T05.html">P7-T05</a>)。
+- <strong>stream 與非同步</strong>:讓資料傳輸和計算重疊。</p>
+<p>要做的(端到端,重點):
+- 把 <a class="xlink" href="P7-T02.html">P7-T02</a>/<a class="xlink" href="P7-T03.html">P7-T03</a> 的 <strong>XOR/GF parity 寫成 GPU kernel</strong>(逐 byte 平行)。
+- 畫出 <strong>NVMe→(P2PDMA/GDS)→GPU→parity→回寫</strong>的整條路徑,<strong>標註至少 5 個課程概念</strong>出現的位置。
+- 指出整條路徑的<strong>瓶頸</strong>與<strong>正確性風險</strong>。</p>
+<p>為什麼這對你是 <code>scope: direct(產品全貌)</code>?因為<strong>這個 task 就是你產品的完整縮影</strong>——把所有 phase 收斂成一條可推理的資料路徑。這是課程的總結,也是你產品設計的全景。</p>
+<hr />
+<h2 id="_1">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P7-T05.html">P7-T05</a>(GDS/P2PDMA 把資料送到 GPU)、<a class="xlink" href="P7-T03.html">P7-T03</a>(parity 數學 — 要寫成 GPU kernel)。<strong>串連整套課程</strong>(P0~P7)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P7-T02.html">P7-T02</a>/<a class="xlink" href="P7-T03.html">P7-T03</a> 的「parity 逐 byte 獨立 → embarrassingly parallel」嗎?這課把它寫成 GPU kernel。
+  2. 你還記得 <a class="xlink" href="P6-T03.html">P6-T03</a> 的「資料要對裝置/GPU 可見才能啟動計算(屏障)」嗎?端到端路徑的正確性要回顧它。</li>
+<li>心態:CUDA 是最低優先——能讀懂、能畫出路徑即可,不必精通 CUDA。重點是<strong>整條路徑的推理</strong>。</li>
+<li>工具:CUDA 入門(https://developer.nvidia.com/blog/even-easier-introduction-cuda/ );若無 GPU,可用 CPU 模擬說明平行化思路 + 讀官方範例。</li>
+<li>環境:有 GPU 的環境(<strong>隔離/VM</strong>)或概念性完成。</li>
+</ul>
+<hr />
+<h2 id="_2">核心內容</h2>
+<p>拆成這幾節:<strong>(1) host/device 模型 → (2) kernel 與 thread 階層 → (3) device memory 與 cudaMemcpy(對照 GDS)→ (4) 把 parity 寫成 GPU kernel → (5) 端到端資料路徑 → (6) 瓶頸與正確性 → (7) 整套課程如何收斂於此</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-hostdevice-cpu-gpu">1. host/device 模型:CPU 和 GPU 兩個世界</h3>
+<p>CUDA 的基礎:<strong>host(CPU)和 device(GPU)是兩個世界</strong>,有各自的記憶體,協作完成工作。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph host4["host(CPU 端)"]
+        H2["① 準備資料(在 host 記憶體)<br/>② 把資料/工作送到 GPU<br/>③ 啟動 GPU kernel(下命令)<br/>④ 取回結果"]
+    end
+    subgraph device2["device(GPU 端)"]
+        D2["數千個 thread 平行執行 kernel<br/>(對大量資料做同一運算)<br/>→ GPU 擅長:同一運算、大量資料、各自獨立"]
+    end
+    host4 -->|"啟動 kernel + (傳統)搬資料"| device2
+    device2 -->|"算完,結果在 GPU 記憶體"| host4
+    NOTE55["★ 心智模型:host 是『指揮』,device 是『大量工人』★<br/>host 不做平行計算本身,而是『安排工作給 GPU』<br/>(你產品:host=kernel 的 RAID 邏輯,device=算 parity 的 GPU)"]
+    device2 --> NOTE55
+    style H2 fill:#6fa8b8,color:#10100e
+    style D2 fill:#e8a33d,color:#10100e
+    style NOTE55 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>host/device 模型</strong>:host(CPU)準備資料、把資料/工作送到 GPU、啟動 kernel、取回結果;device(GPU)用<strong>數千 thread 平行執行 kernel</strong>(對大量資料做同一運算)。</p>
+<p><strong>心智模型:host 是「指揮」,device 是「大量工人」</strong>——host 不做平行計算本身,而是安排工作給 GPU。對你產品:host 是 kernel 裡的 RAID 邏輯(<code>raid5.c</code> 那層,<a class="xlink" href="P7-T01.html">P7-T01</a>),device 是算 parity 的 GPU。</p>
+<p>(注意:在 kernel 模組裡用 GPU 和在 user space 用 CUDA 不同——你產品若在 kernel 算 parity,路徑更複雜;這課用 CUDA 的概念講「GPU 怎麼平行算 parity」,是理解 offload 的基礎,實際整合細節依你的架構。)</p>
+<hr />
+<h3 id="2-kernel-thread-thread">2. kernel 與 thread 階層:數千 thread 平行</h3>
+<p>CUDA 的核心:<strong>kernel 是一段被數千 thread 同時執行的程式</strong>,thread 組織成 block、block 組成 grid。</p>
+<p><pre class="mermaid">flowchart TB
+    LAUNCH["host 啟動 kernel:myKernel&lt;&lt;&lt;grid, block&gt;&gt;&gt;(args)<br/>(&lt;&lt;&lt;...&gt;&gt;&gt; 指定要開多少 thread)"]
+    LAUNCH --> HIERARCHY["thread 階層:<br/>grid = 多個 block;block = 多個 thread<br/>→ 總 thread 數 = grid 大小 × block 大小(可達數萬~數百萬)"]
+    HIERARCHY --> EACH["★ 每個 thread 執行『同一段 kernel 程式』★<br/>但用自己的索引(threadIdx/blockIdx)算出『我負責哪個資料』<br/>→ 同一段碼,數千 thread 各自處理不同的資料片段"]
+    EACH --> EXAMPLE4["例:算 parity<br/>thread 0 算 byte 0、thread 1 算 byte 1、...<br/>(每個 thread 負責一個 byte 位置,全部同時)"]
+    NOTE56["★ 常見誤區:把 CUDA kernel 當一般序列函式 ★<br/>它不是『跑一次』,而是『數千 thread 同時各跑一次』<br/>→ 寫 kernel 要想『我這個 thread 負責哪個資料』(用索引)"]
+    EACH --> NOTE56
+    style LAUNCH fill:#6fa8b8,color:#10100e
+    style EACH fill:#e8a33d,color:#10100e
+    style NOTE56 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>kernel 啟動與 thread 階層</strong>:host 用 <code>myKernel&lt;&lt;&lt;grid, block&gt;&gt;&gt;(args)</code> 啟動 kernel(<code>&lt;&lt;&lt;...&gt;&gt;&gt;</code> 指定開多少 thread)。thread 階層:<strong>grid = 多個 block,block = 多個 thread</strong>,總 thread 數 = grid × block(可達數萬~數百萬）。</p>
+<p><strong>關鍵:每個 thread 執行同一段 kernel 程式,但用自己的索引(<code>threadIdx</code>/<code>blockIdx</code>)算出「我負責哪個資料」</strong>——同一段碼,數千 thread 各自處理不同的資料片段。例如算 parity:thread 0 算 byte 0、thread 1 算 byte 1……每個 thread 負責一個 byte 位置,全部同時。</p>
+<p><strong>常見誤區:把 CUDA kernel 當一般序列函式</strong>——它不是「跑一次」,而是「數千 thread 同時各跑一次」。寫 kernel 要想「我這個 thread 負責哪個資料」(用索引算)。這正是 <a class="xlink" href="P7-T02.html">P7-T02</a>/<a class="xlink" href="P7-T03.html">P7-T03</a> 的「逐 byte 獨立」對應到 GPU 的方式:每個獨立的 byte,給一個 thread。</p>
+<p>(驗收點:說明 grid/block 如何對應資料。)</p>
+<hr />
+<h3 id="3-device-memory-cudamemcpy-gds">3. device memory 與 <code>cudaMemcpy</code>:對照 GDS 省的拷貝</h3>
+<p>GPU 有自己的記憶體——傳統上要用 <code>cudaMemcpy</code> 在 host↔device 間搬資料。而這正是 GDS/P2PDMA 要<strong>省掉</strong>的。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph traditional2["傳統 CUDA(有拷貝)"]
+        T2b["① cudaMalloc 在 GPU 配記憶體<br/>② cudaMemcpy host→device(把資料搬進 GPU)<br/>③ 啟動 kernel 算<br/>④ cudaMemcpy device→host(把結果搬回)<br/>★ 資料要先進 host 記憶體,再 cudaMemcpy 到 GPU ★"]
+    end
+    subgraph gds["GDS/P2PDMA(省拷貝,P7-T05)"]
+        G2b["NVMe 資料『直接』DMA 到 GPU 記憶體<br/>→ 省掉『先到 host、再 cudaMemcpy 到 GPU』那一段<br/>(資料不繞 host DRAM)"]
+    end
+    traditional2 -.“GDS/P2PDMA 消除 host↔device 的拷貝”.-> gds
+    NOTE57["★ 常見誤區:忽略 host↔device 拷貝成本 ★<br/>cudaMemcpy 是有成本的(PCIe 傳輸 + 佔 host 記憶體)<br/>→ GDS/P2PDMA 正是要省這個(你產品的價值,P7-T05)"]
+    gds --> NOTE57
+    style T2b fill:#6fa8b8,color:#10100e
+    style G2b fill:#8a9a5b,color:#10100e
+    style NOTE57 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>device memory 與 cudaMemcpy</strong>:傳統 CUDA——<code>cudaMalloc</code> 在 GPU 配記憶體 → <code>cudaMemcpy</code> host→device(把資料搬進 GPU)→ 啟動 kernel → <code>cudaMemcpy</code> device→host(把結果搬回)。資料要先進 host 記憶體,再 cudaMemcpy 到 GPU。</p>
+<p><strong>GDS/P2PDMA 省的就是這個</strong>(回顧 <a class="xlink" href="P7-T05.html">P7-T05</a>):NVMe 資料<strong>直接 DMA 到 GPU 記憶體</strong>,省掉「先到 host、再 cudaMemcpy 到 GPU」那一段。</p>
+<p><strong>常見誤區:忽略 host↔device 拷貝成本</strong>——<code>cudaMemcpy</code> 有成本(PCIe 傳輸 + 佔 host 記憶體)。<strong>GDS/P2PDMA 正是要省這個</strong>(你產品的價值,<a class="xlink" href="P7-T05.html">P7-T05</a>)。這把 Phase 7 的 GDS(<a class="xlink" href="P7-T05.html">P7-T05</a>)和 CUDA 接起來了:GDS 讓資料直達 GPU 記憶體,省掉 CUDA 傳統的 host↔device 拷貝——然後 GPU kernel 直接在那塊記憶體上算 parity。</p>
+<hr />
+<h3 id="4-parity-gpu-kernel">4. 把 parity 寫成 GPU kernel</h3>
+<p>核心實作:把 <a class="xlink" href="P7-T02.html">P7-T02</a>/<a class="xlink" href="P7-T03.html">P7-T03</a> 的 parity 數學寫成 GPU kernel。逐 byte 獨立 → 每個 thread 算一個 byte。</p>
+<p><pre class="mermaid">flowchart TB
+    MATH4["parity 數學(P7-T02/T03):<br/>P[k] = D0[k] ⊕ D1[k] ⊕ ...(逐 byte 獨立!)"]
+    MATH4 --> KERNEL2["寫成 GPU kernel(概念):<br/>__global__ void xor_parity(data_blocks, parity, n_blocks, len) {<br/>&nbsp; int k = blockIdx.x * blockDim.x + threadIdx.x;  // 我負責第 k 個 byte<br/>&nbsp; if (k &lt; len) {<br/>&nbsp;&nbsp; unsigned char p = 0;<br/>&nbsp;&nbsp; for (int i = 0; i &lt; n_blocks; i++) p ^= data_blocks[i][k];  // XOR 各區塊的第 k byte<br/>&nbsp;&nbsp; parity[k] = p;<br/>&nbsp; }<br/>}"]
+    KERNEL2 --> MAPPING4["★ grid/block 對應資料 ★<br/>每個 thread 的 k = blockIdx.x × blockDim.x + threadIdx.x<br/>→ thread 0 算 byte 0、thread 1 算 byte 1...<br/>→ 開 len 個 thread,整個 parity 一次平行算完"]
+    MAPPING4 --> GF3["RAID-6 的 Q(GF 乘法,P7-T03):<br/>同樣每 thread 算一個 byte,但做 GF 乘法 + XOR<br/>★ GF 乘法用查表 → 查表放 GPU 記憶體 ★(常見誤區:沒用查表/向量化 → 慢)"]
+    style KERNEL2 fill:#e8a33d,color:#10100e
+    style MAPPING4 fill:#8a9a5b,color:#10100e
+    style GF3 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>把 parity 寫成 GPU kernel</strong>(驗收點:寫出/讀懂並解釋一個對 N 個區塊做 XOR parity 的 CUDA kernel,說明 grid/block 如何對應資料):</p>
+<p>回顧 <a class="xlink" href="P7-T02.html">P7-T02</a>:<code>P[k] = D₀[k] ⊕ D₁[k] ⊕ …</code>——逐 byte 獨立。寫成 kernel(概念):</p>
+<pre><code class="language-c">__global__ void xor_parity(unsigned char **data, unsigned char *parity, int n, int len) {
+    int k = blockIdx.x * blockDim.x + threadIdx.x;  // 我這個 thread 負責第 k 個 byte
+    if (k &lt; len) {
+        unsigned char p = 0;
+        for (int i = 0; i &lt; n; i++) p ^= data[i][k];  // XOR 各區塊的第 k 個 byte
+        parity[k] = p;
+    }
+}
+</code></pre>
+<p><strong>grid/block 對應資料</strong>:每個 thread 的 <code>k = blockIdx.x * blockDim.x + threadIdx.x</code>——thread 0 算 byte 0、thread 1 算 byte 1……開 <code>len</code> 個 thread,整個 parity 一次平行算完。這就是 <a class="xlink" href="P7-T02.html">P7-T02</a> 「embarrassingly parallel」在 GPU 上的實現。</p>
+<p><strong>RAID-6 的 Q</strong>(GF 乘法,<a class="xlink" href="P7-T03.html">P7-T03</a>):同樣每 thread 算一個 byte,但做 <strong>GF 乘法 + XOR</strong>。<strong>常見誤區:GPU 上的 GF 乘法未用查表/向量化(效能差)</strong>——GF 乘法用查表(log/antilog),查表放 GPU 記憶體,讓每個 thread 快速算。Q 計算量大(<a class="xlink" href="P7-T03.html">P7-T03</a>),正是 GPU 平行的價值所在。</p>
+<p><strong>正確性基準</strong>(回顧 <a class="xlink" href="P7-T04.html">P7-T04</a>):GPU 算的 P/Q 必須和 <code>lib/raid6</code> 逐 byte一致——同一數學、同樣的 0x11D/g={02}。</p>
+<hr />
+<h3 id="5">5. 端到端資料路徑:整條串起來</h3>
+<p>這是這一課的<strong>核心產出</strong>——把整條路徑串成一張圖,標註課程概念。</p>
+<p><pre class="mermaid">flowchart TB
+    NVME6["① NVMe 上的資料<br/>(命令 64-byte、對齊 ← P0-T04;<br/>SQ/CQ、doorbell、PRP/SGL ← P5-T05)"]
+    NVME6 --> BLKMQ4["② block layer / blk-mq<br/>(bio/request ← P5-T02;blk-mq 硬體佇列 ↔ NVMe SQ/CQ ← P5-T03)"]
+    BLKMQ4 --> DMA6["③ DMA 把資料搬動<br/>(dma_addr_t≠實體位址 ← P6-T01;scatter-gather ← P6-T02;<br/>★ dma_wmb/doorbell 順序 ← P6-T03 ★;IOMMU ← P6-T04)"]
+    DMA6 --> P2P5["④ P2PDMA/GDS:NVMe → GPU 記憶體直通<br/>(不繞 host DRAM ← P6-T05;GDS/cuFile、RAID0/KASLR 限制 ← P7-T05)"]
+    P2P5 --> GPU8["⑤ GPU 算 parity<br/>(XOR ← P7-T02;GF(2⁸) Q ← P7-T03;<br/>數千 thread 逐 byte 平行 ← 本課;對照 lib/raid6 正確性 ← P7-T04)"]
+    GPU8 --> WRITE7["⑥ parity 回寫到 NVMe(各碟的 parity chunk ← P7-T01)<br/>(再走一次 ②③④ 的路徑出去)"]
+    NOTE58["★ 這張圖 = 你產品的完整資料路徑 ★<br/>標註了 5+ 個課程概念出現的位置<br/>= 整套課程(P0~P7)收斂成一條可推理的路徑"]
+    WRITE7 --> NOTE58
+    style P2P5 fill:#e8a33d,color:#10100e
+    style GPU8 fill:#8a9a5b,color:#10100e
+    style NOTE58 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>端到端資料路徑(驗收點:產出端到端資料路徑圖,正確標註至少 5 個課程概念出現的位置)</strong>:
+1. <strong>NVMe 上的資料</strong>:命令對齊 ← <a class="xlink" href="P0-T04.html">P0-T04</a>;SQ/CQ、doorbell、PRP/SGL ← <a class="xlink" href="P5-T05.html">P5-T05</a>。
+2. <strong>block layer / blk-mq</strong>:bio/request ← <a class="xlink" href="P5-T02.html">P5-T02</a>;blk-mq 硬體佇列 ↔ NVMe SQ/CQ ← <a class="xlink" href="P5-T03.html">P5-T03</a>。
+3. <strong>DMA 搬資料</strong>:<code>dma_addr_t</code> ≠ 實體位址 ← <a class="xlink" href="P6-T01.html">P6-T01</a>;scatter-gather ← <a class="xlink" href="P6-T02.html">P6-T02</a>;<strong><code>dma_wmb</code>/doorbell 順序 ← <a class="xlink" href="P6-T03.html">P6-T03</a></strong>;IOMMU ← <a class="xlink" href="P6-T04.html">P6-T04</a>。
+4. <strong>P2PDMA/GDS</strong>:NVMe → GPU 記憶體直通,不繞 host ← <a class="xlink" href="P6-T05.html">P6-T05</a>;GDS/cuFile、RAID0/KASLR 限制 ← <a class="xlink" href="P7-T05.html">P7-T05</a>。
+5. <strong>GPU 算 parity</strong>:XOR ← <a class="xlink" href="P7-T02.html">P7-T02</a>;GF(2⁸) Q ← <a class="xlink" href="P7-T03.html">P7-T03</a>;數千 thread 逐 byte 平行 ← 本課;對照 lib/raid6 正確性 ← <a class="xlink" href="P7-T04.html">P7-T04</a>。
+6. <strong>parity 回寫</strong>:各碟的 parity chunk ← <a class="xlink" href="P7-T01.html">P7-T01</a>(再走一次出去的路徑)。</p>
+<p><strong>這張圖就是你產品的完整資料路徑</strong>——標註了 5+ 個課程概念,<strong>整套課程(P0~P7)收斂成一條可推理的路徑</strong>。這是總結業的核心:你能把每一步對應到你學過的東西。</p>
+<hr />
+<h3 id="6">6. 瓶頸與正確性:整條路徑的兩個考量</h3>
+<p>最後,對整條路徑做兩個關鍵分析——<strong>瓶頸</strong>(效能)和<strong>正確性風險</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph perf["效能瓶頸(驗收要指出的)"]
+        P4["可能的瓶頸:<br/>① host↔device 拷貝(若沒用 GDS/P2PDMA → 繞 host,P7-T05)<br/>② PCIe 頻寬(NVMe、GPU 都走 PCIe)<br/>③ GPU kernel 啟動開銷(小資料量時,啟動成本 > 計算)<br/>④ parity 計算量(RAID-6 的 Q 大,但 GPU 平行可吃掉)"]
+    end
+    subgraph correct["正確性風險(驗收要指出的)"]
+        C2["可能的風險:<br/>★ 屏障/可見性(P3-T11/P6-T03):★<br/>資料未對 GPU/裝置可見就啟動計算 → 算到舊/半寫資料 → 錯<br/>② parity 結果未和 lib/raid6 對照(P7-T04)→ 數學實作錯<br/>③ 對齊/長度不一致(P0-T04/P7-T02)→ XOR 錯位"]
+    end
+    perf --> KEY2["★ 對你產品最關鍵的正確性點 ★<br/>整條路徑的『可見性順序』:<br/>NVMe DMA 完成 → 確認資料可見 → 才啟動 GPU kernel<br/>(漏了 = GPU 算到還沒到的資料 → 間歇性錯誤,P6-T03)"]
+    correct --> KEY2
+    style P4 fill:#6fa8b8,color:#10100e
+    style C2 fill:#c2603a,color:#f4ecd8
+    style KEY2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>瓶頸(驗收點:指出整條路徑最可能的效能瓶頸)</strong>:① host↔device 拷貝(若沒用 GDS/P2PDMA → 繞 host,<a class="xlink" href="P7-T05.html">P7-T05</a>);② PCIe 頻寬(NVMe、GPU 都走 PCIe);③ GPU kernel 啟動開銷(小資料量時,啟動成本 &gt; 計算);④ parity 計算量(RAID-6 的 Q 大,但 GPU 平行可吃掉)。</p>
+<p><strong>正確性風險(驗收點:指出一個正確性風險點)</strong>:
+- <strong>屏障/可見性(<a class="xlink" href="P3-T11.html">P3-T11</a>/<a class="xlink" href="P6-T03.html">P6-T03</a>)</strong>:資料未對 GPU/裝置可見就啟動計算 → 算到舊/半寫資料 → 錯。
+- parity 結果未和 lib/raid6 對照(<a class="xlink" href="P7-T04.html">P7-T04</a>)→ 數學實作錯。
+- 對齊/長度不一致(<a class="xlink" href="P0-T04.html">P0-T04</a>/<a class="xlink" href="P7-T02.html">P7-T02</a>)→ XOR 錯位。</p>
+<p><strong>對你產品最關鍵的正確性點</strong>:整條路徑的「可見性順序」——<strong>NVMe DMA 完成 → 確認資料可見 → 才啟動 GPU kernel</strong>。漏了 = GPU 算到還沒到的資料 → 間歇性錯誤(回顧 <a class="xlink" href="P6-T03.html">P6-T03</a> 的命門:資料對裝置/GPU 可見 vs 啟動計算的順序)。</p>
+<p><strong>常見誤區:忽略整條路徑的可見性/屏障</strong>——這是 <a class="xlink" href="P3-T11.html">P3-T11</a>→<a class="xlink" href="P6-T03.html">P6-T03</a> 記憶體順序主線的最終應用:在 GPU offload 路徑上,「資料到位」和「開始計算」之間的順序,和 NVMe 提交時「描述子可見」和「按 doorbell」的順序,是同一個正確性原則。</p>
+<hr />
+<h3 id="7">7. 整套課程如何收斂於此</h3>
+<p>這是課程的最後一節——回顧整套養成路徑如何收斂成你產品的這條資料路徑。</p>
+<p><pre class="mermaid">flowchart TB
+    P0b["P0:C/UB、指標、XOR、對齊 → 讀碼地基 + parity 數學的起點"]
+    P1b["P1:行程/記憶體/虛擬位址/並行直覺 → 系統世界觀"]
+    P2b["P2:kernel 資料結構(list/tree/bitmap/XArray)→ 讀懂 kernel 碼"]
+    P3b["P3:同步/鎖/RCU/中斷/★ memory barrier ★ → kernel 機制 + 正確性"]
+    P4b["P4:device model/字元驅動/ioctl-mmap/PCI → 跟硬體打交道"]
+    P5b["P5:儲存堆疊/bio/blk-mq/NVMe 協定與驅動 → 你的核心領域"]
+    P6b["P6:DMA/scatter-gather/★ 屏障 ★/IOMMU/P2PDMA → 資料路徑核心"]
+    P7b["P7:軟體 RAID/XOR/GF parity/lib-raid6/GDS/CUDA → 產品全貌"]
+    P0b --> P1b --> P2b --> P3b --> P4b --> P5b --> P6b --> P7b
+    P7b --> FINAL["★ 全部收斂:NVMe→(P2PDMA/GDS)→GPU→parity→回寫 ★<br/>你從一張白紙,到能完整推理產品的資料路徑<br/>= 養成完成"]
+    style P3b fill:#6fa8b8,color:#10100e
+    style P6b fill:#6fa8b8,color:#10100e
+    style P7b fill:#e8a33d,color:#10100e
+    style FINAL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>整套課程收斂於這條路徑:
+- <strong>P0</strong>(C/UB、指標、<strong>XOR</strong>、對齊)→ 讀碼地基 + parity 數學的起點。
+- <strong>P1</strong>(行程/記憶體/虛擬位址/並行直覺)→ 系統世界觀。
+- <strong>P2</strong>(kernel 資料結構)→ 讀懂 kernel 碼。
+- <strong>P3</strong>(同步/鎖/RCU/中斷/<strong>memory barrier</strong>)→ kernel 機制 + 正確性。
+- <strong>P4</strong>(device model/字元驅動/ioctl-mmap/PCI)→ 跟硬體打交道。
+- <strong>P5</strong>(儲存堆疊/bio/blk-mq/NVMe)→ 你的核心領域。
+- <strong>P6</strong>(DMA/scatter-gather/<strong>屏障</strong>/IOMMU/P2PDMA)→ 資料路徑核心。
+- <strong>P7</strong>(軟體 RAID/XOR/GF parity/lib-raid6/GDS/CUDA)→ 產品全貌。</p>
+<p><strong>全部收斂成:NVMe →(P2PDMA/GDS)→ GPU → parity → 回寫</strong>。你從一張白紙,到能完整推理產品的資料路徑——<strong>養成完成</strong>。</p>
+<p>特別看你的幾條主線如何在此交會:<strong>XOR→parity→GPU 平行</strong>(<a class="xlink" href="P0-T11.html">P0-T11</a>→<a class="xlink" href="P7-T02.html">P7-T02</a>→<a class="xlink" href="P7-T03.html">P7-T03</a>→<a class="xlink" href="P7-T04.html">P7-T04</a>→本課)在 GPU kernel 完成;<strong>位址的真相</strong>(<a class="xlink" href="P0-T05.html">P0-T05</a>→<a class="xlink" href="P1-T04.html">P1-T04</a>→<a class="xlink" href="P6-T01.html">P6-T01</a>→<a class="xlink" href="P6-T04.html">P6-T04</a>)是 DMA 那段的基礎;<strong>記憶體順序</strong>(<a class="xlink" href="P1-T03.html">P1-T03</a>→<a class="xlink" href="P3-T11.html">P3-T11</a>→<a class="xlink" href="P6-T03.html">P6-T03</a>)是整條路徑可見性正確性的保證;<strong>I/O 物件流動</strong>(<a class="xlink" href="P5-T01.html">P5-T01</a>→…→<a class="xlink" href="P6-T02.html">P6-T02</a>)是資料怎麼流的骨架。所有主線,在你產品的這條資料路徑上交會。</p>
+<hr />
+<h2 id="parity-offload">打通關:把端到端 parity offload 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    CUDA2["CUDA:host(指揮)/ device(數千 thread 工人);kernel&lt;&lt;&lt;grid,block&gt;&gt;&gt;<br/>每 thread 用索引算『我負責哪個 byte』(別當序列函式)"]
+    CUDA2 --> PARITYK["把 parity 寫成 kernel:每 thread 算一個 byte 的 XOR(P7-T02)/ GF 乘法(P7-T03,查表)<br/>★ 結果必須和 lib/raid6 一致(P7-T04)★"]
+    PARITYK --> MEMORY["device memory + cudaMemcpy(傳統有拷貝)<br/>★ GDS/P2PDMA 省掉 host↔device 拷貝(P7-T05)★"]
+    MEMORY --> E2E["★ 端到端路徑:NVMe(P0-T04/P5-T05)→ blk-mq(P5)<br/>→ DMA(P6-T01/02)+ 屏障(P6-T03)+ IOMMU(P6-T04)<br/>→ P2PDMA/GDS(P6-T05/P7-T05)→ GPU parity(P7-T02/03)→ 回寫(P7-T01)★"]
+    E2E --> ANALYSIS["瓶頸(host↔device 拷貝/PCIe/kernel 啟動)<br/>+ ★ 正確性:可見性順序(P3-T11/P6-T03)—— 資料可見才啟動計算 ★"]
+    ANALYSIS --> DONE2["= 整套課程(P0~P7)收斂成你產品的資料路徑 → 養成完成"]
+    style PARITYK fill:#8a9a5b,color:#10100e
+    style E2E fill:#e8a33d,color:#10100e
+    style DONE2 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>CUDA 的 kernel 是「同一段程式、數千 thread 平行各算一個 byte」（host 指揮、device 計算），所以 P7-T02/T03 逐 byte 獨立的 parity 數學能寫成 GPU kernel（XOR 直接算、GF 乘法用查表，結果須和 lib/raid6 一致）；GDS/P2PDMA 省掉傳統 cudaMemcpy 的 host↔device 拷貝；整條端到端路徑是 NVMe（對齊/SQ-CQ）→ blk-mq → DMA（dma_addr_t/scatter-gather/屏障/IOMMU）→ P2PDMA/GDS → GPU parity → 回寫，瓶頸在拷貝/PCIe/kernel 啟動，而最關鍵的正確性是「資料對 GPU 可見才啟動計算」的可見性順序——整套課程在這條路徑上收斂,養成完成。</strong></p>
+<hr />
+<h2 id="_3">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:把 CUDA kernel 當一般序列函式。</strong>
+它是數千 thread 同時各執行一次。寫 kernel 要用索引(<code>threadIdx</code>/<code>blockIdx</code>)算「我負責哪個資料」。</p>
+<p><strong>誤區二:忽略 host↔device 拷貝成本。</strong>
+<code>cudaMemcpy</code> 有成本(PCIe + host 記憶體)。GDS/P2PDMA 正是要省這個(<a class="xlink" href="P7-T05.html">P7-T05</a>)。</p>
+<p><strong>誤區三:GPU 上的 GF 乘法未用查表/向量化(效能差)。</strong>
+GF 乘法用查表(log/antilog),查表放 GPU 記憶體,每 thread 快速算。</p>
+<p><strong>誤區四:忽略整條路徑的可見性/屏障。</strong>
+資料未對 GPU/裝置可見就啟動計算 → 算到舊/半寫資料 → 間歇性錯誤(回顧 <a class="xlink" href="P3-T11.html">P3-T11</a>/<a class="xlink" href="P6-T03.html">P6-T03</a>)。資料可見才啟動計算。</p>
+<p><strong>誤區五:把 CUDA 當成本課程重點。</strong>
+CUDA 是最低優先的應用脈絡。重點是<strong>整條路徑的推理</strong>,不是 CUDA 精通。</p>
+<hr />
+<h2 id="_4">動手實作(出關驗收任務 / 課程總結業)</h2>
+<p><strong>環境</strong>:有 GPU 的環境(<strong>隔離/VM</strong>)或概念性完成 + 讀官方範例。</p>
+<p><strong>任務(課程總結業):端到端 parity offload 的理解</strong></p>
+<p><strong>Part 1 — XOR parity CUDA kernel(驗收點 1)</strong>
+寫出(或讀懂並<strong>逐行解釋</strong>)一個對 N 個區塊做 XOR parity 的 CUDA kernel(參考第 4 節 / https://developer.nvidia.com/blog/even-easier-introduction-cuda/ ）。<strong>說明 grid/block 如何對應資料</strong>(哪個 thread 算哪個 byte)。<strong>驗收:寫出/讀懂並解釋一個 XOR parity CUDA kernel,說明 grid/block 如何對應資料。</strong>(若無 GPU,用 CPU 模擬說明平行化思路 + 讀官方範例。)</p>
+<p><strong>Part 2 — 端到端資料路徑圖(驗收點 2,核心)</strong>
+畫一張<strong>端到端資料路徑圖</strong>:NVMe →(P2PDMA/GDS)→ GPU → parity → 回寫。<strong>正確標註至少 5 個課程概念出現的位置</strong>(例:命令對齊←<a class="xlink" href="P0-T04.html">P0-T04</a>、DMA 位址←<a class="xlink" href="P6-T01.html">P6-T01</a>、<code>dma_wmb</code>/doorbell←<a class="xlink" href="P6-T03.html">P6-T03</a>、blk-mq↔SQ/CQ←<span class="xlink-stub" title="待撰寫">P5</span>、parity 數學←<a class="xlink" href="P7-T03.html">P7-T03</a>)。<strong>驗收:產出端到端資料路徑圖,正確標註至少 5 個課程概念出現的位置。</strong></p>
+<p><strong>Part 3 — 瓶頸與正確性(驗收點 3)</strong>
+指出整條路徑<strong>最可能的效能瓶頸</strong>(一個)與<strong>一個正確性風險點</strong>。<strong>驗收:指出整條路徑最可能的效能瓶頸與一個正確性風險點。</strong>(提示:瓶頸如 host↔device 拷貝/PCIe;正確性如可見性順序 <a class="xlink" href="P6-T03.html">P6-T03</a>。)</p>
+<p><strong>完成這三部分,你就通過了整套課程的總結業——養成完成。</strong></p>
+<hr />
+<h2 id="_5">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 寫出(或讀懂並逐行解釋)一個對 N 個區塊做 XOR parity 的 CUDA kernel,說明 grid/block 如何對應資料。
+2. ☐ 產出一張端到端資料路徑圖,正確標註至少 5 個本課程概念出現的位置。
+3. ☐ 指出整條路徑最可能的效能瓶頸與一個正確性風險點。</p>
+<p><strong>評分量表(出關門檻,需達 80)</strong>:
+- <strong>60</strong>:能讀懂 CUDA XOR kernel。
+- <strong>80(出關門檻 🚪)</strong>:能畫出端到端路徑並標註概念。達此即完成整套養成路徑。
+- <strong>100</strong>:能完整論述整條 NVMe→GPU→parity 路徑的效能與正確性,並對應到自家產品的設計決策。</p>
+<hr />
+<h2 id="_6">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應(產品全貌)</strong>——這個 task 就是你產品的完整縮影:把前面所有 phase(C/UB、記憶體、同步、驅動、block/NVMe、DMA/P2PDMA、RAID 數學)收斂成一條可推理的資料路徑。</li>
+<li><strong>這課收束了整套課程</strong>:你的四條主線在此交會——<strong>XOR→parity→GPU 平行</strong>(<a class="xlink" href="P0-T11.html">P0-T11</a>→<a class="xlink" href="P7-T02.html">P7-T02</a>→<a class="xlink" href="P7-T03.html">P7-T03</a>→<a class="xlink" href="P7-T04.html">P7-T04</a>→本課)、<strong>位址的真相</strong>(<a class="xlink" href="P0-T05.html">P0-T05</a>→<a class="xlink" href="P1-T04.html">P1-T04</a>→<a class="xlink" href="P6-T01.html">P6-T01</a>→<a class="xlink" href="P6-T04.html">P6-T04</a>)、<strong>記憶體順序</strong>(<a class="xlink" href="P1-T03.html">P1-T03</a>→<a class="xlink" href="P3-T11.html">P3-T11</a>→<a class="xlink" href="P6-T03.html">P6-T03</a>)、<strong>I/O 物件流動</strong>(<a class="xlink" href="P5-T01.html">P5-T01</a>→…→<a class="xlink" href="P6-T02.html">P6-T02</a>)。</li>
+<li><strong>養成完成 🎓</strong>:你從一張白紙(Web 工程師、零底層知識)走到這裡——能讀懂 kernel 程式碼、理解你產品從 NVMe 到 GPU 的完整資料路徑、推理它的效能與正確性。接下來,把這些知識用在真實的產品上:讀你公司的 <code>raid5.c</code> 修改、評估 P2PDMA/GDS 的採用、實作並驗證 GPU parity kernel(對照 lib/raid6)。這套課程是地基,真正的養成在你動手做產品時繼續。祝你在 kernel 與儲存的世界走得長遠。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P7-T05.html">← P7-T05 GPUDirect Storage(GDS)/cuFile 與上游 P2PDMA 的銜接</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

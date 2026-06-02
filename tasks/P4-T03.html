@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P4-T03 · ioctl 與 mmap(user/kernel 控制與零拷貝資料面)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P4 · 裝置驅動與 Device Model</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p4-t03-ioctl-mmapuserkernel">P4-T03 · ioctl 與 mmap(user/kernel 控制與零拷貝資料面)</h1>
+<blockquote>
+<p><strong>一句話</strong>:read/write 適合搬資料流,但「下達一個命令」用 ioctl、「讓 user 直接讀寫核心緩衝區(零拷貝)」用 mmap。這兩者正是你產品的縮影:<strong>控制面用 ioctl(設定佇列、提交工作)、資料面用 mmap + DMA(把 I/O 餵給 GPU)</strong>。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P4-T02.html">P4-T02</a> 的字元裝置用 read/write 搬資料。但真實的裝置驅動(包括你的產品)常需要兩種額外的介面:</p>
+<ul>
+<li><strong>ioctl(I/O control)</strong>:下達<strong>控制命令</strong>——不是搬資料流,而是「做一個特定操作」或「查詢/設定一個參數」。例如「設定佇列深度為 64」「查詢裝置狀態」「提交一個工作」。用 <strong><code>unlocked_ioctl</code></strong> callback,命令用 <code>_IOR</code>/<code>_IOW</code> 等巨集<strong>編碼</strong>(避免命令號衝突)。</li>
+<li><strong>mmap(memory map)</strong>:把<strong>核心的緩衝區直接映射到 user 空間的位址</strong>,讓 user 程式能<strong>直接讀寫那塊記憶體</strong>——<strong>零拷貝(zero-copy)</strong>!不必像 read/write 那樣 <code>copy_*_user</code> 搬來搬去。這對高效能資料傳輸極重要。</li>
+</ul>
+<p>為什麼這對你是 <code>scope: direct</code>、而且是產品的縮影?想想你的產品架構:「<strong>user space app 透過 DMA 把 I/O 餵給 GPU 算 parity</strong>」。這個架構分兩面:
+- <strong>控制面</strong>:user app 要告訴 module「做什麼」(設定、提交工作)——這常用 <strong>ioctl</strong>。
+- <strong>資料面</strong>:大量資料要在 user、kernel、裝置之間高效流動——這常用 <strong>mmap + DMA</strong>(零拷貝,避免昂貴的複製)。</p>
+<p>所以這一課的 ioctl + mmap,正是你產品「控制面 + 資料面」的雛形。mmap 的零拷貝概念,也直接銜接 <span class="xlink-stub" title="待撰寫">P6</span> 的 DMA 與 GDS(GPU Direct Storage)。</p>
+<p><strong>一個重要澄清(常見誤區):mmap 不等於 DMA。</strong> mmap 讓 CPU(user 程式)能直接存取那塊記憶體;但要讓<strong>裝置</strong>(GPU、NVMe)也能直接存取它做 DMA,還需要 <span class="xlink-stub" title="待撰寫">P6</span> 的 DMA 映射(把記憶體映射成裝置能用的位址)。mmap 是「零拷貝」的一半(CPU 端),DMA 是另一半(裝置端)。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P4-T02.html">P4-T02</a>(字元裝置、file_operations、copy_*_user)、<a class="xlink" href="P3-T11.html">P3-T11</a>(memory barrier——mmap 共享記憶體的同步)。也用到 <a class="xlink" href="P1-T04.html">P1-T04</a>(分頁、page、虛擬位址映射)、<a class="xlink" href="P3-T06.html">P3-T06</a>(page、實體位址)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P4-T02.html">P4-T02</a> 的 <code>file_operations</code> 和 <code>copy_*_user</code> 嗎?ioctl 和 mmap 是 <code>file_operations</code> 裡再加的 callback。
+  2. 你還記得 <a class="xlink" href="P1-T04.html">P1-T04</a> 的「分頁:虛擬位址經分頁表映射到實體頁」嗎?mmap 就是建立「user 虛擬位址 → 核心緩衝區的實體頁」的映射。</li>
+<li>環境:<strong>QEMU 虛擬機。所有測試只在 VM。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) ioctl:下達控制命令 → (2) 命令編碼:<em>IOR/_IOW → (3) ioctl 引數仍需 copy</em>*_user → (4) mmap:零拷貝的原理 → (5) remap_pfn_range:建立映射 → (6) 控制面 + 資料面:你產品的縮影</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-ioctl">1. ioctl:下達控制命令(不是搬資料流)</h3>
+<p>read/write 是「資料流」語意(讀一串、寫一串)。但很多操作不是資料流,而是「<strong>下一個命令</strong>」:設定參數、查詢狀態、觸發動作。這用 <strong>ioctl</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    USER3["user 程式:ioctl(fd, 命令號, 引數)<br/>例:ioctl(fd, SET_QUEUE_DEPTH, &depth)"]
+    USER3 --> FOPS4["你的 file_operations.unlocked_ioctl callback"]
+    FOPS4 --> SWITCH["你的 ioctl 函式:依命令號 switch<br/>case SET_QUEUE_DEPTH: 讀引數、設定佇列深度<br/>case GET_STATUS: 查狀態、回傳給 user<br/>case SUBMIT_JOB: 提交一個工作<br/>..."]
+    style USER3 fill:#6fa8b8,color:#10100e
+    style FOPS4 fill:#e8a33d,color:#10100e
+    style SWITCH fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>機制:user 呼叫 <code>ioctl(fd, 命令號, 引數)</code> → kernel 呼叫你的 <strong><code>unlocked_ioctl</code></strong> callback → 你依<strong>命令號</strong> <code>switch</code>,執行對應操作。每個命令號代表一個操作(設定佇列深度、查狀態、提交工作……)。</p>
+<p><strong>注意是 <code>unlocked_ioctl</code>,不是舊的 <code>ioctl</code></strong>(回顧 <a class="xlink" href="P4-T02.html">P4-T02</a> 的誤區):LDD3 那個年代的 <code>ioctl</code> callback 會持有一把全域大鎖(BKL,已廢除),現代的 <strong><code>unlocked_ioctl</code></strong> 不持那把鎖(所以叫 "unlocked"),你自己負責需要的鎖。寫新驅動一律用 <code>unlocked_ioctl</code>。</p>
+<p>ioctl 適合「控制」類操作——這就是你產品<strong>控制面</strong>的工具(第 6 節)。</p>
+<hr />
+<h3 id="2-_ior-_iow">2. 命令編碼:<code>_IOR</code> / <code>_IOW</code> 巨集</h3>
+<p>ioctl 的命令號不能隨便用數字——那容易<strong>和別的驅動/別的命令衝突</strong>。kernel 提供巨集來<strong>編碼</strong>命令號,把「方向、裝置類型、編號、引數大小」打包進去:</p>
+<p><pre class="mermaid">flowchart TB
+    MACROS["命令編碼巨集(把資訊打包進命令號)"]
+    MACROS --> IO["_IO(type, nr)：無引數的命令"]
+    MACROS --> IOR["_IOR(type, nr, datatype)：讀(kernel→user 回傳資料)"]
+    MACROS --> IOW["_IOW(type, nr, datatype)：寫(user→kernel 傳入資料)"]
+    MACROS --> IOWR["_IOWR(type, nr, datatype)：雙向"]
+    ENCODE["編碼進命令號的資訊:<br/>type(一個 magic 字元,代表你的驅動)<br/>nr(命令編號)<br/>方向(讀/寫/雙向)<br/>引數型別的大小"]
+    MACROS --> ENCODE
+    BENEFIT2["好處:① 命令號帶 magic + 編號 → 不易和別的驅動衝突<br/>② 帶方向與大小 → kernel 可做基本檢查"]
+    ENCODE --> BENEFIT2
+    style IOR fill:#6fa8b8,color:#10100e
+    style IOW fill:#8a9a5b,color:#10100e
+    style BENEFIT2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>例如定義命令:</p>
+<pre><code class="language-c">#define MYDEV_MAGIC 'M'
+#define MYDEV_SET_SIZE  _IOW(MYDEV_MAGIC, 1, int)   // user 寫入一個 int(設定大小)
+#define MYDEV_GET_SIZE  _IOR(MYDEV_MAGIC, 2, int)   // kernel 回傳一個 int(查詢大小)
+</code></pre>
+<p>巨集把 magic 字元(代表你的驅動)、命令編號、方向(讀/寫)、引數型別大小<strong>打包進命令號</strong>。好處:命令號帶 magic + 編號<strong>不易衝突</strong>、帶方向與大小讓 kernel 能做基本檢查。</p>
+<p><strong>常見誤區:ioctl 命令號未用 <code>_IO*</code> 巨集編碼導致衝突</strong>——直接用 <code>1</code>、<code>2</code> 這種裸數字當命令號,可能和系統其他 ioctl 衝突、或缺乏方向/大小資訊。一律用 <code>_IO</code>/<code>_IOR</code>/<code>_IOW</code>/<code>_IOWR</code> 編碼。</p>
+<hr />
+<h3 id="3-ioctl-copy__user">3. ioctl 引數仍需 <code>copy_*_user</code></h3>
+<p>一個容易忽略的點:ioctl 的「引數」如果是個<strong>指標</strong>(指向 user 空間的資料),那存取它<strong>仍然要 <code>copy_*_user</code></strong>——和 <a class="xlink" href="P4-T02.html">P4-T02</a> 的 read/write 一樣的道理。</p>
+<p><pre class="mermaid">flowchart TB
+    IOCTL_ARG["ioctl(fd, MYDEV_SET_SIZE, &size)<br/>第三個引數 &size 是『user 空間的指標』"]
+    IOCTL_ARG --> WRONG3["✗ 在 ioctl 裡直接解參考那個指標<br/>(以為命令號編碼過就安全)"]
+    WRONG3 --> DANGER3["★ 一樣的危險(P4-T02)★<br/>它仍是 user 指標、在另一個位址空間<br/>→ 直接解參考 → 當機 / 安全漏洞"]
+    IOCTL_ARG --> RIGHT3["✓ 用 copy_from_user(&ksize, user_ptr, sizeof(int))<br/>取入;回傳用 copy_to_user"]
+    style WRONG3 fill:#c2603a,color:#f4ecd8
+    style DANGER3 fill:#c2603a,color:#f4ecd8
+    style RIGHT3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>關鍵(驗收點:說明 ioctl 引數為何仍需 <code>copy_*_user</code>)</strong>:雖然命令號用 <code>_IO*</code> 編碼過,但那只是「命令的識別」;<strong>引數本身若是 user 指標,它仍在使用者態位址空間</strong>,你在 kernel 裡存取它<strong>一樣不能直接解參考</strong>(回顧 <a class="xlink" href="P4-T02.html">P4-T02</a> 的命門:位址空間隔離 + 安全漏洞)。要用 <code>copy_from_user</code>(取入引數)/ <code>copy_to_user</code>(回傳結果)。</p>
+<p>換句話說:<code>_IO*</code> 編碼解決「命令號」的問題,<code>copy_*_user</code> 解決「引數資料跨越 user/kernel 邊界」的問題——兩者都要做。命令號編碼<strong>不會</strong>讓你免去 <code>copy_*_user</code>。</p>
+<hr />
+<h3 id="4-mmap">4. mmap:零拷貝的原理</h3>
+<p>現在到資料面的主角:<strong>mmap</strong>。它解決一個效能問題——read/write 每次都要 <code>copy_*_user</code> 把資料在 user 和 kernel 之間<strong>複製一份</strong>,大量資料時這個複製很昂貴。mmap 讓 user <strong>直接存取核心的緩衝區</strong>,免去複製:<strong>零拷貝(zero-copy)</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph copy_way["read/write(有複製)"]
+        CW["核心緩衝區 --copy_to_user複製--> user 緩衝區<br/>(每次都複製一份,大量資料時昂貴)"]
+    end
+    subgraph mmap_way["mmap(零拷貝)"]
+        MW["核心配置一塊緩衝區(實體頁)<br/>mmap 把這塊的『實體頁』<br/>映射到 user 的虛擬位址(P1-T04 分頁)<br/>→ user 和 kernel 看的是『同一塊實體記憶體』<br/>→ user 直接讀寫,不複製"]
+    end
+    copy_way -.“mmap 免去複製”.-> mmap_way
+    style CW fill:#e8a33d,color:#10100e
+    style MW fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>原理(回顧 <a class="xlink" href="P1-T04.html">P1-T04</a> 分頁):核心配置一塊緩衝區(一些實體頁),mmap 把這些<strong>實體頁</strong>映射到 user 行程的虛擬位址空間。於是 <strong>user 的那段虛擬位址,和核心的緩衝區,指向同一塊實體記憶體</strong>——user 程式直接讀寫它,kernel 也看得到,<strong>不需要任何複製</strong>。</p>
+<p>機制:user 呼叫 <code>mmap(fd, ...)</code> → kernel 呼叫你的 <strong><code>file_operations.mmap</code></strong> callback → 你在裡面建立「user 虛擬位址 → 核心緩衝區實體頁」的映射(下一節 <code>remap_pfn_range</code>)。映射建好後,user 對那段位址的讀寫,直接作用在核心緩衝區的實體頁上。</p>
+<p>零拷貝對高效能資料傳輸(你的領域)極重要——避免大量資料的複製開銷。</p>
+<p>把字元裝置的三種介面放一起對照,各自的定位就清楚了:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph three["字元裝置的三種介面"]
+        RW2["read/write:搬資料流<br/>(有 copy_*_user 複製;適合一般資料)"]
+        IOCTL3["ioctl:下命令<br/>(設定/查詢/提交;小量、需明確語意)= 控制面"]
+        MMAP3["mmap:零拷貝共享記憶體<br/>(user 直接讀寫核心緩衝區,免複製)= 資料面"]
+    end
+    style RW2 fill:#6fa8b8,color:#10100e
+    style IOCTL3 fill:#e8a33d,color:#10100e
+    style MMAP3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h3 id="5-remap_pfn_range">5. <code>remap_pfn_range</code>:建立映射</h3>
+<p>mmap callback 裡,你怎麼把核心緩衝區的實體頁映射到 user 空間?主要工具是 <strong><code>remap_pfn_range</code></strong>(或對單頁用 <code>vm_insert_page</code>)。</p>
+<p><pre class="mermaid">flowchart TB
+    MMAP_CB["你的 file_operations.mmap(file, vma) callback<br/>(vma = user 要映射的虛擬位址範圍)"]
+    MMAP_CB --> PFN["取得核心緩衝區的『page frame number(PFN)』<br/>(實體頁的編號,從 virt_to_phys / page 算出)"]
+    PFN --> REMAP["remap_pfn_range(vma, vma起始, pfn, 大小, ...)<br/>→ 把 vma(user 虛擬位址)映射到那些實體頁<br/>(在 user 的分頁表建立對應 entry,P1-T04)"]
+    REMAP --> DONE["映射完成 → user 對 vma 的存取 = 存取核心緩衝區"]
+    NOTE6["★ 常見誤區:mmap 的頁未正確處理 → segfault ★<br/>(PFN 算錯、範圍/權限不對、緩衝區未對齊頁界...)<br/>→ user 一存取就 segfault"]
+    DONE --> NOTE6
+    style PFN fill:#6fa8b8,color:#10100e
+    style REMAP fill:#8a9a5b,color:#10100e
+    style NOTE6 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>流程:
+- mmap callback 收到一個 <strong>vma</strong>(描述 user 要映射的虛擬位址範圍)。
+- 取得核心緩衝區的 <strong>PFN(page frame number,實體頁編號)</strong>。
+- 用 <strong><code>remap_pfn_range(vma, ...)</code></strong> 把 vma 映射到那些實體頁——這在 user 的分頁表裡建立對應的 entry(回顧 <a class="xlink" href="P1-T04.html">P1-T04</a> 分頁表)。
+- 完成後,user 對 vma 的存取,直接作用在核心緩衝區上。</p>
+<p><strong>常見誤區:mmap 的頁未正確處理導致 segfault</strong>——PFN 算錯、映射範圍/權限不對、緩衝區沒對齊頁界(page 通常 4KB,緩衝區起點要對齊)等,都會讓 user 一存取就 segfault。建立 mmap 要小心處理頁對齊與 PFN。</p>
+<p><strong>另一個關鍵(常見誤區:忽略 mmap 共享記憶體的同步/屏障)</strong>:mmap 後,user 和 kernel(甚至裝置)共享同一塊記憶體——這是<strong>共享可變狀態</strong>!如果有同步需求(user 寫完、kernel 要讀),可能需要 <strong>memory barrier</strong>(回顧 <a class="xlink" href="P3-T11.html">P3-T11</a>)來保證可見順序,就像任何共享記憶體的並行存取。零拷貝省了複製,但沒省掉同步的責任。</p>
+<hr />
+<h3 id="6">6. 控制面 + 資料面:你產品的縮影</h3>
+<p>把 ioctl 和 mmap 放在一起,你會看到它們正是你產品架構的雛形。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph product["你的產品:user app 透過 DMA 把 I/O 餵給 GPU 算 parity"]
+        CONTROL["★ 控制面(用 ioctl)★<br/>user app 告訴 module:<br/>設定佇列深度、提交一個 parity 工作、查詢狀態<br/>= 下命令,小量、需明確語意"]
+        DATA["★ 資料面(用 mmap + DMA)★<br/>大量的 I/O 資料:<br/>mmap 讓 user/kernel 零拷貝共享緩衝區,<br/>DMA(P6)讓 GPU/NVMe 直接存取那塊記憶體<br/>= 大量資料,要高效、零拷貝"]
+    end
+    NOTE7["mmap 是零拷貝的『CPU 端』(user 直接存取);<br/>DMA(P6)是『裝置端』(GPU/NVMe 直接存取);<br/>合起來:資料不必反覆複製,直接在 user↔kernel↔裝置間流動"]
+    product --> NOTE7
+    style CONTROL fill:#6fa8b8,color:#10100e
+    style DATA fill:#8a9a5b,color:#10100e
+    style NOTE7 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>這就是這一課對你最重要的洞察:<strong>控制面和資料面分開</strong>,各用最適合的工具。
+- <strong>控制面(ioctl)</strong>:小量、需要明確語意的命令——設定、提交工作、查詢。用 ioctl。
+- <strong>資料面(mmap + DMA)</strong>:大量資料要高效流動——用 mmap(CPU 端零拷貝)+ DMA(裝置端直接存取,<span class="xlink-stub" title="待撰寫">P6</span>)。</p>
+<p><strong>mmap 是零拷貝的「CPU 端」、DMA 是「裝置端」</strong>——這呼應第 4 節的澄清(mmap ≠ DMA)。你產品的「user app 透過 DMA 把 I/O 餵給 GPU」這條資料路徑,正是 mmap(讓 user 和 kernel 共享緩衝區)+ DMA(讓 GPU 直接讀那塊緩衝區)的組合。理解這個分工,你就抓住了產品架構的骨架,而 <span class="xlink-stub" title="待撰寫">P5</span>(block layer/NVMe)和 <span class="xlink-stub" title="待撰寫">P6</span>(DMA)會把資料面補完。</p>
+<p>(驗收點:user 端 mmap 後寫入的內容,kernel 端能讀到,證明零拷貝共享;說明零拷貝資料面如何銜接後續 DMA/GDS。)</p>
+<hr />
+<h2 id="ioctl-mmap">打通關:把 ioctl 與 mmap 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    TWO["字元裝置的兩個進階介面(在 file_operations 加 callback)"]
+    TWO --> IOCTL2["★ ioctl(控制面)★:下達命令(設定/查詢/提交)"]
+    IOCTL2 --> ENCODE2["命令用 _IO/_IOR/_IOW 編碼(防衝突 + 帶方向大小)<br/>用 unlocked_ioctl(非舊 ioctl)"]
+    ENCODE2 --> ARG["引數若是 user 指標 → 仍需 copy_*_user(P4-T02 同理)"]
+    TWO --> MMAP2["★ mmap(資料面)★:零拷貝<br/>把核心緩衝區實體頁映射到 user 虛擬位址(P1-T04)<br/>→ user/kernel 共享同一塊實體記憶體,免複製"]
+    MMAP2 --> REMAP2["remap_pfn_range 建映射(注意頁對齊/PFN,否則 segfault)<br/>共享記憶體仍需同步/屏障(P3-T11)"]
+    ARG --> PRODUCT2["★ 你產品縮影:控制面 ioctl + 資料面 mmap+DMA ★"]
+    REMAP2 --> PRODUCT2
+    PRODUCT2 --> DMA2["mmap=零拷貝 CPU 端;DMA(P6)=裝置端 → 合成 GPU/NVMe 直存"]
+    style IOCTL2 fill:#6fa8b8,color:#10100e
+    style MMAP2 fill:#8a9a5b,color:#10100e
+    style PRODUCT2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>ioctl 下達控制命令(用 <code>_IO*</code> 編碼命令號、用 <code>unlocked_ioctl</code>、引數若是 user 指標仍需 copy_*_user),mmap 達成零拷貝(把核心緩衝區的實體頁映射到 user 虛擬位址,用 remap_pfn_range,注意頁對齊與共享同步);這正是你產品的縮影——控制面用 ioctl、資料面用 mmap+DMA,而 mmap 是零拷貝的 CPU 端、DMA(P6)是裝置端。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:ioctl 命令號未用 <code>_IO*</code> 巨集編碼導致衝突。</strong>
+裸數字當命令號可能衝突、缺方向/大小資訊。用 <code>_IO</code>/<code>_IOR</code>/<code>_IOW</code>/<code>_IOWR</code> 編碼(帶 magic、編號、方向、大小)。</p>
+<p><strong>誤區二:以為 ioctl 命令編碼過就不必 <code>copy_*_user</code>。</strong>
+命令號編碼只解決「命令識別」;引數若是 user 指標,仍在使用者態空間,存取它一樣要 <code>copy_*_user</code>(否則當機/安全漏洞,回顧 <a class="xlink" href="P4-T02.html">P4-T02</a>)。</p>
+<p><strong>誤區三:mmap 的頁未正確處理導致 segfault。</strong>
+PFN 算錯、範圍/權限不對、緩衝區未對齊頁界,都會讓 user 一存取就 segfault。注意頁對齊與 PFN 計算。</p>
+<p><strong>誤區四:忽略 mmap 共享記憶體的同步/屏障。</strong>
+mmap 後 user/kernel(甚至裝置)共享同一塊記憶體——是共享可變狀態。有同步需求時要用 memory barrier(<a class="xlink" href="P3-T11.html">P3-T11</a>)。零拷貝省複製,不省同步。</p>
+<p><strong>誤區五:以為 mmap 自動等於 DMA。</strong>
+mmap 讓 CPU(user)直接存取記憶體;要讓裝置(GPU/NVMe)直接存取做 DMA,還需 <span class="xlink-stub" title="待撰寫">P6</span> 的 DMA 映射。mmap 是零拷貝的 CPU 端,DMA 是裝置端。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機。所有測試只在 VM。</strong></p>
+<p><strong>任務 A — 為字元裝置加 ioctl(驗收點)</strong>
+在 <a class="xlink" href="P4-T02.html">P4-T02</a> 的字元裝置上,加 <code>unlocked_ioctl</code>:
+- 用 <code>_IOW</code> 定義一個「設定緩衝區大小」命令、<code>_IOR</code> 定義一個「查詢緩衝區大小」命令。
+- 在 ioctl 函式裡 <code>switch</code> 命令號,用 <code>copy_from_user</code>/<code>copy_to_user</code> 處理引數。
+寫一個 user 程式呼叫這兩個 ioctl。<strong>驗收:user 端 ioctl 成功查到/改到裝置的緩衝區大小。</strong></p>
+<p><strong>任務 B — mmap 零拷貝(驗收點,核心)</strong>
+為裝置加 <code>file_operations.mmap</code>:核心配置一塊緩衝區,用 <code>remap_pfn_range</code> 把它映射到 user。寫一個 user 程式 <code>mmap</code> 這個裝置,<strong>直接寫入</strong>映射的記憶體。然後在 kernel 端(例如透過一個 ioctl 或 read)確認 <strong>kernel 看到了 user 寫的內容</strong>(或反向:kernel 寫、user 讀)。<strong>驗收:user 端 mmap 後寫入的內容,kernel 端能讀到,證明零拷貝共享。</strong> 注意頁對齊。</p>
+<p><strong>任務 C — 說明 ioctl 引數為何仍需 copy_*_user(驗收點)</strong>
+寫一段文字:ioctl 命令號已用 <code>_IO*</code> 編碼,為什麼引數(若是指標)還是要 <code>copy_*_user</code>?<strong>驗收:能說明(命令號編碼只是識別命令;引數資料仍跨 user/kernel 邊界,直接解參考會當機/安全漏洞)。</strong></p>
+<p><strong>任務 D(連結)— 零拷貝如何銜接 DMA/GDS</strong>
+寫一兩句話:你的 mmap 零拷貝(CPU 端),如何和後續 <span class="xlink-stub" title="待撰寫">P6</span> 的 DMA(裝置端)合起來,達成「user app 透過 DMA 把資料餵給 GPU」?(提示:mmap 讓 user/kernel 共享緩衝區,DMA 讓 GPU 直接存取那塊緩衝區,資料不必反覆複製。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ user 端 ioctl 成功查到/改到裝置的緩衝區大小。
+2. ☐ user 端 mmap 後寫入的內容,kernel 端能讀到(或反向),證明零拷貝共享。
+3. ☐ 說明 ioctl 引數為何仍需 <code>copy_*_user</code>。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能實作 ioctl。
+- <strong>80(熟練)</strong>:能實作 mmap 零拷貝。
+- <strong>100(精通)</strong>:能說明零拷貝資料面如何銜接後續 DMA/GDS。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——「user space app 透過 DMA 把 I/O 餵給 GPU」的控制面常用 ioctl、資料面常用 mmap + DMA;這是產品架構的縮影。</li>
+<li><strong>這課餵給未來的</strong>:ioctl 控制面 → 你產品的設定/提交介面;mmap 零拷貝 → <span class="xlink-stub" title="待撰寫">P6</span> DMA(裝置端)+ <span class="xlink-stub" title="待撰寫">P7</span> GDS(GPU Direct Storage);mmap 共享同步 → 回收 <a class="xlink" href="P3-T11.html">P3-T11</a> barrier。</li>
+<li><strong>下一步 → <a class="xlink" href="P4-T04.html">P4-T04</a> PCI 子系統(pci_driver / BAR / config space / MSI-X)</strong>:你已經會寫字元裝置驅動(user 介面)。下一課轉向<strong>硬體端</strong>——<strong>PCI 子系統</strong>,這是你 NVMe SSD 和 GPU 的共同基礎(它們都是 PCIe 裝置)。你會寫一個 PCI 驅動骨架:<code>pci_driver</code>(用 id_table 讓 bus match,回顧 <a class="xlink" href="P4-T01.html">P4-T01</a>)、<strong>map BAR</strong>(裝置的暫存器/記憶體,例如 NVMe 的 doorbell 就在 BAR 裡)、設定 <strong>MSI-X 中斷</strong>(回顧 <a class="xlink" href="P3-T10.html">P3-T10</a>),以及 <strong><code>pci_set_master</code></strong>(致能 DMA——漏掉它 DMA 就不動)。這是 Phase 4 的<strong>出關門檻</strong>,也是 <span class="xlink-stub" title="待撰寫">P5</span> NVMe 驅動的直接基礎(NVMe driver 正是建在 pci_driver + BAR + MSI-X 之上)。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P4-T02.html">← P4-T02 字元裝置驅動(file_operations / cdev / 註冊)</a><a class="pn next" href="P4-T04.html">P4-T04 PCI 子系統(pci_driver / BAR / config space / MSI-X) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

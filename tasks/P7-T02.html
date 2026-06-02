@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P7-T02 · RAID-5 parity 數學(XOR)與救援原理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P7 · GPU/CUDA 整合與 RAID parity 數學</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p7-t02-raid-5-parity-xor">P7-T02 · RAID-5 parity 數學(XOR)與救援原理</h1>
+<blockquote>
+<p><strong>一句話</strong>:RAID-5 的 parity 就是所有資料的 XOR(P = D₀⊕D₁⊕…)。靠 XOR 的自反性(a⊕a=0),任何一碟失效都能用其餘資料 + parity 還原。而 XOR 逐 byte 獨立、毫無資料相依——這就是「embarrassingly parallel」,完美適合 GPU 把每個 byte 丟給一個 thread 平行算。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P7-T01.html">P7-T01</a> 你看到 RAID-5 的 parity 是「資料的 XOR」。這一課深入這個數學——它是<strong>你產品 parity offload 的最簡情形</strong>,也是理解 RAID-6(<a class="xlink" href="P7-T03.html">P7-T03</a>)的前置。而且,這收束了你從 <strong><a class="xlink" href="P0-T11.html">P0-T11</a></strong> 就開始鋪陳的 XOR 主線。</p>
+<p>核心就三件事:
+- <strong>parity 產生</strong>:<code>P = D₀ ⊕ D₁ ⊕ … ⊕ D_{n-1}</code>(把所有資料區塊逐 byte XOR)。
+- <strong>單碟救援</strong>:任何一個資料區塊失效,用「其餘資料 + parity」還原它——靠 XOR 的性質。
+- <strong>為何適合 GPU</strong>:XOR <strong>逐 byte 獨立</strong>——每個 byte 的計算和別的 byte 完全無關,沒有資料相依。這就是 <strong>embarrassingly parallel(極度易平行)</strong>——把每個 byte(或每組)丟給一個 GPU thread,全部同時算。</p>
+<p>這背後是 XOR 的三個性質(回顧 <a class="xlink" href="P0-T11.html">P0-T11</a>):
+- <strong>交換律</strong>:a ⊕ b = b ⊕ a(順序無關)。
+- <strong>結合律</strong>:(a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)(怎麼分組無關)。
+- <strong>自反性</strong>:a ⊕ a = 0,且 a ⊕ 0 = a(一個數 XOR 自己是 0)——<strong>這是救援的關鍵</strong>。</p>
+<p>為什麼這對你是 <code>scope: direct(產品核心數學)</code>?因為 <strong>RAID-5 parity 就是 XOR</strong>——這是你產品 parity offload 的最簡情形,也是理解 RAID-6 的前置。理解它的可平行性如何對應 GPU offload,正是你產品的核心價值(<a class="xlink" href="P7-T05.html">P7-T05</a>/<a class="xlink" href="P7-T06.html">P7-T06</a>)。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P7-T01.html">P7-T01</a>(RAID-5/stripe/parity 概念)、<a class="xlink" href="P0-T11.html">P0-T11</a>(位元運算、XOR——這課把它用到 RAID)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P0-T11.html">P0-T11</a> 的 XOR 嗎?尤其 <code>a ⊕ a = 0</code>(一個數 XOR 自己是 0)——這課的救援全靠它。
+  2. 你還記得 <a class="xlink" href="P7-T01.html">P7-T01</a> 的「一個 stripe 的 parity = 該 stripe 所有資料 chunk 的 XOR」嗎?這課深入這個 XOR。</li>
+<li>工具:C 編譯器(實作 XOR parity 與救援)。</li>
+<li>環境:一般 Linux/編譯環境即可(這課是數學 + 使用者態 C,<strong>安全</strong>)。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) XOR 的三個性質 → (2) parity 產生 → (3) 單碟救援的原理 → (4) 救援的代數推導 → (5) 為何只能容忍一碟 → (6) 為何 embarrassingly parallel</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-xor">1. XOR 的三個性質</h3>
+<p>先複習 XOR 的三個性質(回顧 <a class="xlink" href="P0-T11.html">P0-T11</a>)——RAID-5 的一切都建立在它們上。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph properties["XOR 的三個性質(⊕ 表 XOR)"]
+        COMM["① 交換律:a ⊕ b = b ⊕ a<br/>→ 順序無關(資料碟的順序不影響 parity)"]
+        ASSOC["② 結合律:(a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)<br/>→ 分組無關(怎麼分批 XOR 都行 → 可平行歸約)"]
+        SELF["③ 自反性:a ⊕ a = 0,且 a ⊕ 0 = a<br/>★ 一個數 XOR 自己 = 0;XOR 0 = 自己 ★<br/>→ 這是救援的關鍵(下面)"]
+    end
+    NOTE39["這三個性質讓 XOR 成為『可逆的群運算』:<br/>parity 不是『單向校驗碼』,而是『可逆的代數運算』<br/>→ 能從 parity + 其餘資料反推回失效的資料"]
+    properties --> NOTE39
+    style SELF fill:#e8a33d,color:#10100e
+    style NOTE39 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>三個性質:
+- <strong>交換律</strong>:a ⊕ b = b ⊕ a → 順序無關(資料碟的順序不影響 parity)。
+- <strong>結合律</strong>:(a ⊕ b) ⊕ c = a ⊕ (b ⊕ c) → 分組無關(怎麼分批 XOR 都行——這讓 parity 可以<strong>平行歸約</strong>:分組各算、再合併)。
+- <strong>自反性</strong>:<strong>a ⊕ a = 0,且 a ⊕ 0 = a</strong> → 一個數 XOR 自己是 0、XOR 0 是自己。<strong>這是救援的關鍵</strong>。</p>
+<p>這三個性質讓 XOR 成為「<strong>可逆的代數運算</strong>」——<strong>常見誤區:把 parity 當成「校驗碼」而非「可逆的 XOR」</strong>。parity 不是單向的校驗碼(像 checksum 只能檢測錯誤),而是<strong>可逆的代數運算</strong>:能從 parity + 其餘資料<strong>反推回</strong>失效的資料。這個「可逆」正是 RAID 容錯的本質。</p>
+<hr />
+<h3 id="2-parity-p-d0-d1">2. parity 產生:P = D₀ ⊕ D₁ ⊕ …</h3>
+<p>RAID-5 的 parity 產生:把一個 stripe 的所有資料區塊<strong>逐 byte XOR</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    DATA3["一個 stripe 的資料區塊(等長):D0, D1, D2, ..., D_{n-1}"]
+    DATA3 --> XOR2["逐 byte XOR 全部:<br/>P = D0 ⊕ D1 ⊕ D2 ⊕ ... ⊕ D_{n-1}"]
+    XOR2 --> BYTEWISE["★ 逐 byte 獨立 ★<br/>P 的第 k 個 byte = 所有 Di 的第 k 個 byte 的 XOR<br/>P[k] = D0[k] ⊕ D1[k] ⊕ ... ⊕ D_{n-1}[k]<br/>→ 每個 byte 位置的計算,和別的位置完全無關"]
+    BYTEWISE --> STORE["P 存到該 stripe 的 parity chunk(輪轉的那顆碟,P7-T01)"]
+    NOTE40["★ 常見誤區:位元組對齊/長度不一致導致 XOR 錯位 ★<br/>所有資料區塊必須等長、對齊(P0-T04)<br/>→ 第 k 個 byte 要對到第 k 個 byte,否則 parity 全錯"]
+    XOR2 --> NOTE40
+    style XOR2 fill:#6fa8b8,color:#10100e
+    style BYTEWISE fill:#e8a33d,color:#10100e
+    style NOTE40 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>parity 產生(驗收點:對 N 個等長區塊計算 XOR parity)</strong>:<code>P = D₀ ⊕ D₁ ⊕ … ⊕ D_{n-1}</code>(逐 byte XOR 所有資料區塊)。</p>
+<p><strong>關鍵:逐 byte 獨立</strong>——P 的第 k 個 byte = 所有 Dᵢ 的第 k 個 byte 的 XOR:<code>P[k] = D₀[k] ⊕ D₁[k] ⊕ … ⊕ D_{n-1}[k]</code>。每個 byte 位置的計算,和別的位置<strong>完全無關</strong>。這個獨立性是第 6 節「為何適合 GPU」的根源。</p>
+<p><strong>常見誤區:位元組對齊/長度不一致導致 XOR 錯位</strong>——所有資料區塊必須<strong>等長、對齊</strong>(回顧 <a class="xlink" href="P0-T04.html">P0-T04</a>)。第 k 個 byte 要對到第 k 個 byte,否則 parity 全錯。實作時務必確保區塊等長、對齊。</p>
+<hr />
+<h3 id="3">3. 單碟救援的原理</h3>
+<p>RAID-5 的容錯魔法:任何一個資料區塊失效,用「其餘資料 + parity」<strong>還原它</strong>。靠的就是 XOR 的自反性。</p>
+<p><pre class="mermaid">flowchart TB
+    SETUP2["原本:P = D0 ⊕ D1 ⊕ D2(以 3 顆資料碟為例)"]
+    SETUP2 --> FAIL2["假設 D1 失效(讀不到 D1 了)<br/>但 D0、D2、P 都還在"]
+    FAIL2 --> RECOVER["救援:D1 = D0 ⊕ D2 ⊕ P<br/>(用其餘資料 + parity,XOR 起來就還原出 D1!)"]
+    RECOVER --> WHY7["為什麼成立(自反性)?<br/>D0 ⊕ D2 ⊕ P<br/>= D0 ⊕ D2 ⊕ (D0 ⊕ D1 ⊕ D2)  ← 代入 P<br/>= (D0 ⊕ D0) ⊕ (D2 ⊕ D2) ⊕ D1  ← 交換/結合律重排<br/>= 0 ⊕ 0 ⊕ D1  ← 自反性 a⊕a=0<br/>= D1  ✓"]
+    style RECOVER fill:#e8a33d,color:#10100e
+    style WHY7 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>救援原理</strong>:原本 <code>P = D₀ ⊕ D₁ ⊕ D₂</code>。假設 D₁ 失效(但 D₀、D₂、P 都在),則:</p>
+<pre><code>D₁ = D₀ ⊕ D₂ ⊕ P
+</code></pre>
+<p><strong>用其餘資料 + parity XOR 起來,就還原出失效的 D₁!</strong></p>
+<p><strong>為什麼成立(下一節詳細推導,這裡先看直覺)</strong>:把 P 代入,XOR 裡每個「沒失效的資料」都出現兩次(一次來自其餘資料、一次來自 P 裡),根據自反性 a⊕a=0 它們抵消,只剩下失效的那個。</p>
+<p>這就是 RAID-5 的核心:<strong>parity 是「所有資料的 XOR」,所以缺任何一個,都能用「其餘的 XOR」補回來</strong>——因為全部 XOR 在一起(資料 + parity),根據自反性會兩兩抵消,剩下你要的那個。</p>
+<hr />
+<h3 id="4">4. 救援的代數推導</h3>
+<p>把第 3 節的「為什麼成立」完整推導一遍——這是理解 RAID 容錯的數學核心。</p>
+<p><pre class="mermaid">flowchart TB
+    GOAL4["目標:證明 D1 = D0 ⊕ D2 ⊕ P 能還原 D1"]
+    GOAL4 --> STEP1f["已知:P = D0 ⊕ D1 ⊕ D2"]
+    STEP1f --> STEP2f["代入:D0 ⊕ D2 ⊕ P<br/>= D0 ⊕ D2 ⊕ (D0 ⊕ D1 ⊕ D2)"]
+    STEP2f --> STEP3f["用交換律+結合律重排(把相同的湊一起):<br/>= (D0 ⊕ D0) ⊕ (D2 ⊕ D2) ⊕ D1"]
+    STEP3f --> STEP4f["用自反性 a⊕a=0:<br/>= 0 ⊕ 0 ⊕ D1"]
+    STEP4f --> STEP5f["用 a⊕0=a:<br/>= D1  ✓ 還原成功"]
+    GENERAL["★ 一般化(n 顆資料碟)★<br/>失效的 D_i = (其餘所有 D_j 的 XOR) ⊕ P<br/>道理一樣:P 裡的每個『沒失效的 D_j』,<br/>和『其餘資料裡的同一個 D_j』兩兩抵消,只剩 D_i"]
+    STEP5f --> GENERAL
+    style STEP4f fill:#e8a33d,color:#10100e
+    style GENERAL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>完整推導(以 3 顆資料碟、D₁ 失效為例):</p>
+<pre><code>D₀ ⊕ D₂ ⊕ P
+= D₀ ⊕ D₂ ⊕ (D₀ ⊕ D₁ ⊕ D₂)      ← 代入 P = D₀⊕D₁⊕D₂
+= (D₀ ⊕ D₀) ⊕ (D₂ ⊕ D₂) ⊕ D₁     ← 交換律+結合律重排
+= 0 ⊕ 0 ⊕ D₁                       ← 自反性 a⊕a=0
+= D₁                                ← a⊕0=a  ✓
+</code></pre>
+<p><strong>一般化(n 顆資料碟)</strong>:失效的 <code>Dᵢ = (其餘所有 Dⱼ 的 XOR) ⊕ P</code>。道理一樣:P 裡的每個「沒失效的 Dⱼ」,和「其餘資料裡的同一個 Dⱼ」兩兩抵消(自反性),只剩下 Dᵢ。</p>
+<p>(驗收點:任意移除一個區塊後,用其餘 N-1 個 + parity 完整還原該區塊,逐 byte 比對相符。)這個推導是你親手實作救援的依據——把這個代數寫成程式,就是 RAID-5 的還原。</p>
+<hr />
+<h3 id="5">5. 為何只能容忍一碟失效</h3>
+<p>一個重要的限制(也是 RAID-6 存在的理由):RAID-5 <strong>只能容忍一碟失效</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    ONE["一碟失效:能救(第3/4節)<br/>D_i = 其餘資料 ⊕ P"]
+    ONE --> TWO["兩碟同時失效?例如 D1 和 D2 都失效"]
+    TWO --> PROBLEM12["問題:你只有一個方程式 P = D0 ⊕ D1 ⊕ D2<br/>但有『兩個未知數』(D1 和 D2 都不知道)<br/>→ 一個方程式解不出兩個未知數!<br/>→ 無法還原(資料遺失)"]
+    PROBLEM12 --> RAID6_NEED["★ 這就是 RAID-6 的理由(P7-T03)★<br/>RAID-6 有『兩個』parity(P 和 Q,用不同的運算)<br/>→ 兩個方程式 → 能解兩個未知數 → 容忍兩碟失效"]
+    NOTE41["★ 常見誤區:以為 RAID-5 能容忍兩碟失效 ★<br/>只能一碟!兩碟需 RAID-6(P7-T03)<br/>(一個 parity = 一個方程式 = 只能救一個未知)"]
+    PROBLEM12 --> NOTE41
+    style PROBLEM12 fill:#c2603a,color:#f4ecd8
+    style RAID6_NEED fill:#e8a33d,color:#10100e
+    style NOTE41 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>為何只能一碟</strong>:用代數的角度看——你只有<strong>一個方程式</strong> <code>P = D₀ ⊕ D₁ ⊕ D₂</code>。一碟失效 = 一個未知數,一個方程式能解。但<strong>兩碟失效 = 兩個未知數,一個方程式解不出</strong>(就像一個方程式解不出兩個未知數)→ 無法還原,資料遺失。</p>
+<p><strong>常見誤區:以為 RAID-5 能容忍兩碟失效</strong>——只能一碟!兩碟需 RAID-6。</p>
+<p><strong>這就是 RAID-6 的理由(<a class="xlink" href="P7-T03.html">P7-T03</a>)</strong>:RAID-6 有<strong>兩個 parity</strong>(P 和 Q,用不同的運算)——兩個方程式 → 能解兩個未知數 → 容忍兩碟失效。但「兩個不同的運算」不能都是 XOR(否則兩個方程式一樣,還是解不出兩個未知數),所以 RAID-6 的 Q 要用更複雜的 GF(2⁸) 運算(<a class="xlink" href="P7-T03.html">P7-T03</a>)。理解 RAID-5「一個 parity 只能救一碟」,你就懂了為什麼需要 RAID-6 的第二個 parity。</p>
+<hr />
+<h3 id="6-embarrassingly-parallelgpu">6. 為何 embarrassingly parallel:GPU 友善</h3>
+<p>最後,這一課對你產品最重要的洞察:<strong>XOR parity 是 embarrassingly parallel(極度易平行),完美適合 GPU</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    BYTEWISE2["回顧第2節:P[k] = D0[k] ⊕ D1[k] ⊕ ... ⊕ D_{n-1}[k]<br/>每個 byte 位置 k 的計算,只用到各區塊的第 k 個 byte"]
+    BYTEWISE2 --> INDEPENDENT["★ 關鍵:每個 byte 位置完全獨立 ★<br/>算 P[0] 不需要 P[1] 的任何資訊<br/>算 P[1] 不需要 P[0] 的任何資訊<br/>→ 沒有資料相依、沒有順序要求"]
+    INDEPENDENT --> PARALLEL["= embarrassingly parallel(極度易平行)<br/>『把工作切成完全獨立的小塊,各自算,互不影響』<br/>→ 理論上可同時算所有 byte"]
+    PARALLEL --> GPU2["★ 為何 GPU 完美 ★<br/>GPU 有數千個 thread,擅長『同一運算、大量資料、各自獨立』<br/>→ 每個 thread 算一個(或一組)byte 的 XOR<br/>→ 數千 byte 同時算 → 大幅加速(你產品的價值)"]
+    style INDEPENDENT fill:#e8a33d,color:#10100e
+    style PARALLEL fill:#8a9a5b,color:#10100e
+    style GPU2 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>為何 embarrassingly parallel(驗收點:用一句話說明為何 XOR parity 適合 GPU 平行化)</strong>:
+- 回顧第 2 節:<code>P[k] = D₀[k] ⊕ D₁[k] ⊕ … ⊕ D_{n-1}[k]</code>——每個 byte 位置 k 的計算,只用到各區塊的第 k 個 byte。
+- <strong>關鍵:每個 byte 位置完全獨立</strong>——算 P[0] 不需要 P[1] 的任何資訊,反之亦然。<strong>沒有資料相依、沒有順序要求</strong>。
+- 這就是 <strong>embarrassingly parallel</strong>:把工作切成完全獨立的小塊,各自算,互不影響。
+- <strong>為何 GPU 完美</strong>:GPU 有<strong>數千個 thread</strong>,擅長「同一運算、大量資料、各自獨立」(回顧你對 GPU 的認識)——每個 thread 算一個(或一組)byte 的 XOR,數千 byte 同時算 → 大幅加速。</p>
+<p><strong>這就是你產品的核心價值</strong>:RAID parity 計算量大(尤其寫入放大、rebuild 時,<a class="xlink" href="P7-T01.html">P7-T01</a>),但它逐 byte 獨立——把它丟給 GPU 的數千 thread 平行算,遠快於 CPU 逐 byte(或 SIMD 一次幾十 byte)。XOR(RAID-5)是最簡單的情形;RAID-6 的 GF 運算(<a class="xlink" href="P7-T03.html">P7-T03</a>)計算量更大,offload 到 GPU 的價值更高。</p>
+<p><strong>常見誤區:忽略 XOR 的逐 byte 獨立性</strong>——這正是可 GPU 平行的關鍵。有人以為 parity 計算有相依性(要照順序),其實逐 byte 完全獨立,這個認知是你產品 offload 設計的基礎。</p>
+<p>你的「XOR→parity→GPU 平行」主線,核心洞察就在這裡:<strong>parity 的逐 byte 獨立性 = GPU 平行的根本依據</strong>。</p>
+<p>把「逐 byte 獨立 → 每個 byte 一個 thread」這個對應畫出來(這就是 GPU 平行的具體形態):</p>
+<p><pre class="mermaid">flowchart TB
+    DATA_T2["資料區塊 D0, D1, D2(各 len bytes)"]
+    DATA_T2 --> MAP_T2["每個 byte 位置 k 配一個 GPU thread:"]
+    MAP_T2 --> T0["thread 0:P[0] = D0[0] ⊕ D1[0] ⊕ D2[0]"]
+    MAP_T2 --> T1["thread 1:P[1] = D0[1] ⊕ D1[1] ⊕ D2[1]"]
+    MAP_T2 --> TK["thread k:P[k] = D0[k] ⊕ D1[k] ⊕ D2[k]"]
+    MAP_T2 --> TDOT["...(len 個 thread,全部同時)"]
+    NOTE_T2["★ 每個 thread 只碰自己的 byte 位置,互不干擾 ★<br/>→ 無鎖、無同步、無相依 = embarrassingly parallel<br/>→ GPU 一次把整個 parity 算完(P7-T06 寫成 kernel)"]
+    TK --> NOTE_T2
+    style MAP_T2 fill:#e8a33d,color:#10100e
+    style NOTE_T2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h2 id="raid-5-parity">打通關:把 RAID-5 parity 數學收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    XOR3["XOR 三性質(P0-T11):交換律、結合律、★ 自反性 a⊕a=0 ★"]
+    XOR3 --> PARITY4["parity 產生:P = D0 ⊕ D1 ⊕ ... ⊕ D_{n-1}(逐 byte,需等長對齊)"]
+    PARITY4 --> RECOVER2["★ 單碟救援:D_i = 其餘資料 ⊕ P ★<br/>(代數:P 裡的沒失效資料 與 其餘資料 兩兩抵消,只剩 D_i)<br/>→ parity 是『可逆的 XOR』,不是單向校驗碼"]
+    RECOVER2 --> LIMIT["只能容忍一碟:一個 parity = 一個方程式 = 救一個未知<br/>→ 兩碟需 RAID-6 的第二個 parity(P7-T03)"]
+    PARITY4 --> PARALLEL2["★ 逐 byte 獨立 → embarrassingly parallel → GPU 完美 ★<br/>每個 byte 位置互不相依 → 數千 GPU thread 同時算<br/>= 你產品 offload 的核心價值"]
+    style RECOVER2 fill:#e8a33d,color:#10100e
+    style PARALLEL2 fill:#8a9a5b,color:#10100e
+    style LIMIT fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>RAID-5 的 parity 是所有資料的逐 byte XOR（P = D₀⊕D₁⊕…，需等長對齊）；靠 XOR 的自反性（a⊕a=0），任何一碟失效都能用「其餘資料 ⊕ P」還原（parity 是可逆的 XOR，不是單向校驗碼）；但一個 parity 只是一個方程式，只能救一個未知數（一碟），兩碟要 RAID-6 的第二個 parity；而 XOR 逐 byte 獨立、無資料相依，是 embarrassingly parallel——數千 GPU thread 可同時算每個 byte，這正是你產品 parity offload 的核心價值。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為 RAID-5 能容忍兩碟失效。</strong>
+只能一碟(一個 parity = 一個方程式 = 救一個未知數)。兩碟需 RAID-6(<a class="xlink" href="P7-T03.html">P7-T03</a> 的第二個 parity)。</p>
+<p><strong>誤區二:把 parity 當成「校驗碼」而非「可逆的 XOR」。</strong>
+parity 不是單向校驗(只能檢錯),而是可逆的代數運算——能從 parity + 其餘資料反推回失效的資料。</p>
+<p><strong>誤區三:忽略 XOR 的逐 byte 獨立性。</strong>
+這正是可 GPU 平行的關鍵。每個 byte 位置互不相依,可數千 thread 同時算。</p>
+<p><strong>誤區四:位元組對齊/長度不一致導致 XOR 錯位。</strong>
+所有資料區塊必須等長、對齊(<a class="xlink" href="P0-T04.html">P0-T04</a>)。第 k 個 byte 要對到第 k 個 byte。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:一般 Linux/編譯環境(這課是數學 + 使用者態 C,<strong>安全</strong>)。</p>
+<p><strong>任務 A — 計算 XOR parity(驗收點)</strong>
+用 C 對 <strong>N 個等長區塊</strong>(例如 4 個各 4KB 的 buffer,填不同資料)逐 byte XOR,算出 parity 區塊。<strong>驗收:對 N 個等長區塊計算 XOR parity。</strong>(提示:<code>for</code> 每個 byte 位置,XOR 所有區塊的該 byte。)</p>
+<p><strong>任務 B — 單碟救援並驗證(驗收點,核心)</strong>
+接續任務 A:<strong>任意移除一個資料區塊</strong>(假裝它失效),用「其餘 N-1 個區塊 + parity」XOR 還原它,然後<strong>逐 byte 比對</strong>還原的結果和原始區塊是否完全相同。<strong>驗收:任意移除一個區塊後,用其餘 N-1 個 + parity 完整還原該區塊,逐 byte 比對相符。</strong></p>
+<p><strong>任務 C — 說明為何適合 GPU 平行(驗收點)</strong>
+用<strong>一句話</strong>說明:為什麼 XOR parity 適合 GPU 平行化?<strong>驗收:說明(XOR 逐 byte 獨立、無資料相依,是 embarrassingly parallel,可讓數千 GPU thread 同時各算一個 byte)。</strong></p>
+<p><strong>任務 D(連結)— 為何只能一碟、通向 RAID-6</strong>
+寫一兩句話:為什麼 RAID-5 只能容忍一碟失效?這如何引出 RAID-6 需要第二個 parity?(提示:一個 parity = 一個方程式,兩碟 = 兩個未知數;<a class="xlink" href="P7-T03.html">P7-T03</a> 的 Q。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 對 N 個等長區塊計算 XOR parity。
+2. ☐ 任意移除一個區塊後,用其餘 N-1 個 + parity 完整還原該區塊,逐 byte 比對相符。
+3. ☐ 用一句話說明為何 XOR parity 適合 GPU 平行化。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能算 parity 並救援。
+- <strong>80(熟練)</strong>:能解釋 XOR 三性質與單碟救援。
+- <strong>100(精通)</strong>:能論證 XOR 的可平行性如何對應 GPU offload(連結 <a class="xlink" href="P7-T05.html">P7-T05</a>)。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應(產品核心數學)</strong>——RAID-5 parity 就是 XOR;這是你產品 parity offload 的最簡情形,也是理解 RAID-6 的前置。</li>
+<li><strong>這課餵給未來的(XOR→parity→GPU 平行主線)</strong>:<a class="xlink" href="P0-T11.html">P0-T11</a> XOR → 本課 RAID-5 XOR parity + 可平行性 → <a class="xlink" href="P7-T03.html">P7-T03</a> RAID-6 GF parity(更複雜的數學)→ <a class="xlink" href="P7-T04.html">P7-T04</a> lib/raid6 → <a class="xlink" href="P7-T06.html">P7-T06</a> CUDA(把 XOR/GF 寫成 GPU kernel)。逐 byte 獨立性 → GPU offload 的根本依據。</li>
+<li><strong>下一步 → <a class="xlink" href="P7-T03.html">P7-T03</a> RAID-6 parity 數學(GF(2⁸) Reed-Solomon)</strong>:你懂了 RAID-5 的 XOR——但它只能容忍一碟。下一課進入 RAID-6 的<strong>雙 parity(P + Q)</strong>,容忍兩碟失效。P 還是 XOR,但 <strong>Q 需要超越 XOR 的運算</strong>——在 <strong>Galois Field GF(2⁸)</strong> 上做(加法是 XOR、但乘法要模一個原始多項式)。你會學:為何兩碟失效需要有限體運算、GF(2⁸) 的加(XOR)與乘、Linux 採用的<strong>原始多項式 0x11D 與生成元 g={02}</strong>、兩碟失效的還原(解 GF 上的聯立)、以及為何 GF 乘法仍可逐 byte 平行(查表/SIMD,GPU 亦然)。這是你產品 <strong>parity offload 最有價值的部分</strong>(Q 的計算量遠大於 XOR)。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P7-T01.html">← P7-T01 Linux 軟體 RAID(md / dm-raid)與 raid5.c 概覽</a><a class="pn next" href="P7-T03.html">P7-T03 RAID-6 parity 數學(GF(2⁸) Reed-Solomon) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2-T01 · Big-O 與資料結構選型思維</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P2 · kernel 工作所需資料結構</span>
+  <span class="scope-pill base">基礎能力</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p2-t01-big-o">P2-T01 · Big-O 與資料結構選型思維</h1>
+<blockquote>
+<p><strong>一句話</strong>:Big-O 告訴你「當資料量變大,操作會慢多少」。但 kernel 的選型不只看 Big-O——它還看常數因子、cache 行為、最壞情況。理解這套完整的判斷,你才懂為什麼 kernel 在不同子系統用不同的資料結構。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>歡迎來到 Phase 2。前兩個階段你打下了 C 與系統的底子;這個階段的任務是<strong>讓你能讀懂 kernel 原始碼裡那些無所不在的資料結構</strong>——<code>list_head</code>、<code>container_of</code>、紅黑樹、XArray、bitmap。讀完 Phase 2,這些 kernel code 裡反覆出現的東西,對你會「一眼可讀」。</p>
+<p>但在認識具體的資料結構之前,要先建立一個<strong>判斷框架</strong>:怎麼評估一個資料結構的好壞?怎麼決定什麼場景該用什麼?這就是這一課——複雜度分析(Big-O)與選型思維。</p>
+<p>為什麼這個框架重要?因為 kernel <strong>不是隨便挑資料結構的</strong>。它在 I/O 排程器用紅黑樹、在 page cache 用 XArray、在很多地方用侵入式鏈結串列——每個選擇背後都有理由。理解這些理由,需要你會問:這個操作多快?資料量大時會怎樣?最壞情況如何?有沒有隱藏成本?</p>
+<p>不過有個關鍵警告貫穿這一課:<strong>Big-O 不是全部</strong>。新手常犯的錯是「只看漸進複雜度,選了理論上最快的,結果實際更慢」——因為忽略了常數因子和 cache 行為(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a>)。kernel 工程師對這點極度敏感。這一課會教你完整的判斷,不只是背複雜度表。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T07.html">P1-T07</a>(你已具備基本的演算法思維,手算過排程)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P0-T03.html">P0-T03</a> 陣列是連續記憶體、<a class="xlink" href="P0-T12.html">P0-T12</a> 你手刻過動態陣列和鏈結串列嗎?這課要分析它們的複雜度。
+  2. 你還記得 <a class="xlink" href="P1-T02.html">P1-T02</a> 的 cache、cache line、為何資料佈局影響效能嗎?這課會告訴你「為什麼 Big-O 不是全部」。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) Big-O 的直覺 → (2) Big-O / Ω / Θ → (3) 常見結構的操作複雜度 → (4) 攤銷分析:動態陣列擴容 → (5) Big-O 的陷阱一:常數因子與 cache → (6) 陷阱二:平均 vs 最壞 → (7) 據情境選型</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-big-o">1. Big-O 的直覺:資料量變大時,會慢多少?</h3>
+<p>Big-O 回答一個問題:<strong>當輸入資料量 n 變大,這個操作要做的工作量,以什麼速度增長?</strong> 它不關心精確的時間(那會因機器而異),只關心「增長的趨勢」。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph growth["常見的增長趨勢(n 變大時)"]
+        O1["O(1) 常數<br/>不管 n 多大,工作量固定<br/>(像:查陣列第 5 個元素)"]
+        OLOGN["O(log n) 對數<br/>n 翻倍,工作只多一點<br/>(像:平衡樹查找)"]
+        ON["O(n) 線性<br/>n 翻倍,工作翻倍<br/>(像:走訪整個串列找東西)"]
+        ONLOGN["O(n log n)<br/>(像:好的排序演算法)"]
+        ON2["O(n²) 平方<br/>n 翻倍,工作變四倍<br/>(像:雙層迴圈兩兩比較)"]
+    end
+    style O1 fill:#8a9a5b,color:#10100e
+    style OLOGN fill:#6fa8b8,color:#10100e
+    style ON fill:#e8a33d,color:#10100e
+    style ON2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>直覺感受差異:假設 n = 100 萬。
+- <strong>O(1)</strong>:不管多大,1 個動作。
+- <strong>O(log n)</strong>:約 20 個動作(log₂ 一百萬 ≈ 20)。
+- <strong>O(n)</strong>:一百萬個動作。
+- <strong>O(n²)</strong>:一兆個動作(慢到不可行)。</p>
+<p><strong>重點:Big-O 是「趨勢」</strong>,它丟掉常數和低階項——<code>O(2n + 100)</code> 簡化成 <code>O(n)</code>,因為 n 夠大時,那個 2 和 100 相對不重要。這個簡化很有用(讓你看清增長趨勢),但也藏著陷阱(第 5 節:那個被丟掉的常數,在小 n 時其實很重要)。</p>
+<hr />
+<h3 id="2-big-o">2. Big-O、Ω、Θ:上界、下界、緊界</h3>
+<p>嚴格一點,有三個符號,描述不同的「界」:</p>
+<p><pre class="mermaid">flowchart TB
+    BIGO["O(f(n)) 上界<br/>『最多這麼慢』<br/>(成長不超過 f(n) 的速度)"]
+    OMEGA["Ω(f(n)) 下界<br/>『至少這麼慢』<br/>(成長不低於 f(n) 的速度)"]
+    THETA["Θ(f(n)) 緊界<br/>『就是這麼快慢』<br/>(上下界都是 f(n),增長率確定)"]
+    BIGO -.“最常用,因為我們最關心『最壞會多慢』”.-> THETA
+    style BIGO fill:#e8a33d,color:#10100e
+    style OMEGA fill:#6fa8b8,color:#10100e
+    style THETA fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>實務上<strong>最常用 Big-O</strong>,因為我們通常最關心「最壞情況會多慢」(上界)。<code>Ω</code> 講下界(最好情況也至少這麼慢),<code>Θ</code> 講「上下界一致,增長率確定」。你日常溝通說「這是 O(n) 的」,通常意思就是「它線性增長」。<strong>你不需要糾結這三者的數學細節,記住 Big-O = 上界 = 最關心的「最壞多慢」就夠了。</strong></p>
+<hr />
+<h3 id="3">3. 常見結構的操作複雜度</h3>
+<p>這是 Phase 2 的「地圖」——你即將深入學的每個結構,在這裡先看它們的複雜度全貌。針對「查找、插入、刪除」三種操作:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph table["四種結構 × 三種操作(平均情況)"]
+        ARR["陣列(連續記憶體,P0-T03)<br/>查找(按索引):O(1)<br/>查找(按值):O(n)<br/>中間插入/刪除:O(n)(要移動後面所有元素)"]
+        LL["鏈結串列(P0-T12)<br/>查找:O(n)(要一個個走)<br/>已知位置的插入/刪除:O(1)(改指標即可)"]
+        HASH["雜湊表(P2-T04)<br/>查找/插入/刪除:平均 O(1)<br/>★ 最壞 O(n)(碰撞嚴重時)★"]
+        TREE["平衡樹(紅黑樹,P2-T05)<br/>查找/插入/刪除:O(log n)<br/>(且保證,即使最壞)+ 能有序走訪"]
+    end
+    style ARR fill:#8a9a5b,color:#10100e
+    style LL fill:#6fa8b8,color:#10100e
+    style HASH fill:#e8a33d,color:#10100e
+    style TREE fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>幾個關鍵對比,先記在心裡(後面各課會深入):
+- <strong>陣列</strong>:按索引查找超快(O(1)),但中間插入/刪除慢(O(n),要搬移)。
+- <strong>鏈結串列</strong>:查找慢(O(n)),但「已知位置」的插入/刪除快(O(1),只改指標)——這正是 <a class="xlink" href="P2-T02.html">P2-T02</a> kernel <code>list_head</code> 的賣點。
+- <strong>雜湊表</strong>:平均超快(O(1)),但最壞會退化(O(n))——這個「平均 vs 最壞」的差異是第 6 節的重點。
+- <strong>平衡樹</strong>:都是 O(log n),不快不慢但<strong>穩定有保證</strong>,且能<strong>有序走訪</strong>——這是 kernel 在需要排序的場景(I/O 排程器)選它的原因。</p>
+<hr />
+<h3 id="4-o1">4. 攤銷分析:動態陣列擴容為什麼「平均」是 O(1)</h3>
+<p>這是一個重要又微妙的概念,而且你已經實作過它(<a class="xlink" href="P0-T12.html">P0-T12</a> 的動態陣列)。問題:動態陣列 push 一個元素,複雜度是多少?</p>
+<p><pre class="mermaid">flowchart TB
+    Q["動態陣列 push 一個元素:複雜度?"]
+    Q --> CASE1["大多數時候:還有空間<br/>→ 直接放,O(1)"]
+    Q --> CASE2["偶爾:滿了要擴容<br/>→ 配置兩倍空間 + 複製全部舊元素<br/>→ 這一次是 O(n)!"]
+    CASE1 --> AMORT
+    CASE2 --> AMORT["攤銷分析:把『偶爾的昂貴』<br/>平攤到『大量的便宜』上"]
+    style CASE2 fill:#c2603a,color:#f4ecd8
+    style AMORT fill:#e8a33d,color:#10100e
+</pre></p>
+<p>單次 push <strong>最壞</strong>是 O(n)(剛好遇到擴容,要複製全部)。但這很罕見——只在容量翻倍的那一刻發生。<strong>攤銷分析(amortized analysis)</strong> 問的是:「連續做 n 次 push,總成本除以 n,平均每次多少?」</p>
+<p><pre class="mermaid">flowchart LR
+    A["push n 個元素<br/>用『翻倍擴容』策略"]
+    B["擴容只發生在<br/>容量 = 1,2,4,8,...,n 時<br/>(約 log n 次)"]
+    C["所有擴容的複製成本總和<br/>= 1+2+4+...+n ≈ 2n<br/>(等比級數,總和約是最後一項的兩倍)"]
+    D["總成本 ≈ n 次放入 + 2n 次複製 = 3n<br/>÷ n = 平均每次 O(1)"]
+    A --> B --> C --> D
+    style C fill:#6fa8b8,color:#10100e
+    style D fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>結論:動態陣列 push 的「攤銷複雜度」是 O(1)</strong>,即使單次最壞是 O(n)。關鍵數學在第三步:翻倍擴容讓所有複製的總成本是等比級數(1+2+4+...+n ≈ 2n),平攤到 n 次 push 上就是常數。<strong>這就是為什麼翻倍擴容是好策略</strong>(回顧 <a class="xlink" href="P0-T12.html">P0-T12</a> 當時就提過這點)——它讓昂貴的擴容夠罕見,平攤後便宜。</p>
+<p><strong>忽略攤銷是常見誤區</strong>:只看「單次最壞 O(n)」會以為動態陣列很慢,其實它平攤後跟「直接放」一樣快。</p>
+<hr />
+<h3 id="5-big-o-cache">5. 陷阱一:Big-O 不是全部——常數因子與 cache</h3>
+<p>這是 kernel 選型最重要、也最反新手直覺的一點,呼應 <a class="xlink" href="P1-T02.html">P1-T02</a> 的 cache 知識。</p>
+<p>Big-O 丟掉了常數因子。但<strong>在實際機器上,常數因子和 cache 行為常常主宰小到中等資料量的效能</strong>。一個經典例子:</p>
+<p><pre class="mermaid">flowchart TB
+    SCENARIO["小 N 時:O(n) 陣列 vs O(log n) 平衡樹,誰快?"]
+    SCENARIO --> ARR["陣列(O(n) 查找):<br/>連續記憶體,完美契合 cache line(P1-T02)<br/>走訪時 cache 命中率高,常數因子極小"]
+    SCENARIO --> TREE["平衡樹(O(log n) 查找):<br/>節點散落各處(各自 malloc),<br/>每跳一個節點可能 cache miss<br/>常數因子大"]
+    ARR --> RESULT["小 N 時,陣列的『O(n) 但 cache 友善』<br/>常常勝過樹的『O(log n) 但 cache 不友善』<br/>→ 漸進複雜度輸,實際更快"]
+    TREE --> RESULT
+    style ARR fill:#8a9a5b,color:#10100e
+    style TREE fill:#c2603a,color:#f4ecd8
+    style RESULT fill:#e8a33d,color:#10100e
+</pre></p>
+<p>為什麼?<strong>陣列是連續記憶體</strong>,走訪它時,cache line 一次載入多個元素(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a>),命中率高,實際很快。<strong>樹的節點各自配置、散落各處</strong>,每跳一個節點可能就是一次 cache miss(慢數十倍)。所以對小 n,「O(n) 但 cache 友善的陣列」常常贏過「O(log n) 但 cache 不友善的樹」——漸進複雜度說樹快,但實際陣列快。</p>
+<p><strong>這就是為什麼 kernel 工程師選型不只看 Big-O</strong>。他們會問:資料量通常多大?在不在 cache?常數因子如何?有時為了 cache 友善,寧可用漸進複雜度「較差」的結構。<strong>「只看 Big-O 就選理論最快的」是新手最常見的選型錯誤。</strong></p>
+<hr />
+<h3 id="6-vs">6. 陷阱二:平均 vs 最壞——別把「平均」當「保證」</h3>
+<p>另一個關鍵區分:很多結構的「平均」和「最壞」複雜度差很多,選型時要看你的場景在意哪個。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph hash["雜湊表(P2-T04)"]
+        AVG["平均:O(1)<br/>(雜湊均勻分布時)"]
+        WORST["最壞:O(n)<br/>(所有 key 都碰撞到同一桶,<br/>退化成一條鏈結串列)"]
+    end
+    NOTE["對『一般情況』雜湊表超快;<br/>但對『不能容忍偶爾很慢』的場景<br/>(如即時系統、對抗惡意輸入),<br/>O(n) 的最壞可能不可接受<br/>→ 這時平衡樹的『保證 O(log n)』更安全"]
+    hash --> NOTE
+    style AVG fill:#8a9a5b,color:#10100e
+    style WORST fill:#c2603a,color:#f4ecd8
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>雜湊表平均 O(1),但<strong>最壞 O(n)</strong>(碰撞嚴重時,退化成一條鏈)。對大多數情況,平均 O(1) 很棒;但若你的場景<strong>不能容忍偶爾的 O(n)</strong>(例如延遲敏感、或可能面對惡意構造的輸入),那雜湊表的最壞情況可能是問題,此時「保證 O(log n)」的平衡樹反而更可靠。</p>
+<p><strong>這就是為什麼 kernel 有些地方用紅黑樹而非雜湊表</strong>——它要的是「保證的最壞情況」,不是「通常很快但偶爾很慢」。<strong>把「平均」當「最壞」是常見誤區</strong>:選型時要清楚你的場景能不能承受最壞情況。</p>
+<hr />
+<h3 id="7">7. 據情境選型:兩個練習</h3>
+<p>把前面所有判斷綜合起來,看兩個具體情境怎麼選(這也是驗收點):</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph s1["情境A:頻繁在『中間』插入/刪除"]
+        A_TRY["陣列?中間插入要搬移後面全部 → O(n),不好"]
+        A_PICK["✓ 鏈結串列:已知位置插入/刪除 O(1)(改指標)<br/>(= kernel list_head 的場景)"]
+    end
+    subgraph s2["情境B:頻繁『隨機查找』"]
+        B_TRY["鏈結串列?查找要一個個走 → O(n),不好"]
+        B_PICK["✓ 雜湊表(平均 O(1))<br/>或平衡樹(保證 O(log n)、可有序走訪)<br/>看是否需要『有序』與『最壞保證』"]
+    end
+    style A_PICK fill:#8a9a5b,color:#10100e
+    style B_PICK fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>選型的思考流程:
+- <strong>情境 A(頻繁中間插入/刪除)</strong>:陣列要搬移(O(n)),所以選<strong>鏈結串列</strong>(已知位置 O(1))。這正是 kernel 為何到處用 <code>list_head</code>(<a class="xlink" href="P2-T02.html">P2-T02</a>)。
+- <strong>情境 B(頻繁隨機查找)</strong>:鏈結串列要逐一走(O(n)),所以選<strong>雜湊表</strong>(平均 O(1))或<strong>平衡樹</strong>(O(log n) 但有保證、可排序)。選哪個,取決於你是否需要「有序」和「最壞保證」。</p>
+<p><strong>選型沒有單一答案,要綜合:操作模式(查找多還是插入多?)、資料量(小 n 看常數因子)、是否需要有序、能否容忍最壞情況、cache 友善度。</strong> 這就是 kernel 在不同子系統用不同結構的原因——它針對每個場景的特性做了權衡。</p>
+<hr />
+<h2 id="_4">打通關:把選型思維收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    BIGO["Big-O:資料量大時的增長趨勢(丟掉常數)"]
+    BIGO --> MAP["各結構的操作複雜度地圖<br/>(陣列/串列/雜湊/樹 × 查找/插入/刪除)"]
+    MAP --> AMORT["攤銷:偶爾昂貴平攤到大量便宜<br/>(動態陣列 push 攤銷 O(1))"]
+    BIGO --> TRAP["★ 但 Big-O 不是全部 ★"]
+    TRAP --> T1["常數因子 + cache(P1-T02):<br/>小 N 時 cache 友善的陣列常勝樹"]
+    TRAP --> T2["平均 vs 最壞:<br/>雜湊平均 O(1) 但最壞 O(n)<br/>→ 要保證就用樹"]
+    MAP --> SELECT["選型 = 綜合判斷:<br/>操作模式 + 資料量 + 有序需求<br/>+ 最壞容忍度 + cache"]
+    T1 --> SELECT
+    T2 --> SELECT
+    SELECT --> KERNEL["→ 解釋 kernel 為何各子系統用不同結構<br/>(I/O 排程紅黑樹、page cache XArray...)"]
+    style TRAP fill:#c2603a,color:#f4ecd8
+    style SELECT fill:#e8a33d,color:#10100e
+    style KERNEL fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>Big-O 描述資料量變大時的增長趨勢,是選型的起點;但真正的選型還要看攤銷、常數因子與 cache 行為(小 N 時陣列常勝樹)、以及平均與最壞的差別——kernel 正是綜合這些,才在不同子系統選了不同的資料結構。學會這套完整判斷,你就能理解 Phase 2 接下來每個結構『為什麼在那裡』。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一(最重要):只看漸進複雜度,忽略常數因子與 cache。</strong>
+小到中等 n 時,cache 友善的陣列(O(n))常勝過 cache 不友善的樹(O(log n))。kernel 選型對此極敏感。別「只看 Big-O 選理論最快的」。</p>
+<p><strong>誤區二:把「平均」當「最壞」。</strong>
+雜湊表平均 O(1) 但最壞 O(n)。對不能容忍偶爾很慢的場景,要看最壞情況,可能該選有保證的平衡樹。</p>
+<p><strong>誤區三:忽略攤銷。</strong>
+動態陣列單次 push 最壞 O(n),但攤銷 O(1)。只看單次最壞會誤判它很慢。</p>
+<p><strong>誤區四:以為「複雜度低 = 一定快」。</strong>
+複雜度是趨勢,不是絕對時間。實際快慢還受常數、cache、資料量、硬體影響。複雜度是重要參考,不是唯一標準。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:紙筆 + 任何程式語言,<strong>安全,無系統風險</strong>。</p>
+<p><strong>任務 A — 製作複雜度對照表(驗收點)</strong>
+做一張表,列出<strong>陣列、鏈結串列、雜湊表、平衡樹</strong>在「查找、插入、刪除」的<strong>平均</strong>與<strong>最壞</strong>複雜度。(提示:陣列查找分「按索引」O(1) 和「按值」O(n);雜湊表平均 O(1) / 最壞 O(n);鏈結串列的插入刪除要分「已知位置」與「需先查找」。)這張表是你 Phase 2 後續的參考地圖。</p>
+<p><strong>任務 B — 兩個情境的選型(驗收點)</strong>
+針對兩個情境,各選一個合適的結構並<strong>寫出理由</strong>:
+1. 「頻繁在資料中間插入和刪除」——選什麼?為什麼?
+2. 「頻繁做隨機查找(給 key 找 value)」——選什麼?為什麼?(並說明:如果還需要『按順序走訪』,會偏好哪個?)</p>
+<p><strong>任務 C — 實測「Big-O 不是全部」(選做但強烈建議)</strong>
+寫一個小實驗:對 n 個整數,分別用「在排序陣列裡線性查找」和「真的去查一棵樹/或用二分搜尋」,在<strong>小 n(如 100)</strong>和<strong>大 n(如 100 萬)</strong>下計時。觀察:小 n 時,簡單的線性陣列掃描可能因 cache 友善而不輸甚至更快。寫一句話連結到 <a class="xlink" href="P1-T02.html">P1-T02</a> 的 cache。</p>
+<p><strong>任務 D — 解釋攤銷</strong>
+用你自己的話(可配一個小算式)解釋:為什麼動態陣列用「翻倍擴容」時,push 的攤銷複雜度是 O(1),即使單次最壞是 O(n)?(提示:等比級數 1+2+4+...+n ≈ 2n。)</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 完成對照表:陣列/鏈結串列/雜湊表/平衡樹在「查找/插入/刪除」的平均與最壞複雜度。
+2. ☐ 給定「頻繁中間插入」與「頻繁隨機查找」兩情境,各選出合適結構並說明理由。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能背出常見結構的複雜度。
+- <strong>80(熟練)</strong>:能據情境選型(說出為什麼)。
+- <strong>100(精通)</strong>:能用攤銷觀念解釋動態陣列擴容成本,並能說明「為何 Big-O 不是選型的全部」(常數/cache/最壞)。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:基礎能力——理解 kernel 為何在不同子系統用不同結構(I/O 排程用紅黑樹、page cache 用 XArray、in-flight request 用 bitmap)。這套判斷是讀懂後續所有 kernel 資料結構選擇的鑰匙。</li>
+<li><strong>這課餵給未來的</strong>:複雜度判斷 → Phase 2 每一課(評估各結構);攤銷 → 理解 kernel 動態結構;「Big-O 不是全部」→ 理解 kernel 為 cache 友善做的設計(回收 <a class="xlink" href="P1-T02.html">P1-T02</a>/<a class="xlink" href="P1-T03.html">P1-T03</a>)。</li>
+<li><strong>下一步 → <a class="xlink" href="P2-T02.html">P2-T02</a> kernel 侵入式鏈結串列 <code>list_head</code></strong>:你已經知道「鏈結串列適合頻繁的已知位置插入/刪除(O(1))」。下一課就深入 kernel <strong>最常見</strong>的資料結構——<code>struct list_head</code>。但它跟你 <a class="xlink" href="P0-T12.html">P0-T12</a> 手刻的傳統串列不一樣:它是「<strong>侵入式</strong>」的(節點內嵌在資料 struct 裡),這個設計讓 kernel 省去額外配置、達成 O(1) 刪除。bio、request、各種裝置清單都用它——讀你產品和 block layer 程式碼必備。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T11.html">← P1-T11 【環境里程碑】建置 QEMU/KVM kernel 開發環境</a><a class="pn next" href="P2-T02.html">P2-T02 kernel 侵入式鏈結串列 list_head →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

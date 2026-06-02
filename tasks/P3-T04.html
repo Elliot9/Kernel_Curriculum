@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T04 · module 進階(EXPORT_SYMBOL、模組參數、模組堆疊、簽章)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p3-t04-module-export_symbol">P3-T04 · module 進階(EXPORT_SYMBOL、模組參數、模組堆疊、簽章)</h1>
+<blockquote>
+<p><strong>一句話</strong>:真實的產品很少是單一 module——它們互相呼叫對方的函式(用 <code>EXPORT_SYMBOL_GPL</code> 匯出)、接收載入時的參數(用 <code>module_param</code> 調行為)、有載入順序的相依。這一課讓你的 module 從「孤立的 hello-world」變成「能協作、可配置的真實元件」。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P3-T03.html">P3-T03</a> 你寫了第一個孤立的 module。但真實世界——包括你的產品——的 module 不是孤立的:</p>
+<ul>
+<li><strong>多個 module 協作</strong>:你的產品可能由幾個 module 組成,一個提供共用功能、其他呼叫它。這需要 module <strong>匯出符號</strong>(把自己的函式公開給別的 module 用)。</li>
+<li><strong>可配置</strong>:你常需要在載入 module 時調整它的行為(例如設定佇列深度、debug 等級)。這用<strong>模組參數</strong>——<code>insmod mod.ko queue_depth=64</code> 這樣傳值。</li>
+<li><strong>有相依</strong>:如果 module B 用了 module A 的函式,那 A 必須先載入。這是<strong>模組相依</strong>,kernel 用 <code>depmod</code>/<code>modprobe</code> 管理。</li>
+</ul>
+<p>為什麼這對你是 <code>scope: direct</code>?因為<strong>產品常由多個協作 module 組成</strong>(例如核心邏輯 + 各種策略模組),而<strong>模組參數是調整產品行為的常見手段</strong>(運維時不重編就能調佇列深度、開關 debug)。理解符號匯出與相依,你才能設計多 module 的產品架構;理解模組參數,你才能讓產品可配置。</p>
+<p>這一課也會碰到<strong>模組簽章</strong>——現代 kernel 可要求 module 有有效簽章才能載入(安全機制),這跟你產品的部署環境有關。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P3-T03.html">P3-T03</a>(你會寫、編、載入單一 module)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P3-T03.html">P3-T03</a> 的 <code>MODULE_LICENSE("GPL")</code> 和「GPL-only 符號」嗎?這課的 <code>EXPORT_SYMBOL_GPL</code> 就是製造 GPL-only 符號的那一端。
+  2. 你還記得 <a class="xlink" href="P3-T02.html">P3-T02</a> 的 <code>depmod</code>、<code>/lib/modules</code>、<code>Module.symvers</code> 嗎?這課深入模組相依。</li>
+<li>環境:<strong>QEMU 虛擬機。所有載入只在 VM 裡。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) EXPORT_SYMBOL:把函式公開給別的 module → (2) GPL vs 非 GPL 匯出 → (3) 模組參數 module_param → (4) 模組相依與載入順序 → (5) Module.symvers 與符號版本 → (6) 模組簽章</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-export_symbol-module">1. <code>EXPORT_SYMBOL</code>:把函式公開給別的 module 用</h3>
+<p>預設情況下,一個 module 裡的函式<strong>只有它自己看得到</strong>——別的 module 不能呼叫。要讓 module A 的函式能被 module B 呼叫,A 必須用 <strong><code>EXPORT_SYMBOL</code></strong>(或 <code>EXPORT_SYMBOL_GPL</code>)把那個函式「匯出」到核心的符號表。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph modA["module A(提供者)"]
+        FUNC["int do_work(int x) { ... }<br/>EXPORT_SYMBOL_GPL(do_work);<br/>← 把 do_work 公開到核心符號表"]
+    end
+    SYMTABLE["核心符號表<br/>(記錄哪些符號可被其他 module 使用)"]
+    subgraph modB["module B(使用者)"]
+        CALL["extern int do_work(int);<br/>... do_work(42); ...<br/>← 呼叫 A 匯出的函式"]
+    end
+    FUNC -->|"匯出到"| SYMTABLE
+    SYMTABLE -->|"B 載入時,核心解析這個符號"| CALL
+    style FUNC fill:#8a9a5b,color:#10100e
+    style SYMTABLE fill:#e8a33d,color:#10100e
+    style CALL fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>運作:
+- module A 用 <code>EXPORT_SYMBOL_GPL(do_work)</code> 把 <code>do_work</code> 公開到核心符號表。
+- module B 宣告 <code>extern</code> 後直接呼叫 <code>do_work</code>。
+- B 載入時,核心<strong>解析這個符號</strong>——在符號表裡找到 A 匯出的 <code>do_work</code>,把 B 的呼叫連到 A 的實作。</p>
+<p><strong>關鍵:這要求 A 先載入</strong>(否則 B 載入時找不到 <code>do_work</code> 符號,載入失敗)。這就是下面要講的「模組相依與載入順序」。</p>
+<blockquote>
+<p><strong>連到你的產品</strong>:這正是「多 module 協作」的機制。你可以把產品的共用功能放在一個 module 裡匯出,其他策略/驅動 module 呼叫它——模組化、可分別更新。</p>
+</blockquote>
+<p>把「多 module 堆疊」的樣子畫出來——你產品可能就是這種分層結構:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph stack["模組堆疊(module stacking)"]
+        TOP2["策略/驅動 module B、C(上層)<br/>呼叫 A 匯出的符號"]
+        CORE2["核心共用 module A(下層)<br/>EXPORT_SYMBOL_GPL 匯出共用函式"]
+        TOP2 --> CORE2
+    end
+    LOAD["載入順序:必須先 A 後 B/C<br/>(B/C 相依於 A 的符號;modprobe 自動依 depmod 排序)"]
+    stack --> LOAD
+    style CORE2 fill:#8a9a5b,color:#10100e
+    style TOP2 fill:#6fa8b8,color:#10100e
+    style LOAD fill:#e8a33d,color:#10100e
+</pre></p>
+<hr />
+<h3 id="2-export_symbol-vs-export_symbol_gpl">2. <code>EXPORT_SYMBOL</code> vs <code>EXPORT_SYMBOL_GPL</code>:授權的關卡</h3>
+<p>匯出符號有兩個版本,差別在<strong>誰能使用這個符號</strong>——這直接連到 <a class="xlink" href="P3-T03.html">P3-T03</a> 的 <code>MODULE_LICENSE</code>:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph versions["兩種匯出"]
+        PLAIN["EXPORT_SYMBOL(foo)<br/>→ 任何 module 都能用 foo<br/>(不論授權)"]
+        GPL["EXPORT_SYMBOL_GPL(foo)<br/>→ ★ 只有宣告 GPL 授權的 module 能用 ★<br/>(MODULE_LICENSE(&quot;GPL&quot;))"]
+    end
+    NOTE["很多核心核心功能用 EXPORT_SYMBOL_GPL 匯出<br/>→ 非 GPL module 不能用它們<br/>(這是 P3-T03 說『非 GPL 無法用 GPL-only 符號』的另一端)"]
+    GPL --> NOTE
+    style PLAIN fill:#6fa8b8,color:#10100e
+    style GPL fill:#e8a33d,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<ul>
+<li><strong><code>EXPORT_SYMBOL</code></strong>:任何 module 都能用這個符號。</li>
+<li><strong><code>EXPORT_SYMBOL_GPL</code></strong>:<strong>只有宣告 GPL 授權的 module</strong>(<code>MODULE_LICENSE("GPL")</code>)能用。這是核心對「使用某些深層功能」設的授權關卡——很多核心核心 API 都是 GPL-only 匯出的。</li>
+</ul>
+<p><strong>常見誤區:<code>EXPORT_SYMBOL</code> 與 <code>EXPORT_SYMBOL_GPL</code> 混用導致符號無法使用</strong>——如果 A 用 <code>EXPORT_SYMBOL_GPL</code> 匯出,而 B 不是 GPL module,B 就用不了(載入時符號解析失敗)。設計多 module 產品時,要想清楚授權與匯出方式的搭配。一般在 GPL 專案內部,用 <code>EXPORT_SYMBOL_GPL</code> 是常見選擇。</p>
+<hr />
+<h3 id="3">3. 模組參數:載入時調行為</h3>
+<p><strong>模組參數</strong>讓你在載入 module 時傳入值,調整它的行為,<strong>不必重新編譯</strong>。用 <code>module_param</code> 宣告:</p>
+<pre><code class="language-c">static int queue_depth = 32;            // 預設值
+module_param(queue_depth, int, 0644);   // 宣告為參數(型別 int,sysfs 權限 0644)
+MODULE_PARM_DESC(queue_depth, &quot;I/O 佇列深度&quot;);   // 說明
+
+static int __init my_init(void) {
+    pr_info(&quot;queue_depth = %d\n&quot;, queue_depth);   // 用參數
+    return 0;
+}
+</code></pre>
+<p>載入時傳值:<code>insmod mymod.ko queue_depth=64</code></p>
+<p><pre class="mermaid">flowchart LR
+    DECLARE["module_param(queue_depth, int, 0644)<br/>+ 預設值 32"]
+    INSMOD["insmod mymod.ko queue_depth=64<br/>(載入時傳入)"]
+    READ["module 內 queue_depth == 64<br/>(若不傳則用預設 32)"]
+    DECLARE --> INSMOD --> READ
+    SYSFS["0644 = 也出現在 /sys/module/mymod/parameters/<br/>(可在執行時讀,部分可寫)"]
+    READ --> SYSFS
+    style INSMOD fill:#e8a33d,color:#10100e
+    style READ fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>要點:
+- <strong><code>module_param(名稱, 型別, 權限)</code></strong>:宣告一個參數。型別可以是 <code>int</code>、<code>charp</code>(字串)等;還有 <code>module_param_array</code> 給陣列。
+- <strong><code>MODULE_PARM_DESC</code></strong>:給參數寫說明(<code>modinfo</code> 看得到)。
+- 載入時 <code>insmod mod.ko 參數名=值</code> 傳入;不傳則用程式裡的預設值。
+- 那個權限(<code>0644</code>)讓參數出現在 <code>/sys/module/&lt;模組&gt;/parameters/</code>,可在執行時查看(部分可寫)。</p>
+<p><strong>常見誤區:用了 <code>MODULE_PARM</code>(LDD3 書裡的舊寫法,已淘汰)</strong>——要用 <code>module_param</code>。(這呼應 spec 提醒:LDD3 是經典但 API 釘在舊版,概念對、但具體 API 要對照新版。)</p>
+<p><strong>連到你的產品</strong>:佇列深度、debug 等級、各種策略開關——這些都適合做成模組參數,讓運維能不重編就調整產品行為。</p>
+<hr />
+<h3 id="4">4. 模組相依與載入順序</h3>
+<p>第 1 節提到:若 B 用 A 的符號,A 必須先載入。這就是<strong>模組相依</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    DEPEND["module B 用了 module A 匯出的符號<br/>→ B 相依於 A"]
+    DEPEND --> WRONG["✗ 先 insmod B:<br/>核心找不到 A 的符號 → 載入失敗<br/>(unknown symbol)"]
+    DEPEND --> RIGHT["✓ 先 insmod A,再 insmod B:<br/>B 載入時 A 的符號已在符號表 → 成功"]
+    MODPROBE["modprobe B:<br/>自動讀相依資訊,先載 A 再載 B<br/>(比手動 insmod 聰明)"]
+    RIGHT --> MODPROBE
+    style WRONG fill:#c2603a,color:#f4ecd8
+    style RIGHT fill:#8a9a5b,color:#10100e
+    style MODPROBE fill:#e8a33d,color:#10100e
+</pre></p>
+<p>兩種載入方式的差別:
+- <strong><code>insmod</code></strong>:直接載入指定的 <code>.ko</code>,<strong>不處理相依</strong>。所以你得自己按正確順序(先 A 後 B),否則先載 B 會失敗(找不到符號)。
+- <strong><code>modprobe</code></strong>:<strong>自動處理相依</strong>——它讀 <code>depmod</code> 算出的相依資訊(回顧 <a class="xlink" href="P3-T02.html">P3-T02</a>),先載入被依賴的 module(A)再載入 B。</p>
+<p><code>depmod</code> 在 <code>make modules_install</code> 時跑(<a class="xlink" href="P3-T02.html">P3-T02</a>),它掃描所有模組的符號,算出「誰依賴誰」,記錄下來。<code>modprobe</code> 靠這個資訊自動排序載入。</p>
+<p><strong>常見誤區:載入順序錯誤(被依賴者要先載)</strong>——用 <code>insmod</code> 時要注意順序,或乾脆用 <code>modprobe</code> 讓它自動處理。<strong>模組堆疊(module stacking)</strong> 就是這種「一層疊一層」的相依結構(例如你的策略 module 疊在核心 module 上)。</p>
+<hr />
+<h3 id="5-modulesymvers">5. <code>Module.symvers</code> 與符號版本</h3>
+<p>一個你會遇到的相依細節:<strong>符號版本</strong>。kernel 為了確保「module 用的符號,跟它編譯時的 kernel 版本相符」,給每個匯出符號算一個版本碼,記在 <strong><code>Module.symvers</code></strong> 裡。</p>
+<p><pre class="mermaid">flowchart TB
+    SYMVERS["Module.symvers:<br/>記錄每個匯出符號的『版本碼』<br/>(反映符號的介面簽名)"]
+    SYMVERS --> CHECK["載入 module 時,核心檢查:<br/>module 期望的符號版本<br/>== 核心提供的符號版本?"]
+    CHECK --> OK["相符 → 載入"]
+    CHECK --> FAIL["不符 → ★ disagrees about version of symbol ★<br/>拒絕載入<br/>(module 是給別的 kernel 編的)"]
+    style SYMVERS fill:#6fa8b8,color:#10100e
+    style FAIL fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>用意:防止你把「給 kernel 版本 X 編的 module」載入到「kernel 版本 Y」——如果符號的介面變了(參數、型別不同),硬載會崩潰。符號版本碼讓核心在載入時就擋下不相容的 module。</p>
+<p><strong>常見誤區:<code>Module.symvers</code> 不一致導致符號版本不符</strong>(<code>disagrees about version of symbol</code>)——通常發生在「module 跟正在跑的 kernel 不是一起編的」。解法:用對應的 kernel 標頭/build 環境重編你的 module。(這也呼應 <a class="xlink" href="P1-T11.html">P1-T11</a>/<a class="xlink" href="P3-T02.html">P3-T02</a>:module 要跟它要載入的 kernel 用同一套 build 環境編。)</p>
+<hr />
+<h3 id="6-kernel">6. 模組簽章:現代 kernel 的安全關卡</h3>
+<p>最後一個主題:<strong>模組簽章(module signing)</strong>。現代 kernel 可設定 <code>CONFIG_MODULE_SIG</code>,要求 module 帶有<strong>有效的數位簽章</strong>才能載入——這是防止載入未授權/被竄改 module 的安全機制。</p>
+<p><pre class="mermaid">flowchart TB
+    SIGN["CONFIG_MODULE_SIG(模組簽章機制)"]
+    SIGN --> HOW["module 用一把私鑰簽章,<br/>核心用對應的公鑰驗證"]
+    HOW --> ENFORCE{"CONFIG_MODULE_SIG_FORCE?"}
+    ENFORCE -->|"開啟(強制)"| FORCE["未簽章/簽章無效的 module<br/>★ 拒絕載入 ★"]
+    ENFORCE -->|"未強制"| WARN["未簽章 module 仍可載入,<br/>但會 taint 核心(回顧 P3-T03)"]
+    style SIGN fill:#6fa8b8,color:#10100e
+    style FORCE fill:#c2603a,color:#f4ecd8
+    style WARN fill:#e8a33d,color:#10100e
+</pre></p>
+<p>運作:
+- module 用一把<strong>私鑰簽章</strong>,核心用對應的<strong>公鑰驗證</strong>。
+- 若 <strong><code>CONFIG_MODULE_SIG_FORCE</code></strong> 開啟(強制),未簽章或簽章無效的 module <strong>拒絕載入</strong>。
+- 若未強制,未簽章 module 仍可載入,但會 <strong>taint</strong> 核心(回顧 <a class="xlink" href="P3-T03.html">P3-T03</a> 的 taint)。</p>
+<p><strong>連到你的產品</strong>:如果你產品要部署到「啟用了強制模組簽章」的環境(例如某些 secure boot 系統),你的 module 就必須正確簽章。開發時在 QEMU 裡通常不強制,但理解這個機制,你才能應對部署環境的要求。</p>
+<hr />
+<h2 id="module">打通關:把 module 進階收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    SINGLE["從孤立 module(P3-T03)→ 能協作、可配置的真實元件"]
+    SINGLE --> EXPORT["EXPORT_SYMBOL(_GPL):把函式公開給別的 module<br/>→ 多 module 協作(你產品的架構)"]
+    EXPORT --> GPL["_GPL 版只給 GPL module 用<br/>(別混用 → 符號解析失敗)"]
+    SINGLE --> PARAM["module_param:載入時傳值調行為(不重編)<br/>→ 佇列深度/debug 等級(你產品的可配置性)"]
+    EXPORT --> DEPEND["相依:用符號者(B)需被依賴者(A)先載<br/>insmod 要自己排序;modprobe 自動處理(靠 depmod)"]
+    DEPEND --> SYMVERS["Module.symvers 符號版本:<br/>擋下『給別的 kernel 編的 module』"]
+    SINGLE --> SIGN["模組簽章 CONFIG_MODULE_SIG:<br/>強制時未簽章拒載(部署環境可能要求)"]
+    style EXPORT fill:#e8a33d,color:#10100e
+    style PARAM fill:#8a9a5b,color:#10100e
+    style SIGN fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>真實產品的 module 互相協作(用 <code>EXPORT_SYMBOL_GPL</code> 匯出函式、按相依順序載入,modprobe 自動排序)、可配置(用 <code>module_param</code> 載入時調行為)、受版本與簽章把關;掌握這些,你的 module 就從孤立的 hello-world,變成能組成多 module 產品、可運維配置的真實元件。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:用了 <code>MODULE_PARM</code>(LDD3 舊寫法,已淘汰)。</strong>
+要用 <code>module_param</code>。LDD3 概念正確但 API 釘在舊版,具體 API 對照新版文件。</p>
+<p><strong>誤區二:<code>EXPORT_SYMBOL</code> 與 <code>EXPORT_SYMBOL_GPL</code> 混用導致符號無法使用。</strong>
+<code>_GPL</code> 匯出的符號只有 GPL module 能用。非 GPL module 用它會符號解析失敗。設計時想清楚授權與匯出搭配。</p>
+<p><strong>誤區三:載入順序錯誤(被依賴者要先載)。</strong>
+用 <code>insmod</code> 時要先載 A 再載 B(B 用 A 的符號);或用 <code>modprobe</code> 自動處理相依。</p>
+<p><strong>誤區四:<code>Module.symvers</code> 不一致導致符號版本不符。</strong>
+<code>disagrees about version of symbol</code> 通常因 module 跟運行的 kernel 不是一起編的。用對應 kernel build 環境重編 module。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機。所有載入只在 VM 裡。</strong></p>
+<p><strong>任務 A — 跨 module 匯出/使用符號(驗收點)</strong>
+寫兩個 module:
+- module A:定義一個函式(如 <code>int my_add(int,int)</code>),用 <code>EXPORT_SYMBOL_GPL(my_add)</code> 匯出。
+- module B:<code>extern</code> 宣告後呼叫 <code>my_add</code>,在 <code>dmesg</code> 印出結果。
+（兩者都 <code>MODULE_LICENSE("GPL")</code>。)在 QEMU 裡:
+- <strong>先 <code>insmod B</code></strong> → 觀察失敗(unknown symbol my_add)。
+- <strong>先 <code>insmod A</code>,再 <code>insmod B</code></strong> → 成功,<code>dmesg</code> 看到結果。
+<strong>驗收:B 成功呼叫 A 的函式;先載 B 失敗、先載 A 再載 B 成功,能解釋相依。</strong></p>
+<p><strong>任務 B — 模組參數(驗收點)</strong>
+給一個 module 加一個 <code>int</code> 參數(如 <code>count</code>),用 <code>module_param</code> 宣告、<code>MODULE_PARM_DESC</code> 說明。<code>insmod mod.ko count=5</code>,在 module 內 <code>pr_info</code> 印出讀到的值。<strong>驗收:傳入整數參數且 module 內讀到正確值(5)。</strong> 也試 <code>insmod</code> 不傳參數,確認用預設值;用 <code>modinfo mod.ko</code> 看參數說明。</p>
+<p><strong>任務 C — 解釋 EXPORT_SYMBOL 差異(驗收點)</strong>
+用一句話說出 <code>EXPORT_SYMBOL</code> 與 <code>EXPORT_SYMBOL_GPL</code> 的差異。<strong>驗收:能說出差異(後者只給 GPL module 用)。</strong></p>
+<p><strong>任務 D(觀察)— modprobe 自動處理相依</strong>
+若環境允許(把 A、B 裝到 <code>/lib/modules</code> 並 <code>depmod</code>),試 <code>modprobe B</code>,觀察它自動先載入 A。對比任務 A 手動 <code>insmod</code> 要自己排序。寫一句話:<code>modprobe</code> 比 <code>insmod</code> 多做了什麼?</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ module B 成功呼叫 module A 匯出的函式並在 <code>dmesg</code> 看到結果;先載 B 失敗、先載 A 再載 B 成功,能解釋相依。
+2. ☐ <code>insmod</code> 時傳入整數參數且 module 內讀到正確值。
+3. ☐ 說出 <code>EXPORT_SYMBOL</code> 與 <code>EXPORT_SYMBOL_GPL</code> 差異。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能傳參數。
+- <strong>80(熟練)</strong>:能跨 module 匯出/使用符號。
+- <strong>100(精通)</strong>:能解釋符號版本與簽章機制。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——產品常由多個協作 module 組成;模組參數是調整行為(如佇列深度、debug 等級)的常見手段。</li>
+<li><strong>這課餵給未來的</strong>:符號匯出/相依 → 多 module 產品架構;module_param → 產品可配置性;簽章 → 部署環境;這些都建立在 <a class="xlink" href="P3-T03.html">P3-T03</a> 的 module 骨架上,並貫穿你之後寫的所有 module。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T05.html">P3-T05</a> kernel 編碼風格與 checkpatch</strong>:你會寫、會配置多 module 了。下一課是<strong>規範</strong>:kernel 有嚴格的編碼風格(tab=8、行寬、命名、大括號擺放),並用 <code>checkpatch.pl</code> 自動檢查。無論是公司內部 code review,還是日後向 upstream 貢獻,一致的風格都是基本門檻。你會學會用 checkpatch 檢查並修正你的 module,還會寫一則合規的 commit message——為 <a class="xlink" href="P3-T15.html">P3-T15</a> 的「第一個 patch」鋪路。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T03.html">← P3-T03 第一個 Loadable Kernel Module(init/exit、Kbuild、printk)</a><a class="pn next" href="P3-T05.html">P3-T05 kernel 編碼風格與 checkpatch →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

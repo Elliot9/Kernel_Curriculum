@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P5-T07 · 近期 block/storage 演進(LWN,2023–2025)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P5 · Block Layer、儲存堆疊與 NVMe</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p5-t07-blockstorage-lwn20232025">P5-T07 · 近期 block/storage 演進(LWN,2023–2025)</h1>
+<blockquote>
+<p><strong>一句話</strong>:你不只要懂現在的 block/NVMe,還要能追<strong>正在發生的演進</strong>——atomic block writes(防撕裂寫,6.12/6.13 落地)、computational storage 與 device-initiated I/O(裝置自己發 I/O,與 P2PDMA/GDS 呼應,正是你產品的前沿)、phyr(scatterlist 的潛在後繼)。學會讀 LWN 追 upstream,你才能預判技術走向。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>恭喜你通過 <a class="xlink" href="P5-T06.html">P5-T06</a> 的出關門檻——能在 NVMe 驅動原始碼裡追一次 I/O。Phase 5 的最後一課,把視野拉到<strong>前沿</strong>:近期(2023–2025)block/storage 的重要演進。</p>
+<p>為什麼一個「養成課程」要教你讀<strong>最新的設計討論</strong>?因為:
+1. <strong>你的領域正在快速演進</strong>——computational storage、device-initiated I/O、P2PDMA 正是你產品(RAID over NVMe + GPU)所在的前沿。追蹤這些,你能<strong>預判技術走向</strong>、評估對產品架構的機會/風險。
+2. <strong>kernel 是活的</strong>——你學的東西會變。<strong>學會「讀 LWN 追 upstream 設計討論」這個技能</strong>,比記住任何單一事實都重要。</p>
+<p>這一課的幾個主題(每個都是真實、近期的演進):
+- <strong>atomic block writes / torn-write protection(防撕裂寫)</strong>:讓一次寫「全有或全無」——避免斷電/當機時寫到一半(撕裂寫)。<strong>我已查證版本錨點</strong>:block layer + NVMe/SCSI 支援在 <strong>6.12</strong> 合併(<code>RWF_ATOMIC</code>/<code>IOCB_ATOMIC</code>),VFS + EXT4/XFS 檔案系統支援在 <strong>6.13</strong>(<code>STATX_WRITE_ATOMIC</code> 查詢能力)。
+- <strong>computational storage 與 device-initiated I/O</strong>:裝置不只被動回應,還能<strong>自己發起 I/O / 做計算</strong>——與 <strong>P2PDMA</strong>(PCIe 點對點 DMA)、<strong>GDS</strong>(GPU Direct Storage)呼應,正是你產品的方向。
+- <strong>phyr</strong>:<code>scatterlist</code> 的<strong>潛在後繼</strong>——一個更好的「描述分散記憶體」的結構(呼應 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 bio_vec/scatter-gather)。
+- <strong>怎麼讀 LWN</strong>:追蹤 upstream 設計討論的方法(LSFMM 峰會報導等)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?如上——device-initiated I/O / computational storage / P2PDMA 正是你產品所在的前沿,追蹤這些討論能預判技術走向。這也是 <span class="xlink-stub" title="待撰寫">P6</span>(DMA/P2PDMA)、<span class="xlink-stub" title="待撰寫">P7</span>(GDS/CUDA)的前導。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P5-T06.html">P5-T06</a>(你已通過 Phase 5,理解整條 block/NVMe 路徑)。串連 Phase 5 全部(<a class="xlink" href="P5-T01.html">P5-T01</a>~<a class="xlink" href="P5-T06.html">P5-T06</a>)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P5-T01.html">P5-T01</a> 整條儲存堆疊(VFS→block→NVMe)嗎?這課看「一個變更如何貫穿這幾層」。
+  2. 你還記得 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 bio_vec/scatter-gather 嗎?phyr 是它的潛在後繼。</li>
+<li>心態:這課讀的是<strong>設計討論</strong>,不是定案。重點是「讀懂方向、評估對產品的影響」,而非背誦會變動的 API 細節。</li>
+<li>工具:LWN.net(訂閱制的 kernel 深度報導)、LSFMM+BPF 峰會報導。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 為什麼要追 upstream → (2) atomic block writes / 防撕裂寫 → (3) 一個變更貫穿多層 → (4) computational storage 與 device-initiated I/O → (5) phyr:scatterlist 的潛在後繼 → (6) 怎麼讀 LWN 追 upstream</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-upstreamkernel">1. 為什麼要追 upstream:kernel 是活的</h3>
+<p>先建立心態:你學的 block/NVMe 不是定格的,它<strong>持續演進</strong>。追 upstream 是你領域的職業技能。</p>
+<p><pre class="mermaid">flowchart TB
+    STATIC2["你在 P5-T01~T06 學的:現況的 block/NVMe"]
+    STATIC2 --> EVOLVE["但 kernel 是活的,持續演進:<br/>新功能不斷合併、舊設計被取代、新需求驅動新機制"]
+    EVOLVE --> WHY5["為什麼你要追:<br/>① 你的領域(NVMe/RAID/GPU)正是演進熱點<br/>② 預判走向 → 評估對產品的機會/風險<br/>③ 避免用過時的認知做設計決策"]
+    WHY5 --> SKILL2["★ 關鍵技能:讀 LWN 追 upstream 設計討論 ★<br/>比記住任何單一事實都重要<br/>(事實會過時,追蹤能力不會)"]
+    style EVOLVE fill:#6fa8b8,color:#10100e
+    style SKILL2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>核心:你 <a class="xlink" href="P5-T01.html">P5-T01</a>~<a class="xlink" href="P5-T06.html">P5-T06</a> 學的是現況,但 kernel <strong>持續演進</strong>——新功能合併、舊設計被取代。你的領域(NVMe、RAID、GPU 整合)正是演進熱點。<strong>追 upstream 讓你預判走向、評估對產品的機會/風險、避免用過時認知做決策</strong>。</p>
+<p>最重要的是:<strong>「讀 LWN 追 upstream」這個技能本身</strong>,比記住任何單一事實都有價值——事實會過時,追蹤能力不會。這一課與其說是教你幾個新功能,不如說是示範「怎麼追一個正在發展的 kernel 主題」。</p>
+<hr />
+<h3 id="2-atomic-block-writes">2. atomic block writes / 防撕裂寫</h3>
+<p>第一個具體例子:<strong>atomic block writes(原子區塊寫入)/ torn-write protection(防撕裂寫)</strong>。這是近期一個跨多層的重要演進,而且<strong>對你的儲存產品直接相關</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    PROBLEM6["問題:撕裂寫(torn write)<br/>一次大的寫入,若斷電/當機在『寫到一半』<br/>→ 磁碟上是『一半舊資料 + 一半新資料』的混合<br/>→ 對資料庫等是災難(一筆記錄壞掉)"]
+    PROBLEM6 --> SOLUTION2["atomic write:保證『全有或全無』<br/>這次寫要嘛完整落盤、要嘛完全沒寫<br/>→ 不會出現新舊混合(torn-write protection)"]
+    SOLUTION2 --> API2["介面(已查證版本錨點):<br/>pwritev2() 帶 RWF_ATOMIC 旗標(對應 bio 的 REQ_ATOMIC,P5-T02)<br/>statx() 帶 STATX_WRITE_ATOMIC 查詢裝置支援的原子寫大小<br/>(寫長度須是 2 的次方、在 min/max 之間、對齊)"]
+    style PROBLEM6 fill:#c2603a,color:#f4ecd8
+    style SOLUTION2 fill:#8a9a5b,color:#10100e
+    style API2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>問題:撕裂寫(torn write)</strong>——一次大寫入若斷電/當機在「寫到一半」,磁碟上會是「一半舊 + 一半新」的混合,對資料庫等是災難。</p>
+<p><strong>解法:atomic write</strong>——保證「全有或全無」(全部落盤或完全沒寫),不會出現新舊混合(torn-write protection)。</p>
+<p><strong>介面(我已查證的版本錨點)</strong>:
+- 應用程式用 <strong><code>pwritev2()</code> 帶 <code>RWF_ATOMIC</code></strong> 旗標(對應 <code>bio</code> 的 <code>REQ_ATOMIC</code>,回顧 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 <code>bi_opf</code>)。
+- 用 <strong><code>statx()</code> 帶 <code>STATX_WRITE_ATOMIC</code></strong> 查詢裝置支援的原子寫大小範圍(寫長度須是 2 的次方、在 min/max 之間、對齊——回顧 <a class="xlink" href="P0-T04.html">P0-T04</a> 對齊)。</p>
+<p><strong>這對你產品直接相關</strong>:儲存系統的資料完整性是核心需求,撕裂寫保護正是你會關心的能力。而它的實作橫跨多層(下一節)——這正是「一個變更貫穿 VFS→block→NVMe」的好例子。</p>
+<hr />
+<h3 id="3-atomic-writes">3. 一個變更貫穿多層:atomic writes 的落地</h3>
+<p>atomic writes 是個絕佳的範例,展示<strong>一個 storage 變更如何橫跨整條堆疊</strong>(回顧 <a class="xlink" href="P5-T01.html">P5-T01</a> 的層)。這也是這一課要你體會的核心:<strong>storage 變更往往跨多層,只看單層會誤解</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    APP4["應用層:pwritev2(RWF_ATOMIC)"]
+    APP4 --> VFS8["① VFS 層(6.13 合併):<br/>新介面讓 app 請求原子寫;<br/>statx 擴充查詢原子寫能力(STATX_WRITE_ATOMIC)"]
+    VFS8 --> FS3["② 檔案系統層(EXT4/XFS,6.13):<br/>確保檔案的實體 extent 對齊裝置的原子寫邊界<br/>(避免一次原子寫跨越邊界而失去保證)"]
+    FS3 --> BLOCK8["③ block layer(6.12):<br/>bio 帶 REQ_ATOMIC;<br/>確保這個 bio 不被拆分到違反原子性(P5-T02 的拆分)"]
+    BLOCK8 --> NVME3["④ NVMe/SCSI 驅動(6.12):<br/>把原子寫請求對應到裝置的原子寫能力<br/>(NVMe namespace 可定義原子邊界)"]
+    NVME3 --> DEV5["⑤ 裝置:硬體保證這次寫原子落盤"]
+    NOTE24["★ 版本錨點(已查證)★<br/>6.12:block layer + NVMe/SCSI 支援先合併<br/>6.13:VFS untorn writes + EXT4/XFS 檔案系統支援<br/>→ 一個功能,分階段、跨多層落地"]
+    DEV5 --> NOTE24
+    style VFS8 fill:#6fa8b8,color:#10100e
+    style BLOCK8 fill:#e8a33d,color:#10100e
+    style NOTE24 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>atomic writes 怎麼貫穿各層(驗收要求:正確指出一個變更跨越的層):
+- <strong>VFS 層(6.13)</strong>:新介面讓 app 請求原子寫;<code>statx</code> 擴充查詢能力。
+- <strong>檔案系統層(EXT4/XFS,6.13)</strong>:確保檔案的實體 extent 對齊裝置的原子寫邊界(避免原子寫跨邊界而失去保證)。
+- <strong>block layer(6.12)</strong>:<code>bio</code> 帶 <code>REQ_ATOMIC</code>;確保 bio 不被拆分到違反原子性(回顧 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 bio 拆分)。
+- <strong>NVMe/SCSI 驅動(6.12)</strong>:把原子寫對應到裝置能力(NVMe namespace 可定義原子邊界)。
+- <strong>裝置</strong>:硬體保證原子落盤。</p>
+<p><strong>版本錨點(我已查證)</strong>:<strong>6.12</strong> 先合併 block layer + NVMe/SCSI 支援,<strong>6.13</strong> 再加 VFS untorn writes + EXT4/XFS 檔案系統支援。一個功能,<strong>分階段、跨多層</strong>落地。</p>
+<p><strong>這是這一課最重要的方法論教訓(常見誤區:忽略一個 storage 變更往往跨多層)</strong>:你看一個 storage 新功能,<strong>不能只看單層</strong>——要追它在 VFS、檔案系統、block layer、驅動、裝置各層做了什麼。只看 block layer 的部分,你會誤解整個功能。讀 LWN 報導時,注意它怎麼描述「這個變更動到哪幾層」。</p>
+<hr />
+<h3 id="4-computational-storage-device-initiated-io">4. computational storage 與 device-initiated I/O</h3>
+<p>第二組演進,<strong>最貼近你產品的前沿</strong>:<strong>computational storage(計算型儲存)</strong> 和 <strong>device-initiated I/O(裝置發起的 I/O)</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    TRAD2["傳統模型:裝置被動<br/>host 下命令(SQ+doorbell,P5-T05)→ 裝置回應<br/>資料一定先到 host 記憶體,再由 CPU 處理/搬運"]
+    TRAD2 --> NEW2["新方向:裝置更主動"]
+    NEW2 --> COMP["computational storage:<br/>把『計算』搬到靠近資料的地方(裝置或其附近)<br/>→ 不必把所有資料搬到 CPU 才處理<br/>(例:在儲存端做篩選/壓縮/甚至 parity?)"]
+    NEW2 --> DEVINIT["device-initiated I/O:<br/>裝置『自己發起』I/O,不必每次都等 host 下命令<br/>→ 與 P2PDMA 呼應:裝置直接和另一裝置傳資料"]
+    DEVINIT --> P2P2["★ P2PDMA(PCIe 點對點 DMA)★<br/>讓一個 PCIe 裝置直接和另一個 PCIe 裝置傳資料,<br/>★ 不經過 host 記憶體 ★(P6 深入)<br/>→ 例:NVMe 直接和 GPU 傳資料(你的產品!)"]
+    style TRAD2 fill:#6fa8b8,color:#10100e
+    style COMP fill:#e8a33d,color:#10100e
+    style P2P2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>兩個方向:
+- <strong>computational storage</strong>:把<strong>計算</strong>搬到靠近資料的地方(裝置或其附近),不必把所有資料搬到 CPU 才處理。例如在儲存端做篩選、壓縮——甚至(對你的領域)思考 parity 計算能否更靠近資料。
+- <strong>device-initiated I/O</strong>:裝置<strong>自己發起 I/O</strong>,不必每次都等 host 下命令。這與 <strong>P2PDMA</strong> 呼應。</p>
+<p><strong>P2PDMA(PCIe 點對點 DMA)是對你產品最關鍵的(驗收要求:說明該變更與你產品是否相關及如何相關)</strong>:它讓一個 PCIe 裝置<strong>直接和另一個 PCIe 裝置傳資料,不經過 host 記憶體</strong>(<span class="xlink-stub" title="待撰寫">P6</span> 會深入)。<strong>這正是你產品的核心</strong>——讓 <strong>NVMe 直接和 GPU 傳資料</strong>(NVMe 的 queue I/O 直接餵給 GPU 算 parity),不必繞道 host 記憶體(省一次複製、降延遲)。<strong>GDS(GPU Direct Storage)</strong> 就是這個方向的具體技術(<span class="xlink-stub" title="待撰寫">P7</span> 會碰)。</p>
+<p>所以這組演進<strong>不是學術前沿,是你產品的技術基礎</strong>。追蹤 LSFMM(Linux 儲存峰會)對 P2PDMA、device-initiated I/O 的討論,你能預判「NVMe↔GPU 直通」這條路的 upstream 進展與限制——直接影響你的產品架構。</p>
+<p>把 P2PDMA 對你產品的價值,用「繞道 host vs 直通」的對比畫清楚:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph bounce["傳統:繞道 host 記憶體"]
+        BNC["NVMe → DMA 到 host 記憶體 → CPU/DMA 再搬到 GPU<br/>→ 兩段傳輸、佔 host 記憶體頻寬、延遲較高"]
+    end
+    subgraph direct2["P2PDMA:NVMe ↔ GPU 直通"]
+        DRC["NVMe → 直接 DMA 到 GPU 記憶體(不經 host)<br/>→ 一段傳輸、省 host 頻寬、延遲更低<br/>★ = 你產品『把 queue I/O 餵給 GPU 算 parity』的理想路徑 ★"]
+    end
+    bounce -.“P2PDMA / GDS 消除繞道(P6/P7)”.-> direct2
+    style BNC fill:#c2603a,color:#f4ecd8
+    style DRC fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h3 id="5-phyrscatterlist">5. phyr:scatterlist 的潛在後繼</h3>
+<p>第三個演進,偏底層基礎設施:<strong>phyr</strong>——<code>scatterlist</code> 的<strong>潛在後繼</strong>(呼應你 <a class="xlink" href="P5-T02.html">P5-T02</a> 學的 bio_vec/scatter-gather)。</p>
+<p><pre class="mermaid">flowchart TB
+    SCATTERLIST["現況:scatterlist(描述分散的記憶體片段)<br/>= bio_vec(P5-T02)之外,kernel 描述<br/>『分散記憶體 + DMA 映射』的核心結構"]
+    SCATTERLIST --> ISSUES2["scatterlist 的問題(社群長期討論):<br/>① 結構肥大、混用了『記憶體描述』和『DMA 位址』<br/>② 對大型 I/O 記憶體開銷大<br/>③ 設計老舊,不夠彈性"]
+    ISSUES2 --> PHYR["phyr(proposed,Gunthorpe 等):<br/>一個更精簡、更清楚的『描述分散實體記憶體範圍』的結構<br/>→ 想取代 scatterlist 的部分角色<br/>(分離『記憶體描述』與『DMA 映射』)"]
+    PHYR --> STATUS2["★ 狀態:設計討論中,尚未定案 ★<br/>(這正是『讀 LWN 追設計討論』的好例子<br/>—— 不是定案的 API,是正在演化的提案)"]
+    style SCATTERLIST fill:#6fa8b8,color:#10100e
+    style PHYR fill:#e8a33d,color:#10100e
+    style STATUS2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<ul>
+<li><strong>現況:scatterlist</strong>——kernel 描述「分散記憶體 + DMA 映射」的核心結構(和 bio_vec 相關,回顧 <a class="xlink" href="P5-T02.html">P5-T02</a> scatter-gather、<a class="xlink" href="P5-T05.html">P5-T05</a> PRP/SGL)。</li>
+<li><strong>問題</strong>:scatterlist 結構肥大、混用了「記憶體描述」和「DMA 位址」、對大型 I/O 記憶體開銷大、設計老舊。</li>
+<li><strong>phyr(提案中)</strong>:一個更精簡、把「記憶體描述」與「DMA 映射」分離的結構,想取代 scatterlist 的部分角色。</li>
+</ul>
+<p><strong>關鍵(這是「讀設計討論」的好例子)</strong>:phyr <strong>尚未定案,還在設計討論中</strong>。這正示範了「追 upstream」要注意的事(常見誤區:把 LWN 報導當成最終 API)——<strong>phyr 是正在演化的提案,不是定案的 API</strong>。你讀到它時,要理解「這是個方向/討論」,而非「這已經是 kernel 的一部分」。對你產品:phyr 若落地,會影響 DMA 映射的底層(你的 scatter-gather 資料路徑),值得追蹤,但別現在就假設它的 API。</p>
+<hr />
+<h3 id="6-lwn-upstream">6. 怎麼讀 LWN 追 upstream</h3>
+<p>最後是這一課的<strong>核心技能</strong>:怎麼實際讀 LWN、追一個 upstream 主題。</p>
+<p><pre class="mermaid">flowchart TB
+    LWN2["LWN.net:kernel 的深度技術報導<br/>(尤其 LSFMM+BPF 峰會報導 = 儲存/記憶體的設計討論集散地)"]
+    LWN2 --> HOW5["怎麼讀:"]
+    HOW5 --> H1c["① 注意日期與對應 kernel 版本<br/>(★ 常見誤區:不分版本套用 ★<br/>—— 一篇 2023 的文章講的可能還沒合併,或已變樣)"]
+    HOW5 --> H2c["② 分辨『設計討論』vs『已合併』<br/>(LSFMM 報導多是討論;合併要看 merge window 報導)"]
+    HOW5 --> H3c["③ 追一個主題的時間線<br/>(同一主題常有系列文章:提案→討論→修訂→合併)"]
+    HOW5 --> H4c["④ 看『跨哪些層、誰在推、有什麼爭議』<br/>(理解動機與權衡,不只看結論)"]
+    H4c --> SUMMARY2["產出:對一篇文章寫一頁摘要<br/>(問題是什麼、動到哪些層、現況/版本、對產品影響)"]
+    style LWN2 fill:#6fa8b8,color:#10100e
+    style H1c fill:#c2603a,color:#f4ecd8
+    style SUMMARY2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>讀 LWN 追 upstream 的方法:
+- <strong>注意日期與版本</strong>(常見誤區:不分版本套用)——一篇 2023 的文章講的功能,可能還沒合併、或已經變樣。看文章日期,對照它講的是哪個 kernel 版本/階段。
+- <strong>分辨「設計討論」vs「已合併」</strong>——LSFMM(Linux Storage, Filesystem, MM Summit)報導多是<strong>討論</strong>(還在發展);要知道「已合併」得看 merge window 的報導。<strong>別把設計討論當定案 API</strong>(這課反覆強調)。
+- <strong>追一個主題的時間線</strong>——同一主題常有系列文章(提案 → 討論 → 修訂 → 合併),追時間線你才看到全貌。
+- <strong>看「跨哪些層、誰在推、有什麼爭議」</strong>——理解動機與權衡,不只看結論。</p>
+<p><strong>產出(這課的動手任務)</strong>:選一篇 LWN 文章,寫<strong>一頁摘要</strong>——問題是什麼、動到哪些層(VFS/block/NVMe)、現況/版本、對你產品的影響。這個「讀一篇深度報導 → 提煉成對產品有意義的摘要」的能力,是你日後持續追蹤領域的工作方式。</p>
+<hr />
+<h2 id="_4">打通關:把近期演進收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    WHY6["核心:kernel 是活的,你的領域正快速演進<br/>→ 追 upstream 預判走向(技能 > 單一事實)"]
+    WHY6 --> ATOMIC2["① atomic writes / 防撕裂寫:全有或全無<br/>(RWF_ATOMIC/STATX_WRITE_ATOMIC;6.12 block+NVMe、6.13 VFS+ext4/xfs)<br/>★ 範例:一個變更貫穿 VFS→fs→block→NVMe→裝置 ★"]
+    WHY6 --> COMP2["② computational storage / device-initiated I/O<br/>★ P2PDMA:NVMe↔GPU 直通不經 host(你的產品核心!)★<br/>→ GDS(P7)、P6 DMA 的前沿"]
+    WHY6 --> PHYR2["③ phyr:scatterlist 的潛在後繼(呼應 bio_vec)<br/>★ 尚在討論,不是定案 API ★"]
+    ATOMIC2 --> SKILL3["★ 技能:讀 LWN 追 upstream ★<br/>注意日期/版本、分辨討論 vs 已合併、<br/>追主題時間線、看跨層/動機/爭議<br/>(別把報導當最終 API、別不分版本套用、別只看單層)"]
+    COMP2 --> SKILL3
+    PHYR2 --> SKILL3
+    style COMP2 fill:#e8a33d,color:#10100e
+    style SKILL3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>你的領域正快速演進,追 upstream 是職業技能——atomic writes/防撕裂寫(6.12 block+NVMe、6.13 VFS+ext4/xfs)示範了一個變更如何貫穿 VFS→block→NVMe;computational storage 與 device-initiated I/O(尤其 P2PDMA:NVMe↔GPU 直通不經 host)正是你產品的前沿;phyr 是 scatterlist 的潛在後繼(尚在討論)。讀 LWN 時注意日期/版本、分辨討論 vs 已合併、追主題時間線——別把報導當定案 API、別只看單層。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:把 LWN 報導當成最終 API。</strong>
+LSFMM 等報導多是設計討論(仍可能變動)。phyr 就是例子——還在討論、未定案。分辨「討論」vs「已合併」。</p>
+<p><strong>誤區二:忽略一個 storage 變更往往跨多層。</strong>
+atomic writes 橫跨 VFS/檔案系統/block/驅動/裝置。只看單層會誤解整個功能。追它在各層做了什麼。</p>
+<p><strong>誤區三:不分版本套用。</strong>
+注意文章日期與對應 kernel 版本。一篇舊文章講的可能還沒合併、或已變樣。對照版本(如 atomic writes 6.12/6.13)。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:閱讀 LWN(安全)+ 可選在有支援的 kernel 上試 atomic write(<strong>只在 VM</strong>)。</p>
+<p><strong>任務 A — 讀一篇 LWN 並寫一頁摘要(驗收點,核心)</strong>
+從指定資源選<strong>一篇</strong> LWN 文章(建議從對你產品最相關的選):
+- Peer-to-peer DMA(LSFMM 2023):https://lwn.net/Articles/931668/
+- Device-initiated I/O(LSFMM 2025):https://lwn.net/Articles/1022718/
+- Computational storage(LSFMM 2023):https://lwn.net/Articles/931949/
+- phyr(scatterlist 後繼):https://lwn.net/Articles/931943/
+寫<strong>一頁摘要</strong>,正確指出:① 這個變更/討論解決什麼問題;② 動到/跨越哪些層(VFS/block/NVMe);③ 現況與對應版本(或「仍在討論」)。<strong>驗收:對選定文章產出一頁摘要,正確指出問題、跨越的層、與現況/版本。</strong></p>
+<p><strong>任務 B — 評估對你產品的影響(驗收點,核心)</strong>
+針對你選的文章,寫一段話:這個變更與<strong>你的產品(RAID over NVMe + GPU)</strong>是否相關?如何相關?(提示:P2PDMA/device-initiated I/O 高度相關——NVMe↔GPU 直通;atomic writes 與資料完整性相關;phyr 與你的 scatter-gather 資料路徑相關。)<strong>驗收:說明該變更與你產品是否相關及如何相關。</strong></p>
+<p><strong>任務 C — atomic write 概念驗證(選做)</strong>
+若你的 kernel ≥ 6.13 且裝置支援:用 <code>statx</code>(<code>STATX_WRITE_ATOMIC</code>)查詢裝置的原子寫能力,理解 <code>pwritev2(RWF_ATOMIC)</code> 的限制(2 的次方、對齊)。(環境受限則理解原理即可。)</p>
+<p><strong>任務 D — 追一個主題的時間線(體會)</strong>
+對你選的主題,試著找它的「系列文章」或後續發展(LWN 搜尋、或 2023 LSFMM 總整理 https://lwn.net/Articles/lsfmmbpf2023/ ）。體會「一個 upstream 主題如何隨時間演化」。</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 對選定文章產出一頁摘要,正確指出問題、跨越的層、與現況/版本。
+2. ☐ 說明該變更與你產品(RAID over NVMe + GPU)是否相關及如何相關。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能讀懂單篇大意。
+- <strong>80(熟練)</strong>:能說明跨層影響。
+- <strong>100(精通)</strong>:能評估該演進對自家產品架構的機會/風險。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——device-initiated I/O / computational storage / P2PDMA 正是你產品所在的前沿;追蹤這些討論能預判技術走向。</li>
+<li><strong>這課收束了 Phase 5(I/O 物件流動主線完整)</strong>:<a class="xlink" href="P5-T01.html">P5-T01</a> 堆疊 → <a class="xlink" href="P5-T02.html">P5-T02</a> bio/request → <a class="xlink" href="P5-T03.html">P5-T03</a> blk-mq → <a class="xlink" href="P5-T04.html">P5-T04</a> 排程 → <a class="xlink" href="P5-T05.html">P5-T05</a> NVMe 協定 → <a class="xlink" href="P5-T06.html">P5-T06</a> NVMe 驅動 → 本課前沿。Phase 5 你已掌握你產品的核心領域。</li>
+<li><strong>下一步 → <a class="xlink" href="P6-T01.html">P6-T01</a> 進入 Phase 6(DMA、IOMMU 與記憶體映射)</strong>:恭喜你完成 Phase 5——你產品的核心領域!這一課的 P2PDMA、device-initiated I/O 已經預告了下一個階段。<strong>Phase 6 深入 DMA</strong>:裝置如何直接讀寫記憶體(回顧 NVMe 的 SQ/CQ/PRP/SGL 都靠 DMA)、<strong><code>dma_addr_t</code>(裝置看到的位址 ≠ CPU 位址 ≠ 實體位址——你「位址的真相」主線的高潮!)</strong>、IOMMU、<code>dma_wmb</code> 屏障(你 <a class="xlink" href="P3-T11.html">P3-T11</a> 命門的實作)、以及 <strong>P2PDMA</strong>(NVMe↔GPU 直通,本課所講的前沿的實作基礎)。你 Phase 5 學的「資料怎麼在 host 和 NVMe 之間流動」,到 Phase 6 會補上「裝置實際怎麼 DMA 存取那些記憶體」的最後一塊。(提醒:Phase 6/7 的 P2PDMA/GDS/CUDA 版本敏感細節,我會在動工前查證。)</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P5-T06.html">← P5-T06 Linux NVMe 驅動原始碼(drivers/nvme/host/)</a><a class="pn next" href="P6-T01.html">P6-T01 DMA 基礎與 DMA API(coherent vs streaming) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P1-T07 · CPU 排程</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P1 · 計算機結構與作業系統概念</span>
+  <span class="scope-pill indirect">間接相關</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p1-t07-cpu">P1-T07 · CPU 排程</h1>
+<blockquote>
+<p><strong>一句話</strong>:CPU 只有有限個核心,但要跑的 task 永遠更多,於是需要一個「排程器」決定誰先跑、跑多久。它在「公平、吞吐、低延遲」之間永遠在取捨——沒有完美方案,只有適合場景的權衡。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>上一課 <a class="xlink" href="P1-T06.html">P1-T06</a> 講了 context switch 是「切換 task」的機制。這一課回答更上層的問題:<strong>誰來決定切換到哪個 task、何時切換?</strong> 這就是 <strong>CPU 排程器(scheduler)</strong> 的工作。</p>
+<p>設想:你的機器上同時有幾十、幾百個可執行的 task(行程/執行緒),但 CPU 核心就那幾個。排程器必須不斷決定:「下一個時間片,讓哪個 task 上 CPU?讓它跑多久?」這個決策影響一切——系統感覺起來流暢還是卡頓、批次工作能多快完成、互動程式回應快不快。</p>
+<p>關鍵洞察是:<strong>排程沒有「最佳解」,只有「取捨」</strong>。你想讓互動程式回應快(低延遲),就得頻繁切換、讓它們插隊,但這犧牲了吞吐量(切換有成本);你想最大化吞吐,就少切換、讓 task 跑久一點,但互動程式會卡。排程器的設計,本質上是在這些互相衝突的目標間找平衡。</p>
+<p>為什麼這對你是 <code>scope: indirect</code>(間接對應)?因為理解排程原理,是日後讀懂 <strong>Linux 的 EEVDF 排程器</strong>(<a class="xlink" href="P3-T12.html">P3-T12</a>)的前置;也讓你理解你的 <strong>kthread / workqueue</strong>(kernel 裡的工作執行緒)何時會被排到執行——這影響你 kernel module 的行為與延遲。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P1-T06.html">P1-T06</a>(context switch 是切換機制)、<a class="xlink" href="P1-T05.html">P1-T05</a>(task 是排程單位)。</li>
+<li>自我檢測:
+  1. 你能說出「為什麼 context switch 有成本」嗎?(回顧 <a class="xlink" href="P1-T06.html">P1-T06</a>:保存/載入狀態、可能 TLB flush。)排程要切換,所以切換成本是排程的考量之一。
+  2. 你直覺上覺得「該讓哪個程式先跑」有標準答案嗎?讀完這課你會明白為什麼沒有。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 排程的目標與指標 → (2) FIFO:先到先做 → (3) SJF:短的先做 → (4) RR:輪流跑(時間片)→ (5) 優先權與 starvation → (6) MLFQ:兼顧互動與批次</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 排程的目標與指標:互相衝突的願望</h3>
+<p>要評價一個排程演算法好不好,先要有衡量標準。幾個關鍵指標:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph metrics["排程的衡量指標(常互相衝突)"]
+        TURN["週轉時間(turnaround)<br/>從工作到達到完成的總時間<br/>→ 批次工作在意這個"]
+        RESP["回應時間(response)<br/>從工作到達到『第一次開始執行』<br/>→ 互動程式在意這個(別讓我等)"]
+        FAIR["公平性(fairness)<br/>每個 task 都拿到合理的 CPU 份額<br/>→ 別讓某些 task 餓死"]
+        THRU["吞吐量(throughput)<br/>單位時間完成多少工作<br/>→ 切換太頻繁會傷它(切換有成本)"]
+    end
+    style TURN fill:#6fa8b8,color:#10100e
+    style RESP fill:#e8a33d,color:#10100e
+    style FAIR fill:#8a9a5b,color:#10100e
+    style THRU fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>關鍵:這些目標常常互相衝突。</strong> 例如要回應時間短(互動好),就得頻繁切換讓各 task 都能快速上場一下,但頻繁切換的成本會降低吞吐量。要週轉時間短,可能要讓短工作插隊,但這可能對長工作不公平。<strong>排程演算法的本質,就是在這些衝突的願望間選擇一個權衡。</strong> 接下來幾節的每個演算法,都是某種權衡的代表。</p>
+<hr />
+<h3 id="2-fifo">2. FIFO(先到先做):最簡單,但有大問題</h3>
+<p><strong>FIFO(First-In-First-Out,先到先服務)</strong>:誰先到就先跑,跑完才換下一個。簡單直覺,像排隊結帳。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph fifo["FIFO:按到達順序,一個跑完才下一個"]
+        direction LR
+        A["工作A(需 100 秒)<br/>先到,先跑"] --> B["工作B(需 1 秒)<br/>後到,得等 A 跑完"] --> C["工作C(需 1 秒)<br/>再等"]
+    end
+    PROBLEM["問題:若一個超長工作排在前面,<br/>後面一堆短工作全被卡住<br/>= 護航效應(convoy effect)"]
+    fifo --> PROBLEM
+    style A fill:#c2603a,color:#f4ecd8
+    style PROBLEM fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>FIFO 的致命問題叫<strong>護航效應(convoy effect)</strong>:如果一個耗時很長的工作排在前面,後面所有短工作都得苦等它跑完,即使那些短工作只要一瞬間。就像超市結帳,前面一個人推了滿滿一車(長工作),後面只買一瓶水的人(短工作)全被卡住。這讓平均週轉時間和回應時間都很糟。</p>
+<hr />
+<h3 id="3-sjf">3. SJF(短的先做):週轉時間最佳,但不切實際</h3>
+<p><strong>SJF(Shortest Job First,最短工作優先)</strong>:每次選「預計最短」的工作先跑。這能得到<strong>最佳的平均週轉時間</strong>(數學上可證明)。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph sjf["SJF:短工作先跑"]
+        direction LR
+        B["工作B(1秒)"] --> C["工作C(1秒)"] --> A["工作A(100秒)<br/>最長,最後跑"]
+    end
+    GOOD["短工作不再被長工作卡住<br/>→ 平均週轉時間最佳"]
+    BAD["兩個問題:<br/>① 怎麼知道工作要跑多久?(未來難預測)<br/>② 長工作可能一直被插隊 → starvation(餓死)"]
+    sjf --> GOOD
+    sjf --> BAD
+    style B fill:#8a9a5b,color:#10100e
+    style BAD fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>SJF 理論上很美,但有兩個現實問題:<strong>(1)</strong> 你怎麼<strong>事先知道</strong>一個工作要跑多久?未來執行時間通常無法準確預測。<strong>(2)</strong> 如果短工作源源不絕地來,長工作可能永遠排不到、被<strong>餓死(starvation)</strong>。所以 SJF 更多是理論基準,實務上難直接用。</p>
+<hr />
+<h3 id="4-rr">4. RR(輪流跑):用時間片換取公平與回應</h3>
+<p><strong>RR(Round-Robin,輪轉)</strong>:給每個 task 一小段固定的 <strong>時間片(time slice / quantum)</strong>,時間到就<strong>搶佔(preempt)</strong>它、換下一個,輪流進行。這是兼顧公平與回應時間的經典做法。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph rr["RR:每個 task 跑一個時間片就換"]
+        direction LR
+        T1["A 跑一片"] --> T2["B 跑一片"] --> T3["C 跑一片"] --> T4["A 再跑一片"] --> T5["B 再..."]
+    end
+    GOOD["每個 task 很快都能上場一下<br/>→ 回應時間好(互動程式不會等太久)<br/>→ 公平(輪流)"]
+    rr --> GOOD
+    style T1 fill:#6fa8b8,color:#10100e
+    style GOOD fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>時間片大小是關鍵權衡</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    Q{"時間片設多大?"}
+    Q -->|"太大"| BIG["趨近 FIFO:<br/>回應時間變差<br/>(每個 task 占用太久)"]
+    Q -->|"太小"| SMALL["切換太頻繁:<br/>context switch 成本(P1-T06)<br/>吃掉大量 CPU → 吞吐量降低"]
+    Q -->|"適中"| JUST["平衡:回應夠快,<br/>切換成本可接受"]
+    style BIG fill:#c2603a,color:#f4ecd8
+    style SMALL fill:#c2603a,color:#f4ecd8
+    style JUST fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>這直接呼應 <a class="xlink" href="P1-T06.html">P1-T06</a>:<strong>因為 context switch 有成本,時間片不能太小</strong>(否則大部分時間都花在切換,而非做事);但太大又回到 FIFO 的回應問題。RR 的藝術就在選一個適中的時間片。<strong>搶佔(preemption)</strong> 是 RR 的核心機制——排程器能在時間片用完時「強制中斷」當前 task,這需要硬體計時器中斷的支持(時間到就觸發中斷,讓排程器奪回控制權)。</p>
+<hr />
+<h3 id="5-starvation-task">5. 優先權與 starvation:不是所有 task 都平等</h3>
+<p>實務上,不同 task 重要性不同(系統關鍵任務 vs 背景下載)。<strong>優先權(priority)</strong> 排程讓高優先權的 task 先跑。但純粹的優先權有個危險:</p>
+<p><pre class="mermaid">flowchart TB
+    PRIO["純優先權排程:永遠先跑最高優先權的"]
+    PRIO --> PROBLEM["問題:若高優先權 task 源源不絕,<br/>低優先權 task 永遠輪不到<br/>→ starvation(餓死)"]
+    PROBLEM --> FIX["緩解:aging(老化)<br/>等越久的 task,優先權逐漸提升<br/>→ 最終總會輪到,不會永遠餓死"]
+    style PROBLEM fill:#c2603a,color:#f4ecd8
+    style FIX fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>starvation(餓死)</strong> 是排程的經典陷阱:某些 task 永遠排不到 CPU。解法之一是 <strong>aging(老化)</strong>——讓等待越久的 task 優先權慢慢升高,保證它最終會被排到。<strong>把優先權當成絕對、不做 aging,容易導致餓死</strong>,這是常見誤區。</p>
+<hr />
+<h3 id="6-mlfq">6. MLFQ:不知道工作長短,也能兼顧互動與批次</h3>
+<p>前面的演算法各有缺陷:FIFO 有護航、SJF 要預知未來、RR 對所有 task 一視同仁(沒區分互動與批次)。<strong>MLFQ(Multi-Level Feedback Queue,多級回饋佇列)</strong> 是一個聰明的綜合方案,它<strong>不需要預知工作長短</strong>,卻能近似「短/互動工作優先」的效果。</p>
+<p>核心機制:設多個優先權佇列,<strong>用 task 的「行為」來動態調整它在哪一級</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph mlfq["MLFQ:多個優先權佇列,依行為升降"]
+        Q_HIGH["高優先權佇列<br/>(時間片短)<br/>新工作從這裡開始"]
+        Q_MID["中優先權佇列<br/>(時間片中)"]
+        Q_LOW["低優先權佇列<br/>(時間片長)"]
+    end
+    Q_HIGH -->|"用完整個時間片還沒做完<br/>(像是 CPU 密集的批次工作)<br/>→ 降級"| Q_MID
+    Q_MID -->|"又用完整個時間片<br/>→ 再降級"| Q_LOW
+    NOTE["反之:還沒用完時間片就主動讓出<br/>(像是等 I/O 的互動工作)<br/>→ 留在高優先權"]
+    Q_LOW -.- NOTE
+    style Q_HIGH fill:#e8a33d,color:#10100e
+    style Q_LOW fill:#6fa8b8,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>精妙之處在「用行為推斷工作類型」</strong>:
+- <strong>互動工作</strong>(像等鍵盤、等網路的程式)通常跑一下下就主動讓出 CPU 去等 I/O——MLFQ 看到「它沒用完時間片就讓出」,推斷它是互動型,<strong>讓它留在高優先權</strong>,所以它下次能很快被排到、回應快。
+- <strong>CPU 密集的批次工作</strong>(像大量計算)會把整個時間片用滿——MLFQ 看到「它老是用完整片」,推斷它是批次型,<strong>把它降級</strong>到低優先權(但給更長的時間片),所以它不會頻繁打斷互動工作,但輪到時能一次跑久一點。</p>
+<p>這樣 MLFQ <strong>不必預知</strong>任何工作要跑多久,純粹<strong>觀察行為</strong>就近似達成了「互動優先、批次讓步」——同時照顧了回應時間(互動)和吞吐量(批次)。(實務上還會配合 aging:定期把所有工作提回高優先權,避免長工作被永久餓死。)這就是為什麼 MLFQ 的思想深深影響了真實作業系統的排程器設計。</p>
+<hr />
+<h2 id="cpu">打通關:把 CPU 排程收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    CORE["核心:CPU 有限、task 更多<br/>→ 排程器決定誰先跑、跑多久"]
+    CORE --> TRADEOFF["★ 沒有最佳解,只有取捨 ★<br/>公平 vs 吞吐 vs 回應時間"]
+    TRADEOFF --> FIFO["FIFO:簡單但有護航效應"]
+    TRADEOFF --> SJF["SJF:週轉最佳但要預知未來、會餓死長工作"]
+    TRADEOFF --> RR["RR:時間片輪轉,公平+回應好<br/>(片大小權衡:太小切換貴,太大像FIFO)"]
+    TRADEOFF --> PRIO["優先權:重要的先跑,但純優先權會餓死<br/>→ aging 緩解"]
+    RR --> MLFQ["MLFQ:多級佇列+依行為升降<br/>不必預知長短,近似『互動優先、批次讓步』"]
+    PRIO --> MLFQ
+    MLFQ --> LINUX["→ 影響真實排程器設計<br/>(Linux EEVDF,P3-T12)"]
+    style TRADEOFF fill:#e8a33d,color:#10100e
+    style MLFQ fill:#6fa8b8,color:#10100e
+    style LINUX fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>排程的本質是在公平、吞吐、回應時間等衝突目標間取捨;從 FIFO 到 SJF 到 RR 到 MLFQ,每個演算法都是一種權衡,而 MLFQ 用「觀察行為」巧妙地不必預知工作長短就兼顧了互動與批次——這些原理是你日後讀懂 Linux EEVDF 排程器、以及理解 kthread/workqueue 何時被排到的基礎。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為排程器追求單一目標。</strong>
+排程在 fairness / throughput / latency 之間取捨,沒有同時最佳化全部的方案。評價一個排程器要看它針對什麼場景做了什麼權衡。</p>
+<p><strong>誤區二:忽略搶佔與時間片對互動延遲的影響。</strong>
+時間片太大,互動程式要等很久才上場(回應差);太小,切換成本(回顧 <a class="xlink" href="P1-T06.html">P1-T06</a>)吃掉吞吐。時間片大小是關鍵權衡。</p>
+<p><strong>誤區三:把優先權當成絕對。</strong>
+純優先權排程會讓低優先權 task 餓死(starvation)。需要 aging 等機制保證它們最終被排到。</p>
+<p><strong>誤區四:以為 SJF 可以直接用。</strong>
+SJF 需要預知工作執行時間(通常做不到),且會餓死長工作。它主要是理論基準;實務上用 MLFQ 等「用行為推斷」的方法近似。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:紙筆或任何程式語言皆可,<strong>純計算,無系統風險</strong>。</p>
+<p><strong>任務 A — 手算 RR 的週轉時間(驗收點)</strong>
+給定四個工作(假設同時到達,時間 0):
+- A 需要 8 個時間單位
+- B 需要 4 個
+- C 需要 4 個
+- D 需要 2 個</p>
+<p>用 <strong>RR、時間片 = 2</strong> 排程。在紙上畫出執行順序(A,B,C,D,A,B,C,A...這樣輪),算出每個工作的<strong>完成時間</strong>和<strong>平均週轉時間</strong>。(提示:每輪每個還沒做完的工作跑 2 單位,做完的就退出。)這是驗收的核心——務必手算一遍。</p>
+<p><strong>任務 B — 對比 FIFO 和 SJF</strong>
+同樣四個工作,分別用 FIFO(按 A,B,C,D 順序)和 SJF(短的先)排,各算平均週轉時間。比較三種(含任務 A 的 RR)的結果,寫一句話:哪種週轉時間最短?哪種回應時間最好?印證「不同演算法、不同權衡」。</p>
+<p><strong>任務 C — 解釋 MLFQ 如何兼顧兩種工作</strong>
+用一段話(不用程式)解釋:MLFQ 如何在「不知道工作要跑多久」的前提下,讓一個「等鍵盤輸入的互動程式」和一個「狂算數字的批次程式」各得其所?(提示:用「是否用完整個時間片」來推斷工作類型。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 給定一組工作(到達時間+執行長度),正確手算 RR(指定 time slice)的完成順序與平均週轉時間。
+2. ☐ 能用一段話解釋 MLFQ 如何同時照顧互動型與批次型工作。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能複述各演算法。
+- <strong>80(熟練)</strong>:能手算排程(RR 的完成順序與週轉時間)。
+- <strong>100(精通)</strong>:能說明這些原理如何對應到 Linux 排程器(連結 <a class="xlink" href="P3-T12.html">P3-T12</a> 的 EEVDF)。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>間接對應</strong>——理解排程是 <a class="xlink" href="P3-T12.html">P3-T12</a> 讀懂 Linux EEVDF 排程器,以及理解 kthread/workqueue 何時被排到的前置。你 kernel module 裡的工作執行緒何時跑、延遲多少,受排程影響。</li>
+<li><strong>這課餵給未來的</strong>:排程原理 → <a class="xlink" href="P3-T12.html">P3-T12</a> EEVDF;搶佔/時間片 → 理解 kernel 的搶佔模型;優先權 → 即時(real-time)排程概念。</li>
+<li><strong>下一步 → <a class="xlink" href="P1-T08.html">P1-T08</a> 並行基礎與 race condition</strong>:你已經理解多個 task 如何被排程「輪流/並行」執行。下一課揭露這種並行的黑暗面——當多個執行緒<strong>同時讀寫共享資料</strong>(回顧 <a class="xlink" href="P1-T05.html">P1-T05</a>:執行緒共享記憶體),會發生什麼災難?你會親眼看到 <code>count++</code> 這種看似簡單的操作,在並行下如何悄悄出錯。這是理解 kernel 為何需要那麼多同步機制的動機起點。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P1-T06.html">← P1-T06 context switch 與系統呼叫、使用者/核心邊界</a><a class="pn next" href="P1-T08.html">P1-T08 並行基礎與 race condition →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

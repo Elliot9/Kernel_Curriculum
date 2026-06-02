@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P0-T01 · 開發環境與編譯流程</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P0 · 深度 C、記憶體與未定義行為</span>
+  <span class="scope-pill base">基礎能力</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p0-t01">P0-T01 · 開發環境與編譯流程</h1>
+<blockquote>
+<p><strong>一句話</strong>:搞懂當你打下 <code>gcc hello.c</code> 並按下 Enter 的那一刻,電腦到底偷偷做了哪四件事。這四件事的放大版,就是你日後編譯整個 Linux kernel 的流程。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>你寫 PHP 或 JS 的時候,從來不需要「編譯」。你存檔、重新整理瀏覽器,程式就跑了。背後有一個<strong>直譯器(interpreter)</strong>即時讀你的原始碼、即時執行——你寫的文字,直譯器一行一行邊讀邊做。</p>
+<p>Go 稍微近一點——你會 <code>go build</code>——但它把整條流程包成一個指令,中間發生什麼你看不到,也不需要看到。</p>
+<p>C 不一樣,而且這個不一樣<strong>不是細節,是世界觀的差異</strong>。C 的原始碼在執行前,會先被一連串工具「翻譯」成 CPU 能直接執行的機器碼(一堆 0 與 1 的指令)。這條翻譯線有<strong>四個階段</strong>,每個階段都有明確的輸入和產物、都可能出錯、都可以單獨停下來檢查。</p>
+<p>為什麼你<strong>第一課</strong>就要懂這個?三個理由:</p>
+<ol>
+<li><strong>它是後面一切的基礎</strong>。編譯 Linux kernel、把你的程式碼變成一個能掛進核心的模組(module),全都是這條翻譯線的工業級放大版。kernel 不是「跑起來的直譯腳本」,它是被編譯成一大塊機器碼、在開機時被載入記憶體執行的東西。</li>
+<li><strong>它讓你會看錯誤</strong>。C 的編譯錯誤訊息對新手像天書,但其實每個錯誤都來自某個特定階段。知道是哪一階段出錯,你就知道往哪裡找問題。最經典的混淆——「編譯錯誤」vs「連結錯誤」——這課會幫你一刀切清。</li>
+<li><strong>它建立你的「機械觀」</strong>。高階語言把太多東西藏起來,養成「程式是魔法」的直覺。kernel 開發要求相反的心態:<strong>每件事都是可解釋的機械步驟</strong>。把 <code>hello.c</code> 怎麼變成可執行檔弄清楚,是戒掉「魔法直覺」的第一步。</li>
+</ol>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<p>這是第一課,沒有前置 task。但請確認你手上有一台 <strong>Linux 環境</strong>(實體機、虛擬機、或 WSL2 都可以),並能打開終端機。自我檢測:</p>
+<ol>
+<li>你能在終端機打 <code>gcc --version</code> 並看到版本輸出嗎?(沒有的話:<code>sudo apt install build-essential</code>)</li>
+<li>你知道「終端機裡的當前目錄」是什麼意思嗎?(打 <code>pwd</code> 會告訴你你現在在哪個資料夾)</li>
+<li>你用過任何文字編輯器(vim / nano / VS Code)存一個檔案嗎?</li>
+</ol>
+<p>三題都「是」,就可以開始。</p>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>這課的核心拆成這幾個小節:<strong>(1) 直譯 vs 編譯的根本差異 → (2) 四階段總覽地圖 → (3)~(6) 逐站深入(前處理／編譯／組譯／連結)→ (7) 編譯錯誤 vs 連結錯誤 → (8) Makefile → (9) gdb 入門</strong>,最後用一張總圖打通關。</p>
+<hr />
+<h3 id="1-vs">1. 直譯 vs 編譯:同一支程式,兩種「被執行」的方式</h3>
+<p>先把最根本的差異講清楚,因為這決定了你為什麼要學後面所有東西。</p>
+<p><strong>直譯(你熟悉的 JS/PHP)</strong>:有一個「直譯器」程式,它讀你的原始碼,一邊讀一邊執行。你的原始碼從頭到尾都是「文字」,執行時才被直譯器理解。好處是改完馬上能跑;代價是每次執行都要重新理解一遍,較慢,而且你得隨身帶著那個直譯器(瀏覽器、PHP runtime)。</p>
+<p><strong>編譯(C)</strong>:有一條「翻譯線」,在<strong>執行之前</strong>就把你的原始碼一次翻譯成 CPU 能直接執行的機器碼,存成一個獨立的可執行檔。之後執行的是那個機器碼檔,CPU 直接跑,不需要任何直譯器在場。好處是快、獨立;代價是每次改完都要重新翻譯一遍。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph interp["直譯(JS/PHP):執行時才邊讀邊做"]
+        IS["你的原始碼<br/>(永遠是文字)"] --> IR["直譯器<br/>(瀏覽器/runtime)"] --> IO["執行結果"]
+    end
+    subgraph comp["編譯(C):執行前先全部翻譯成機器碼"]
+        CS["你的原始碼"] --> CC["翻譯線<br/>(編譯/連結)"] --> CB["獨立可執行檔<br/>(機器碼)"] --> CPU["CPU 直接執行"]
+    end
+    style IR fill:#6fa8b8,color:#10100e
+    style CC fill:#e8a33d,color:#10100e
+    style CB fill:#8a9a5b,color:#10100e
+</pre></p>
+<blockquote>
+<p><strong>比喻</strong>:直譯像「現場口譯」——講者(你的程式碼)說一句,口譯員(直譯器)即時翻一句給聽眾。編譯像「事先把整本書翻譯成另一種語言出版」——翻譯只做一次,之後讀者直接讀譯本,不需要口譯員在場。</p>
+<p><strong>比喻的極限</strong>:這個對比抓住了「翻譯時機」的差異,但別過度推論成「編譯一定比直譯好」。現代 JS 引擎有 JIT(即時編譯)等技術,界線其實是模糊的。對我們的目的而言,重點只有一個:<strong>C 走的是「執行前先翻譯成機器碼」這條路,而那條路有四個你必須理解的階段</strong>。</p>
+</blockquote>
+<hr />
+<h3 id="2">2. 四階段總覽:一張地圖</h3>
+<p>先給你整條翻譯線的地圖,再逐站講解。當你打 <code>gcc hello.c -o hello</code>,<code>gcc</code> 其實是個<strong>總指揮</strong>,它依序調動四個工具,把原始碼一路變成可執行檔:</p>
+<p><pre class="mermaid">flowchart LR
+    A["hello.c<br/>原始碼<br/>(你寫的文字)"] -->|"① 前處理<br/>preprocess"| B["hello.i<br/>展開後的原始碼<br/>(還是文字,但變很長)"]
+    B -->|"② 編譯<br/>compile"| C["hello.s<br/>組合語言<br/>(人勉強讀得懂的 CPU 指令)"]
+    C -->|"③ 組譯<br/>assemble"| D["hello.o<br/>目的檔<br/>(機器碼,但還不完整)"]
+    D -->|"④ 連結<br/>link"| E["hello<br/>可執行檔<br/>(完整,可執行)"]
+    style A fill:#8a9a5b,color:#10100e
+    style E fill:#e8a33d,color:#10100e
+</pre></p>
+<p>每一站的「停車鍵」——gcc 提供旗標讓你在任一階段停下來、檢查那一站的產物:</p>
+<table>
+<thead>
+<tr>
+<th>旗標</th>
+<th>做到哪一階段就停</th>
+<th>產物</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-E</code></td>
+<td>① 前處理</td>
+<td><code>.i</code>(展開後的原始碼)</td>
+</tr>
+<tr>
+<td><code>-S</code></td>
+<td>② 編譯</td>
+<td><code>.s</code>(組合語言)</td>
+</tr>
+<tr>
+<td><code>-c</code></td>
+<td>③ 組譯</td>
+<td><code>.o</code>(目的檔)</td>
+</tr>
+<tr>
+<td>(無)</td>
+<td>④ 連結</td>
+<td>可執行檔</td>
+</tr>
+</tbody>
+</table>
+<p><strong>這張表是這課的骨架。</strong> 接下來四節,我們一站一站把車停下來,打開產物親眼看。</p>
+<hr />
+<h3 id="3-1preprocessing">3. 階段①:前處理(Preprocessing)</h3>
+<p><strong>它在做什麼</strong>:處理所有以 <code>#</code> 開頭的指令。最常見的兩個:
+- <code>#include &lt;stdio.h&gt;</code> 會被<strong>整份貼上</strong> stdio.h 這個檔案的全部內容。
+- <code>#define MAX 100</code> 會把後面所有出現的 <code>MAX</code> 文字,換成 <code>100</code>。</p>
+<p>注意:<strong>這一階段純粹是文字操作</strong>——剪貼、取代。它完全不懂 C 的語法,不檢查對錯,只是機械地處理 <code>#</code> 開頭的東西。</p>
+<p><pre class="mermaid">flowchart TB
+    SRC["hello.c<br/>#include &lt;stdio.h&gt;<br/>int main(void){<br/>  printf(...);<br/>}"]
+    STEP1["把 #include 那一行<br/>替換成 stdio.h 的全部內容<br/>(幾百~上千行)"]
+    STEP2["把所有 #define 的縮寫<br/>展開成它定義的文字"]
+    OUT["hello.i<br/>(沒有任何 # 指令了,<br/>全是攤開的純 C 文字,<br/>常從幾行暴增到上千行)"]
+    SRC --> STEP1 --> STEP2 --> OUT
+    style SRC fill:#8a9a5b,color:#10100e
+    style OUT fill:#e8a33d,color:#10100e
+</pre></p>
+<blockquote>
+<p><strong>比喻</strong>:這就像你寫信時用了很多「詳見附件 A」。前處理器做的事,就是把附件 A 的全文直接剪貼到信裡該出現的位置,並把你定義的所有縮寫(「本公司」=「○○股份有限公司」)展開成全稱。處理完之後,信裡不再有任何「縮寫」或「詳見某處」——全部是攤開的、完整的文字。</p>
+<p><strong>比喻的極限</strong>:剪貼附件聽起來無害,但 <code>#include</code> 是<strong>純文字貼上,不檢查內容對不對</strong>。如果被貼進來的標頭檔本身有錯,錯誤會在你「貼進來之後」才被下一階段抓到,而且錯誤行號會指向<strong>展開後</strong>的位置(可能是第 873 行),不是你原始碼裡那短短一行 <code>#include</code>。這是初學者看 C 編譯錯誤常一頭霧水的根源之一。</p>
+</blockquote>
+<p><strong>親眼看它(worked example)</strong>:</p>
+<pre><code class="language-bash">gcc -E hello.c -o hello.i
+wc -l hello.c hello.i      # 比較行數
+</code></pre>
+<p>你會看到 <code>hello.c</code> 可能只有 6 行,但 <code>hello.i</code> 暴增到幾百上千行——那些多出來的全是被 <code>#include &lt;stdio.h&gt;</code> 貼進來的內容(printf 的宣告等等)。打開 <code>hello.i</code> 翻到最後,你會在一堆陌生的宣告之後,找到你自己那幾行 <code>main</code>。</p>
+<hr />
+<h3 id="4-2compilation">4. 階段②:編譯(Compilation)</h3>
+<p><strong>它在做什麼</strong>:把前處理後的純 C 程式碼,翻譯成<strong>組合語言(assembly)</strong>。</p>
+<p>組合語言是什麼?它是「人還勉強看得懂的 CPU 指令」——每一行對應一個 CPU 動作,像 <code>mov</code>(搬資料)、<code>add</code>(相加)、<code>call</code>(呼叫一個函式)。它介於「人類語言」和「機器的 0/1」之間。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph layers["三層語言,由高到低"]
+        direction TB
+        L1["C 語言<br/>int x = a + b;<br/>(接近人類思維)"]
+        L2["組合語言<br/>mov eax, [a]<br/>add eax, [b]<br/>(一行一個 CPU 動作)"]
+        L3["機器碼<br/>10001011 00000101...<br/>(CPU 直接吃的 0/1)"]
+        L1 -->|"② 編譯"| L2
+        L2 -->|"③ 組譯"| L3
+    end
+    style L1 fill:#8a9a5b,color:#10100e
+    style L2 fill:#6fa8b8,color:#10100e
+    style L3 fill:#24221d,color:#cfc6b0
+</pre></p>
+<blockquote>
+<p><strong>比喻</strong>:如果 C 是「中文」、機器碼是「電報的點與線」,那組合語言就是「注音符號」——它是介於人類語言和機器訊號之間的中間層。一個注音對應一個發音動作,人還是讀得出來,但它已經非常接近「機器實際發出的東西」了。</p>
+</blockquote>
+<p><strong>親眼看它(worked example)</strong>:</p>
+<pre><code class="language-bash">gcc -S hello.c -o hello.s
+</code></pre>
+<p>打開 <code>hello.s</code>,你會看到一個 <code>main:</code> 標籤,底下是一串 <code>mov</code>、<code>call</code>、<code>ret</code> 之類的指令。<strong>你現在完全不需要看懂每一行</strong>——這課的目標只是讓你認得「喔,我的 C 程式被翻成這種東西了,這就是組合語言的長相」。你會注意到裡面有個 <code>call printf</code>——記住這個,下一節會用到。</p>
+<hr />
+<h3 id="5-3assembly">5. 階段③:組譯(Assembly)</h3>
+<p><strong>它在做什麼</strong>:把組合語言(文字)翻成<strong>機器碼</strong>(真正的 0 與 1),產出一個 <code>.o</code> 檔,叫<strong>目的檔(object file)</strong>。這時候已經是 CPU 看得懂的二進位指令了。</p>
+<p><strong>但這裡有個關鍵:<code>.o</code> 檔還不能執行。</strong> 為什麼?</p>
+<p>回想上一節 <code>hello.s</code> 裡那行 <code>call printf</code>。你的 <code>hello.c</code> 用了 <code>printf</code>,但 <strong><code>printf</code> 的程式碼根本不在你的檔案裡</strong>——它住在 C 標準函式庫裡(別人早就寫好、編譯好的)。所以你的 <code>.o</code> 檔目前的狀態是:「我這裡要呼叫一個叫 <code>printf</code> 的東西……<strong>但我不知道它在哪個位址</strong>。」</p>
+<p><pre class="mermaid">flowchart TB
+    OBJ["hello.o(目的檔)"]
+    HAS["✓ 有:你自己 main 的機器碼"]
+    HOLE["✗ 缺:printf 在哪?<br/>留了一個『待填位址』的空缺<br/>(這種未解決的引用叫 unresolved symbol)"]
+    OBJ --> HAS
+    OBJ --> HOLE
+    CANT["→ 因為有空缺,所以還不能執行"]
+    HOLE --> CANT
+    style HAS fill:#8a9a5b,color:#10100e
+    style HOLE fill:#c2603a,color:#f4ecd8
+    style CANT fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>這個「不知道在哪」的空缺,要靠下一階段(連結)補上。</p>
+<p><strong>親眼看它(worked example)</strong>:</p>
+<pre><code class="language-bash">gcc -c hello.c -o hello.o     # 編譯 + 組譯,但不連結
+file hello.o                  # 會說這是 &quot;relocatable&quot; 物件檔(可重定位 = 還沒定好位址)
+objdump -d hello.o            # 反組譯:把機器碼「反翻譯」回組合語言給你看
+</code></pre>
+<p><code>objdump -d</code> 會顯示 <code>main</code> 的機器碼對照組合語言。你會看到那個對 <code>printf</code> 的呼叫,它的目標位址此刻是空的或佔位的——<strong>這就是「待填的空缺」的鐵證</strong>。</p>
+<blockquote>
+<p><strong>比喻</strong>:<code>.o</code> 是一份「還沒裝訂、缺了引用頁」的書稿。內文(你的 main)都印好了,但凡是寫到「(此處引用《printf 大全》第 X 頁)」的地方,頁碼還是空白——因為你手上沒有那本書,填不了頁碼。</p>
+</blockquote>
+<hr />
+<h3 id="6-4linking">6. 階段④:連結(Linking)</h3>
+<p><strong>它在做什麼</strong>:把你的 <code>.o</code> 檔,跟它用到的函式庫(例如包含 <code>printf</code> 的 C 標準庫)<strong>拼接</strong>起來,把所有「我不知道在哪」的空缺,填上真正的位址,最後產出一個完整的、可以執行的檔案。</p>
+<p>負責這件事的工具叫<strong>連結器(linker)</strong>。它做的核心動作叫<strong>符號解析(symbol resolution)</strong>:把每一個「未解決的引用」(像 <code>printf</code>),對應到它真正的「定義」所在的位址。</p>
+<p><pre class="mermaid">flowchart LR
+    subgraph before["連結前"]
+        OBJ["hello.o<br/>call printf @ ???"]
+        LIB["C 標準庫<br/>printf 的本體<br/>在位址 0x4521"]
+    end
+    LINKER["連結器<br/>(symbol resolution)"]
+    subgraph after["連結後"]
+        EXE["hello(可執行檔)<br/>call printf @ 0x4521<br/>空缺已填,可執行 ✓"]
+    end
+    OBJ --> LINKER
+    LIB --> LINKER
+    LINKER -->|"把 ??? 換成 0x4521"| EXE
+    style OBJ fill:#c2603a,color:#f4ecd8
+    style LINKER fill:#e8a33d,color:#10100e
+    style EXE fill:#8a9a5b,color:#10100e
+</pre></p>
+<blockquote>
+<p><strong>比喻</strong>:連結器就像最後的編輯。你的 <code>.o</code> 是缺頁碼的書稿,編輯去資料庫找到《printf 大全》的真正位置,把書稿裡所有「(此處引用…第 X 頁)」的空白頁碼<strong>全部補齊</strong>,然後把你的書稿和它引用的內容<strong>釘成一本可以出版的完整書</strong>。出版後的書(可執行檔)裡,不再有任何「待補」的空白。</p>
+</blockquote>
+<p><strong>親眼看它(worked example)</strong>:</p>
+<pre><code class="language-bash">gcc hello.o -o hello     # 連結(gcc 會自動帶上 C 標準庫)
+./hello                  # 執行!
+</code></pre>
+<hr />
+<h3 id="7-vs">7. 編譯錯誤 vs 連結錯誤:一刀切清</h3>
+<p>這是<strong>初學者最常混淆、也最值得單獨拉出來講</strong>的一節。「編譯錯誤」和「連結錯誤」是<strong>不同階段</strong>的<strong>不同問題</strong>,訊息長相不同,解法也完全不同。</p>
+<p><pre class="mermaid">flowchart TB
+    Q["程式 build 失敗了"]
+    Q --> T1{"錯誤訊息長怎樣?"}
+    T1 -->|"expected ';'<br/>undeclared identifier<br/>type mismatch"| C1["編譯錯誤<br/>(階段②)<br/>= 你的語法/型別寫錯了"]
+    T1 -->|"undefined reference to 'foo'"| C2["連結錯誤<br/>(階段④)<br/>= 語法都對,但找不到<br/>某個函式/變數的『本體』"]
+    C1 --> F1["解法:回去檢查那一行的<br/>語法、拼字、型別、有沒有宣告"]
+    C2 --> F2["解法:檢查那個函式的本體<br/>有沒有被一起編譯/連結進來<br/>(別去改語法!語法是對的)"]
+    style C1 fill:#6fa8b8,color:#10100e
+    style C2 fill:#c2603a,color:#f4ecd8
+    style F2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>對照表:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>編譯錯誤</th>
+<th>連結錯誤</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>發生階段</td>
+<td>② 編譯</td>
+<td>④ 連結</td>
+</tr>
+<tr>
+<td>典型訊息</td>
+<td><code>expected ';'</code>、<code>undeclared identifier</code></td>
+<td><code>undefined reference to 'foo'</code></td>
+</tr>
+<tr>
+<td>真正的意思</td>
+<td>你寫的 C 文法/型別不對</td>
+<td>文法都對,但某個東西找不到「本體」</td>
+</tr>
+<tr>
+<td>比喻</td>
+<td>句子文法錯了</td>
+<td>句子沒錯,但你引用的那本書根本不存在</td>
+</tr>
+<tr>
+<td>該怎麼修</td>
+<td>改那一行的語法</td>
+<td>確認本體有被編譯進來,<strong>別動語法</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>記住這個分流</strong>:看到 <strong><code>undefined reference</code></strong>,你的第一反應應該是「哪個函式的本體沒被連結進來?」——而<strong>不是</strong>去逐字檢查語法。多少新手在 <code>undefined reference</code> 前面盯著完全正確的語法看半小時,就是因為不知道這是連結階段的錯。</p>
+<hr />
+<h3 id="8-makefile">8. Makefile:不要每次都手打那串指令</h3>
+<p>當你的專案從一個檔案變成三個、五個檔案,每次手動 <code>gcc a.c b.c c.c -o prog</code> 會很痛苦,而且「只改了一個檔案卻要把全部重新編譯」很浪費時間。<strong>Make</strong> 這個工具就是來解決這件事的。</p>
+<p>你在一個叫 <code>Makefile</code> 的檔案裡寫好「規則」,Make 會<strong>自動判斷哪些檔案改了、只重新編譯需要的部分</strong>。</p>
+<h4 id="makefile">Makefile 的核心觀念:相依圖</h4>
+<p>Make 的運作建立在一張「<strong>誰依賴誰</strong>」的圖上。一個最小的兩檔案專案:</p>
+<pre><code class="language-makefile"># Makefile —— 注意:每條指令前面必須是「Tab」字元,不是空格!
+hello: main.o util.o
+    gcc main.o util.o -o hello
+
+main.o: main.c util.h
+    gcc -c main.c
+
+util.o: util.c util.h
+    gcc -c util.c
+
+clean:
+    rm -f *.o hello
+</code></pre>
+<p>讀法:每個區塊是「<strong>目標: 它依賴的檔案</strong>」,下一行(必須 Tab 縮排)是「怎麼從那些依賴產生這個目標」。畫成圖:</p>
+<p><pre class="mermaid">flowchart TB
+    hello["hello(最終可執行檔)"]
+    mainO["main.o"]
+    utilO["util.o"]
+    mainC["main.c"]
+    utilC["util.c"]
+    utilH["util.h"]
+    hello --> mainO
+    hello --> utilO
+    mainO --> mainC
+    mainO --> utilH
+    utilO --> utilC
+    utilO --> utilH
+    style hello fill:#e8a33d,color:#10100e
+    style utilH fill:#6fa8b8,color:#10100e
+</pre></p>
+<h4 id="make">Make 怎麼決定「只重編需要的」</h4>
+<p>Make 看<strong>檔案的修改時間戳記</strong>。規則是:「如果某個目標,比它依賴的任何檔案還舊,就代表依賴變了、目標過期了,要重跑那條規則。」</p>
+<p><pre class="mermaid">flowchart TB
+    START["你執行 make"]
+    Q1{"util.c 比 util.o 新嗎?<br/>(util.c 被改過?)"}
+    START --> Q1
+    Q1 -->|"是"| RE1["重新編譯 util.o"]
+    Q1 -->|"否"| SKIP1["跳過 util.o(沒過期)"]
+    RE1 --> Q2{"util.o 或 main.o<br/>比 hello 新嗎?"}
+    SKIP1 --> Q2
+    Q2 -->|"是"| RE2["重新連結 hello"]
+    Q2 -->|"否"| DONE["什麼都不用做"]
+    style RE1 fill:#e8a33d,color:#10100e
+    style RE2 fill:#e8a33d,color:#10100e
+    style DONE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>注意一個漂亮的連鎖效果:如果你只改了 <code>util.h</code>,因為 <code>main.o</code> 和 <code>util.o</code> <strong>都</strong>依賴它,所以兩個都會重編,然後 <code>hello</code> 重連結。但如果你只改 <code>main.c</code>,就只有 <code>main.o</code> 重編。Make 自動算出這個最小重建範圍——這正是它的價值。</p>
+<blockquote>
+<p><strong>這跟 kernel 有什麼關係?</strong> Linux kernel 的 build 系統(叫 <strong>Kbuild</strong>)本質上就是一套巨大、精巧的 Makefile 體系。kernel 有幾萬個檔案,你改一個檔案重編,它不會把整個 kernel 重編一遍——靠的就是這套相依關係。你在 Phase 3 編譯 kernel、寫第一個 module 時,寫的就是(簡化版的)Makefile。今天這個 8 行的小範例,是那座大山的第一塊石頭。</p>
+</blockquote>
+<hr />
+<h3 id="9-gdb">9. gdb 入門:暫停時間,看程式內部</h3>
+<p>當程式行為不如預期,你需要的不是「盯著程式碼猜」,而是一個能<strong>讓程式暫停、一行一行往下走、隨時查看變數值</strong>的工具。這就是除錯器 <strong>gdb</strong>。</p>
+<p>它的基本工作流:</p>
+<p><pre class="mermaid">flowchart LR
+    A["gcc -g 編譯<br/>(-g 把行號/變數名<br/>包進執行檔)"] --> B["gdb ./prog<br/>啟動除錯器"]
+    B --> C["break main<br/>設中斷點<br/>(程式跑到這就暫停)"]
+    C --> D["run<br/>執行到中斷點停下"]
+    D --> E["next / step<br/>一行一行往下走"]
+    E --> F["print 變數<br/>查看當下的值"]
+    F --> G["continue / quit<br/>繼續或離開"]
+    style A fill:#8a9a5b,color:#10100e
+    style D fill:#e8a33d,color:#10100e
+    style F fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>關鍵是那個 <strong><code>-g</code></strong>:它告訴編譯器「把原始碼的行號、變數名稱這些除錯資訊,一起包進執行檔」,gdb 才能把機器碼對應回「你寫的第幾行、那個叫 <code>x</code> 的變數」。沒有 <code>-g</code>,gdb 看到的只有機器碼,沒辦法告訴你「現在在第 12 行、x 等於 5」。</p>
+<blockquote>
+<p><strong>這跟 kernel 有什麼關係?</strong> 除錯 kernel 比除錯一般程式難得多(你不能直接「暫停」整個作業系統),但概念是相通的,而且 gdb 確實能用來除錯 kernel(搭配 QEMU)。Phase 3 你會學到 kernel 的除錯手段。現在先把 gdb 在一般程式上的基本動作練熟。</p>
+</blockquote>
+<hr />
+<h2 id="_4">打通關:把整條流程串成一個心智模型</h2>
+<p>學到這裡,你手上有四個階段、加上 Makefile 和 gdb 兩個工具。把它們收攏成一張總圖——這就是你從今以後看待「C 程式如何誕生與除錯」的心智模型:</p>
+<p><pre class="mermaid">flowchart TB
+    YOU["你寫 .c / .h 檔"]
+    subgraph pipeline["編譯流水線(由 gcc 總指揮,或由 Makefile 自動調度)"]
+        direction LR
+        P1[".c"] -->|"①前處理 -E"| P2[".i"] -->|"②編譯 -S"| P3[".s"] -->|"③組譯 -c"| P4[".o<br/>(有空缺)"] -->|"④連結"| P5["可執行檔"]
+    end
+    YOU --> P1
+    MK["Makefile / Kbuild<br/>決定『哪些要重建』<br/>(看時間戳記)"] -.自動調度.-> pipeline
+    P5 --> RUN["執行"]
+    RUN -->|"行為不對?"| GDB["gdb(需 -g)<br/>暫停、單步、查變數"]
+    GDB -.找到問題改回原始碼.-> YOU
+
+    ERR["build 失敗?<br/>看訊息分流:<br/>語法錯→編譯錯誤(②)<br/>找不到本體→連結錯誤(④)"]
+    pipeline -.出錯時.-> ERR
+    ERR -.對症下藥.-> YOU
+
+    style P4 fill:#c2603a,color:#f4ecd8
+    style P5 fill:#8a9a5b,color:#10100e
+    style MK fill:#6fa8b8,color:#10100e
+    style GDB fill:#e8a33d,color:#10100e
+    style ERR fill:#24221d,color:#cfc6b0
+</pre></p>
+<p>這張圖裡每一個箭頭你都能解釋了:原始碼經四階段變可執行檔、Makefile 自動決定重建範圍、出錯時依訊息分流到正確階段、gdb 在執行期幫你找 bug。<strong>這整套,就是 kernel 開發日常的縮影——只是規模從一個檔案,變成幾萬個檔案。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:把「編譯」當成整條流程的全部。</strong>
+人們隨口說「編譯程式」,但嚴格講,「編譯」只是階段②。整條線是「前處理 → 編譯 → 組譯 → 連結」。為什麼這個區分重要?因為當出錯時,你必須知道<strong>錯在哪一站</strong>才能對症下藥。把 <code>undefined reference</code>(連結階段)當成語法問題去改,就會白忙半天。</p>
+<p><strong>誤區二:以為 <code>.o</code> 檔可以直接執行。</strong>
+<code>.o</code> 是半成品。它有機器碼,但留著「待連結」的空缺(像對 <code>printf</code> 的呼叫)。沒連結就想執行,系統會拒絕。把 <code>.o</code> 想成「還沒裝訂、缺了引用頁碼的書稿」。</p>
+<p><strong>誤區三:Makefile 用空格縮排。</strong>
+這是 C 新手最惱人的坑之一。Makefile 規定指令行<strong>必須用 Tab 字元</strong>縮排,用空格會得到一個莫名其妙的錯誤(<code>missing separator</code>)。很多編輯器預設把 Tab 自動轉成空格——寫 Makefile 時要關掉這個設定,或確認你打的真的是 Tab。</p>
+<p><strong>誤區四:忘記 <code>-g</code> 就想用 gdb 看變數名。</strong>
+沒有 <code>-g</code>,執行檔裡沒有行號和變數名資訊,gdb 只能給你冷冰冰的機器位址,沒辦法說「第 12 行、變數 x = 5」。要除錯,編譯時記得加 <code>-g</code>。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:任何 Linux 終端機。<strong>全程不需要 root,也不會動到系統。</strong></p>
+<p><strong>任務 A — 親眼走過四個階段</strong>
+1. 寫一個 <code>hello.c</code>,印出 "Hello, kernel journey"。
+2. 依序執行,每一步都打開產物看看:
+   <code>bash
+   gcc -E hello.c -o hello.i   # 看 .i 暴增的行數:wc -l hello.c hello.i
+   gcc -S hello.c -o hello.s   # 打開 hello.s,找到 call printf
+   gcc -c hello.c -o hello.o   # file hello.o(會說 relocatable)
+   objdump -d hello.o          # 反組譯,看那個待填的 printf 呼叫
+   gcc hello.o -o hello        # 連結成可執行檔
+   ./hello                     # 執行</code>
+3. 寫下一句話:<code>hello.i</code> 為什麼比 <code>hello.c</code> 長那麼多?</p>
+<p><strong>任務 B — 兩檔案專案 + Makefile</strong>
+1. 建立 <code>util.h</code>(宣告 <code>int add(int, int);</code>)、<code>util.c</code>(實作它)、<code>main.c</code>(呼叫並印出結果)。
+2. 寫本課那個 Makefile,執行 <code>make</code>,確認產生可執行檔且輸出正確。
+3. <strong>觀察增量編譯</strong>:只改 <code>util.c</code> 存檔,再 <code>make</code> 一次——觀察它<strong>只重編了 util.o</strong>,沒重編 main.o,然後重連結。接著改 <code>util.h</code>,再 <code>make</code>——這次 main.o 和 util.o <strong>都</strong>會重編(因為兩者都依賴它)。</p>
+<p><strong>任務 C — 製造一個連結錯誤,親眼認得它</strong>
+在 <code>main.c</code> 裡呼叫一個你<strong>宣告了但沒實作</strong>的函式(例如在 util.h 宣告 <code>int sub(int,int);</code> 但 util.c 裡不寫它的本體),然後 build。你會看到 <code>undefined reference to 'sub'</code>。<strong>確認:這是連結錯誤,不是編譯錯誤</strong>(語法完全正確,只是找不到本體)。然後補上本體,再 build 成功。</p>
+<p><strong>任務 D — 用 gdb 走一遍</strong>
+(這裡為了讓 gdb 範例簡單,跳過 Makefile,直接一行把兩個 <code>.c</code> 編成帶除錯資訊的執行檔。)</p>
+<pre><code class="language-bash">gcc -g main.c util.c -o prog   # -g 帶入除錯資訊;一次編譯多檔以簡化示範
+gdb ./prog
+</code></pre>
+<p>在 gdb 裡依序做:<code>break main</code>(設中斷點)、<code>run</code>(執行到中斷點)、<code>next</code>(單步往下,至少 3 行)、<code>print 變數名</code>(印出某變數值)、<code>quit</code>。</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 能對 <code>gcc -S</code> 與 <code>gcc -c</code> 的產物各說出<strong>至少一個具體差異</strong>(前者產出文字組合語言 <code>.s</code>,後者產出二進位目的檔 <code>.o</code>)。
+2. ☐ 建立含 <code>main.c</code> + <code>util.c</code> + <code>util.h</code> 的專案,<code>make</code> 後產生可執行檔且輸出正確;並能說出「只改 util.c」與「改 util.h」時,重建範圍有何不同。
+3. ☐ 能認出 <code>undefined reference</code> 是連結錯誤(而非編譯錯誤),並說明該往哪裡找問題。
+4. ☐ 用 gdb 在 <code>main</code> 設中斷點並單步至少 3 行,印出一個區域變數值。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能編譯並執行一支程式。
+- <strong>80(熟練)</strong>:能解釋四階段各自的輸入與產物,能分清編譯錯誤 vs 連結錯誤,會用 Makefile 與 gdb 的基本動作。
+- <strong>100(精通)</strong>:能徒手寫多檔案 Makefile 並解釋其相依/增量重建邏輯,能解釋連結階段到底在「填補」什麼(符號解析)。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:基礎能力。但別小看它——你日後編譯 kernel、build 自家 module 用的 Kbuild,就是這條翻譯線 + Makefile 的工業級版本;用 gdb + QEMU 除錯 kernel,也是今天 gdb 動作的延伸。</li>
+<li><strong>這課餵給未來的</strong>:四階段觀念 → Phase 3 編譯 kernel 與寫 module;Makefile → Kbuild;gdb → kernel 除錯。</li>
+<li><strong>下一步 → <a class="xlink" href="P0-T02.html">P0-T02</a> 指標基礎與位址思維</strong>:你已經知道程式怎麼被翻譯成機器碼、怎麼除錯了。下一課進入 C 最核心、也最讓高階語言出身者頭痛的東西——<strong>指標</strong>。那是你理解「記憶體位址」的起點,而記憶體位址,是整個 kernel 世界的通用語言。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn next" href="P0-T02.html">P0-T02 指標基礎與位址思維 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

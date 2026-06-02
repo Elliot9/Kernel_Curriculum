@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P6-T02 · scatter-gather 與 DMA 同步</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P6 · DMA、IOMMU 與 P2PDMA</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p6-t02-scatter-gather-dma">P6-T02 · scatter-gather 與 DMA 同步</h1>
+<blockquote>
+<p><strong>一句話</strong>:你的資料常分散在多個記憶體片段(bio_vec)——用 <code>dma_map_sg</code> 對一串 scatterlist 一次映射做 DMA。兩個致命細節:映射後要用「回傳的映射數」走訪(IOMMU 可能把片段合併,數量變少),以及 streaming 映射上 CPU 與裝置交替存取時必須用 <code>dma_sync_*</code> 維持 cache 一致性。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P6-T01.html">P6-T01</a> 你會用 coherent/streaming 映射<strong>單一</strong> buffer 了。但你產品的資料很少是「一塊連續記憶體」——它常<strong>分散在多個片段</strong>(回顧 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 <code>bio_vec</code>:一次 I/O 的資料分散在多個頁)。這一課學怎麼對「一串分散片段」做一次 DMA——<strong>scatter-gather</strong>。</p>
+<p>核心工具與概念:
+- <strong><code>struct scatterlist</code> / <code>sg_table</code></strong>:描述「一串分散的記憶體片段」的結構——每個 entry 是一個片段(page + offset + 長度)。這就是 <a class="xlink" href="P5-T02.html">P5-T02</a> 的 <code>bio_vec</code> 在 DMA 層的對應。
+- <strong><code>dma_map_sg</code> / <code>dma_unmap_sg</code></strong>:對整串 scatterlist <strong>一次映射/解映射</strong>——讓裝置能一次 DMA 存取這些分散片段。
+- <strong><code>dma_sync_*</code></strong>:streaming 映射上,當 CPU 和裝置<strong>交替存取</strong>同一塊記憶體時,要用 <code>dma_sync_single_for_cpu</code>/<code>dma_sync_single_for_device</code> 維持 <strong>cache 一致性</strong>。
+- <strong>IOMMU 合併</strong>:IOMMU 能把「分散的實體片段」對裝置呈現成「連續的 DMA 視圖」——所以 <code>dma_map_sg</code> 回傳的映射數<strong>可能少於</strong>你給的原始 entry 數(一個致命陷阱)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為<strong>NVMe 的 PRP/SGL 與 <code>bio_vec</code> 的分散片段,正是經 scatter-gather 映射做 DMA</strong>(回顧 <a class="xlink" href="P5-T05.html">P5-T05</a>:bio_vec → PRP/SGL → 裝置 DMA)。這是你資料路徑的日常——你產品把 bio 的分散資料片段映射成裝置可 DMA 的形式,餵給 NVMe/GPU。這一課的兩個陷阱(映射數、sync),漏了就是間歇性資料錯誤。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P6-T01.html">P6-T01</a>(DMA API、streaming 映射、方向、<code>dma_addr_t</code> 不可解參考)、<a class="xlink" href="P5-T02.html">P5-T02</a>(bio_vec/scatter-gather 雛形)。也用到 <a class="xlink" href="P1-T02.html">P1-T02</a>(cache——sync 的原因)、<a class="xlink" href="P3-T06.html">P3-T06</a>(page)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P5-T02.html">P5-T02</a> 的「bio_vec 陣列:一次 I/O 的資料分散在多個記憶體片段」嗎?scatterlist 就是這個在 DMA 層的對應。
+  2. 你還記得 <a class="xlink" href="P1-T02.html">P1-T02</a> 的 cache(CPU 讀寫先經 cache)嗎?<code>dma_sync_*</code> 就是處理「CPU 的 cache 和裝置看到的記憶體不同步」的問題。</li>
+<li>工具:DMA API HOWTO 的 scatter-gather/sync 段落(https://docs.kernel.org/core-api/dma-api-howto.html ）。</li>
+<li>環境:<strong>QEMU 虛擬機(實驗只在 VM)。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 為何需要 scatter-gather → (2) scatterlist 與 dma_map_sg → (3) 致命陷阱:用回傳的映射數 → (4) 為何需要 dma_sync → (5) dma_sync 的正確順序 → (6) IOMMU 合併</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-scatter-gather">1. 為何需要 scatter-gather</h3>
+<p>先理解問題:你要 DMA 的資料,常<strong>不在一塊連續記憶體</strong>,而是分散在多個片段。</p>
+<p><pre class="mermaid">flowchart TB
+    DATA2["你要 DMA 的資料(例如一次 I/O 的 16KB)"]
+    DATA2 --> SCATTERED["實際分散在多個記憶體片段:<br/>頁 A 的一段、頁 B 的一段、頁 C 的一段<br/>(因為記憶體分頁管理,P1-T04;就是 bio_vec,P5-T02)"]
+    SCATTERED --> OPTIONS["怎麼 DMA 這些分散片段?"]
+    OPTIONS --> BAD2["✗ 笨方法:對每個片段各做一次 DMA 映射 + 傳輸<br/>→ 多次映射/傳輸,開銷大、慢"]
+    OPTIONS --> GOOD3["✓ scatter-gather:把『一串片段』一次映射(dma_map_sg)<br/>→ 裝置一次 DMA 就能存取所有片段<br/>(gather:聚集分散的片段成一次操作)"]
+    style SCATTERED fill:#6fa8b8,color:#10100e
+    style GOOD3 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>scatter-gather(分散-聚集)</strong> 解決「資料分散在多個片段」的 DMA。你的資料分散(回顧 <a class="xlink" href="P5-T02.html">P5-T02</a>:bio_vec,因為記憶體分頁,一塊邏輯資料落在多個頁)。與其對每個片段各做一次 DMA(多次映射、慢),scatter-gather 把<strong>一串片段一次映射</strong>(<code>dma_map_sg</code>)——裝置一次 DMA 就能存取所有片段。</p>
+<p>這正是你產品的場景:一次 I/O 的資料(來自 bio_vec)分散在多個頁,你用 scatter-gather 把它們一次映射,讓 NVMe(或 GPU)一次 DMA 存取。NVMe 的 <strong>SGL(Scatter-Gather List,<a class="xlink" href="P5-T05.html">P5-T05</a>)</strong> 就是這個概念在 NVMe 協定層的體現——而 <code>dma_map_sg</code> 是你在 kernel 裡建立它的工具。</p>
+<hr />
+<h3 id="2-scatterlist-dma_map_sg">2. <code>scatterlist</code> 與 <code>dma_map_sg</code></h3>
+<p>核心結構和函式:<strong><code>struct scatterlist</code></strong>(描述片段)和 <strong><code>dma_map_sg</code></strong>(一次映射整串)。</p>
+<p><pre class="mermaid">flowchart TB
+    SGLIST["struct scatterlist 陣列(或 sg_table):一串片段<br/>每個 entry:page + offset + length<br/>(= bio_vec 的對應,P5-T02)"]
+    SGLIST --> SETUP["建立:sg_init_table + sg_set_page(把每個片段填進去)<br/>(或從 bio 的 bio_vec 直接轉成 scatterlist)"]
+    SETUP --> MAPSG["dma_map_sg(dev, sglist, nents, direction)<br/>一次映射整串 → 每個 entry 得到 dma_addr + 長度<br/>(回傳『實際映射的 entry 數』,第3節!)"]
+    MAPSG --> DEVICE7["裝置用這些 dma_addr(及長度)一次 DMA 存取所有片段<br/>(對 NVMe:轉成 SGL/PRP,P5-T05)"]
+    DEVICE7 --> UNMAPSG["dma_unmap_sg(dev, sglist, nents, direction)<br/>★ 傳輸完必須 unmap(否則 IOMMU 映射洩漏)★"]
+    style SGLIST fill:#6fa8b8,color:#10100e
+    style MAPSG fill:#e8a33d,color:#10100e
+    style UNMAPSG fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>流程:
+- <strong><code>struct scatterlist</code> 陣列(或 <code>sg_table</code>)</strong>:一串片段,每個 entry 是 page + offset + length(就是 <a class="xlink" href="P5-T02.html">P5-T02</a> bio_vec 的對應)。用 <code>sg_init_table</code> + <code>sg_set_page</code> 建立,或從 bio 的 bio_vec 轉成 scatterlist。
+- <strong><code>dma_map_sg(dev, sglist, nents, direction)</code></strong>:<strong>一次映射整串</strong>——每個 entry 得到一個 <code>dma_addr</code> 和長度(裝置用)。回傳「實際映射的 entry 數」(第 3 節的關鍵!)。
+- <strong>裝置用這些 <code>dma_addr</code> 一次 DMA 存取所有片段</strong>(對 NVMe:轉成 SGL/PRP,<a class="xlink" href="P5-T05.html">P5-T05</a>)。
+- <strong><code>dma_unmap_sg</code></strong>:傳輸完必須 unmap(<strong>常見誤區:忘記 unmap 造成 IOMMU 映射洩漏</strong>)。</p>
+<p><code>dma_map_sg</code> 是「streaming 映射」的 scatter-gather 版(回顧 <a class="xlink" href="P6-T01.html">P6-T01</a>:streaming = 單次傳輸、需方向),所以一樣要指定方向、一樣要 unmap、一樣有 sync 問題(第 4 節)。</p>
+<hr />
+<h3 id="3">3. 致命陷阱:用回傳的映射數,不是原始數</h3>
+<p>這是 scatter-gather DMA 最容易出錯、最隱蔽的陷阱。</p>
+<p><pre class="mermaid">flowchart TB
+    INPUT["你給 dma_map_sg 一個有 N 個 entry 的 scatterlist<br/>(例:N=5 個分散片段)"]
+    INPUT --> MAP4["dma_map_sg(dev, sglist, 5, dir)"]
+    MAP4 --> COALESCE["★ IOMMU 可能把相鄰片段『合併』★(第6節)<br/>例:5 個實體分散的片段,IOMMU 映射成<br/>2 段連續的 DMA 位址<br/>→ dma_map_sg 回傳 2(不是 5!)"]
+    COALESCE --> WRONG6["✗ 錯誤:走訪時用『原始的 5』<br/>→ 走過頭、讀到無效的 entry → 錯誤/當機"]
+    COALESCE --> RIGHT6["✓ 正確:走訪時用『dma_map_sg 回傳的數(2)』<br/>用 for_each_sg 配合回傳值走訪映射後的 entry"]
+    NOTE27["★ 鐵則:映射後用『回傳的映射數』,不是傳入的原始 nents ★<br/>(unmap 時則用『原始的 nents』—— 注意這個不對稱!)"]
+    RIGHT6 --> NOTE27
+    style COALESCE fill:#e8a33d,color:#10100e
+    style WRONG6 fill:#c2603a,color:#f4ecd8
+    style NOTE27 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>陷阱(常見誤區:<code>dma_map_sg</code> 後使用「原始 entry 數」而非「回傳的映射數」)</strong>:
+- 你給 <code>dma_map_sg</code> 一個有 N 個 entry 的 scatterlist。
+- <strong>IOMMU 可能把相鄰片段「合併」</strong>(第 6 節)——例如 5 個實體分散的片段,IOMMU 映射成 2 段連續的 DMA 位址。
+- 所以 <code>dma_map_sg</code> <strong>回傳 2,不是 5</strong>!
+- <strong>走訪映射後的 entry,要用「回傳的映射數(2)」</strong>,用 <code>for_each_sg</code> 配合回傳值走訪。用原始的 5 會走過頭、讀到無效 entry → 錯誤/當機。</p>
+<p><strong>鐵則(驗收點:對含至少 3 段的 scatterlist 成功 <code>dma_map_sg</code> 並用回傳的映射數走訪)</strong>:<strong>映射後用「回傳的映射數」,不是傳入的原始 nents</strong>。</p>
+<p><strong>注意一個不對稱</strong>:<code>dma_unmap_sg</code> 時則用<strong>原始的 nents</strong>(不是映射後的數)——因為 unmap 要還原整個原始的 scatterlist。這個「map 用回傳數走訪、unmap 用原始數」的不對稱很容易搞錯,要記牢。</p>
+<p>這對你產品直接相關:你把 bio_vec 轉成 scatterlist、<code>dma_map_sg</code>,然後要把映射結果轉成 NVMe 的 SGL/PRP——這時必須用回傳的映射數走訪,否則你建的 SGL 會錯(多出無效 entry),裝置 DMA 就毀損資料。</p>
+<hr />
+<h3 id="4-dma_synccache">4. 為何需要 <code>dma_sync</code>:cache 一致性</h3>
+<p>streaming 映射(含 <code>dma_map_sg</code>)有一個 coherent 映射沒有的問題:<strong>cache 一致性</strong>。當 CPU 和裝置<strong>交替存取</strong>同一塊 streaming 映射的記憶體,要用 <code>dma_sync_*</code> 維持一致。</p>
+<p><pre class="mermaid">flowchart TB
+    PROBLEM8["問題根源:CPU 有 cache(P1-T02)<br/>CPU 寫資料 → 可能還在 CPU cache 裡,沒寫回主記憶體<br/>裝置 DMA 讀主記憶體 → 讀到『還沒被 CPU 寫回的舊值』"]
+    PROBLEM8 --> COHERENT_NOTE["coherent 映射:底層保證一致(免 sync,P6-T01)"]
+    PROBLEM8 --> STREAMING_NOTE["★ streaming 映射:不自動保證 ★<br/>CPU 與裝置交替存取時,要手動 dma_sync_* 維持一致"]
+    STREAMING_NOTE --> CASES["兩種方向的問題:<br/>① CPU 寫 → 裝置讀:CPU 的寫要先『flush』到記憶體(裝置才讀得到新值)<br/>② 裝置寫 → CPU 讀:CPU 的 cache 要先『invalidate』(才讀得到裝置寫的新值,不是 cache 舊值)"]
+    style PROBLEM8 fill:#c2603a,color:#f4ecd8
+    style STREAMING_NOTE fill:#e8a33d,color:#10100e
+    style CASES fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>問題根源(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a> cache)</strong>:CPU 有 cache——CPU 寫的資料可能還在 cache 裡、沒寫回主記憶體;裝置 DMA 讀主記憶體,會讀到「還沒被 CPU 寫回的舊值」。反之,裝置 DMA 寫了主記憶體,CPU 的 cache 裡可能還是舊值。</p>
+<ul>
+<li><strong>coherent 映射</strong>:底層保證一致,<strong>免 sync</strong>(回顧 <a class="xlink" href="P6-T01.html">P6-T01</a>)。</li>
+<li><strong>streaming 映射:不自動保證</strong>——CPU 與裝置交替存取時,要手動 <code>dma_sync_*</code>。</li>
+</ul>
+<p>兩種方向的問題:
+- <strong>CPU 寫 → 裝置讀</strong>:CPU 的寫要先 flush 到記憶體(裝置才讀得到新值)。
+- <strong>裝置寫 → CPU 讀</strong>:CPU 的 cache 要先 invalidate(才讀得到裝置寫的新值,不是 cache 舊值)。</p>
+<p><code>dma_sync_*</code> 就是做這些 cache 操作的工具,讓「交替存取 streaming 記憶體」的雙方看到正確的資料。</p>
+<hr />
+<h3 id="5-dma_sync">5. <code>dma_sync</code> 的正確順序</h3>
+<p><code>dma_sync_*</code> 有「歸誰」的語意——<code>for_cpu</code>(交給 CPU)和 <code>for_device</code>(交還裝置),順序很重要。</p>
+<p><pre class="mermaid">flowchart TB
+    MAPPED["一塊 streaming 映射的記憶體(映射期間『歸裝置』)"]
+    MAPPED --> SYNC_CPU["① dma_sync_single_for_cpu(dev, dma_addr, size, dir)<br/>『把記憶體交給 CPU』<br/>→ invalidate CPU cache,確保 CPU 接下來讀到裝置寫的新值"]
+    SYNC_CPU --> CPU_ACCESS["② CPU 存取這塊記憶體(讀/寫)<br/>(此時記憶體『歸 CPU』,裝置不該碰)"]
+    CPU_ACCESS --> SYNC_DEV["③ dma_sync_single_for_device(dev, dma_addr, size, dir)<br/>『把記憶體交還裝置』<br/>→ flush CPU cache,確保 CPU 的寫對裝置可見"]
+    SYNC_DEV --> DEV_ACCESS["④ 裝置接著 DMA 這塊(此時『歸裝置』)"]
+    NOTE28["★ 心智模型:streaming 映射的記憶體像『借還』★<br/>for_cpu = CPU 借走(先讓 CPU 看到正確值)<br/>for_device = 還給裝置(先讓裝置看到 CPU 的修改)<br/>★ 借用期間,另一方不該存取 ★"]
+    DEV_ACCESS --> NOTE28
+    style SYNC_CPU fill:#6fa8b8,color:#10100e
+    style SYNC_DEV fill:#e8a33d,color:#10100e
+    style NOTE28 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>正確順序(驗收點:正確示範一次 <code>dma_sync_single_for_cpu</code>→CPU 存取→<code>dma_sync_single_for_device</code> 並說明理由)</strong>:
+1. <strong><code>dma_sync_single_for_cpu</code></strong>:「把記憶體交給 CPU」——invalidate CPU cache,確保 CPU 接下來讀到裝置寫的新值。
+2. <strong>CPU 存取</strong>這塊記憶體(此時歸 CPU,裝置不該碰)。
+3. <strong><code>dma_sync_single_for_device</code></strong>:「把記憶體交還裝置」——flush CPU cache,確保 CPU 的寫對裝置可見。
+4. <strong>裝置接著 DMA</strong>(此時歸裝置)。</p>
+<p><strong>心智模型:streaming 映射的記憶體像「借還」</strong>——<code>for_cpu</code> = CPU 借走(先讓 CPU 看到正確值)、<code>for_device</code> = 還給裝置(先讓裝置看到 CPU 的修改)。<strong>借用期間,另一方不該存取</strong>。</p>
+<p><strong>兩個常見誤區</strong>:
+- <strong>streaming 映射期間 CPU 直接讀寫卻不 <code>dma_sync_*</code></strong>——CPU 讀到 stale 值、或裝置看到舊資料。要存取就先 sync。
+- <strong>映射後又改動 buffer 內容卻未重新 sync</strong>——改了要再 <code>for_device</code> 才讓裝置看到。</p>
+<p>(注意:<code>dma_map_sg</code> 對應的是 <code>dma_sync_sg_for_cpu</code>/<code>dma_sync_sg_for_device</code>,同樣語意但對整串。)</p>
+<hr />
+<h3 id="6-iommu">6. IOMMU 合併:分散片段變連續視圖</h3>
+<p>最後解釋第 3 節那個「映射數變少」的原因——<strong>IOMMU 合併</strong>。這也預告 <a class="xlink" href="P6-T04.html">P6-T04</a> 的 IOMMU。</p>
+<p><pre class="mermaid">flowchart TB
+    SCATTERED2["實體上分散的片段(5 個,實體位址各處)"]
+    SCATTERED2 --> IOMMU2["★ IOMMU(P6-T04)★<br/>裝置端的位址轉譯器<br/>把分散的實體片段,映射成裝置看到的『連續』DMA 位址"]
+    IOMMU2 --> DEVICE8["裝置看到的:可能是 1~2 段『連續』的 DMA 位址<br/>(IOMMU 把實體分散的 5 段,對裝置呈現成連續)<br/>→ dma_map_sg 回傳的映射數因此變少(第3節)"]
+    BENEFIT5["好處:<br/>① 裝置看到連續位址,DMA 更簡單(不必處理那麼多段)<br/>② 對 NVMe:更少的 SGL/PRP entry → 更省"]
+    DEVICE8 --> BENEFIT5
+    NOTE29["這就是『dma_addr_t 不是實體位址』的具體原因(P6-T01 鐵則):<br/>IOMMU 轉譯後,裝置看到的 DMA 位址,<br/>和實體位址完全不同(實體分散 → DMA 連續)"]
+    DEVICE8 --> NOTE29
+    style IOMMU2 fill:#e8a33d,color:#10100e
+    style BENEFIT5 fill:#8a9a5b,color:#10100e
+    style NOTE29 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>IOMMU 合併(驗收點:解釋為何映射數可能少於原始 entry 數)</strong>:
+- <strong>IOMMU</strong>(<a class="xlink" href="P6-T04.html">P6-T04</a>)是裝置端的位址轉譯器,能把<strong>分散的實體片段,映射成裝置看到的「連續」DMA 位址</strong>。
+- 所以 5 個實體分散的片段,經 IOMMU 可能對裝置呈現成 1~2 段<strong>連續</strong>的 DMA 位址 → <code>dma_map_sg</code> 回傳的映射數變少(第 3 節)。</p>
+<p>好處:裝置看到連續位址,DMA 更簡單(不必處理那麼多段);對 NVMe,更少的 SGL/PRP entry → 更省。</p>
+<p><strong>這正是 <a class="xlink" href="P6-T01.html">P6-T01</a> 鐵則「<code>dma_addr_t</code> 不是實體位址」的具體原因</strong>:IOMMU 轉譯後,裝置看到的 DMA 位址,和實體位址<strong>完全不同</strong>(實體分散 → DMA 連續)。你現在親眼看到「為什麼 <code>dma_addr_t</code> 不能當實體位址」——因為 IOMMU 在中間做了合併/轉譯。<a class="xlink" href="P6-T04.html">P6-T04</a> 會深入 IOMMU 的轉譯與保護。</p>
+<p>對你產品:有 IOMMU 時,你的 bio_vec 分散片段經 <code>dma_map_sg</code> 可能被合併成更少的連續 DMA 段,你據此(用回傳的映射數)建 NVMe 的 SGL——更省、更快。但你必須用回傳數走訪,否則出錯。</p>
+<p>把「你產品從 bio_vec 到裝置 DMA」這條 scatter-gather 管線完整畫出來:</p>
+<p><pre class="mermaid">flowchart LR
+    BV["bio_vec(分散片段,P5-T02)<br/>頁A、頁B、頁C、頁D、頁E(5 段)"]
+    BV --> SG["轉成 scatterlist(5 個 entry)"]
+    SG --> MAP["dma_map_sg(dev, sg, 5, dir)"]
+    MAP --> COAL["IOMMU 合併 → 回傳 2(連續 DMA 段)"]
+    COAL --> SGL2["★ 用『回傳的 2』走訪 → 建 NVMe SGL/PRP(P5-T05)★"]
+    SGL2 --> DEV["裝置依 SGL 一次 DMA 存取資料"]
+    NOTE_T2["★ 用原始 5 走訪 = 多出無效 entry → 資料毀損 ★"]
+    SGL2 --> NOTE_T2
+    style MAP fill:#e8a33d,color:#10100e
+    style SGL2 fill:#8a9a5b,color:#10100e
+    style NOTE_T2 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<hr />
+<h2 id="scatter-gather-dma">打通關:把 scatter-gather 與 DMA 同步收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    NEED4["你的資料分散在多個片段(bio_vec,P5-T02)→ 需 scatter-gather DMA"]
+    NEED4 --> MAPSG2["scatterlist(片段串)+ dma_map_sg 一次映射<br/>(streaming 的 SG 版:需方向、要 unmap)<br/>→ 對 NVMe 轉成 SGL/PRP(P5-T05)"]
+    MAPSG2 --> TRAP["★ 陷阱:用『回傳的映射數』走訪(IOMMU 合併 → 數量變少)★<br/>(但 unmap 用『原始 nents』—— 不對稱!)"]
+    NEED4 --> SYNC2["★ dma_sync_*:streaming 映射 CPU/裝置交替存取的 cache 一致性 ★<br/>順序:for_cpu(借給 CPU)→ CPU 存取 → for_device(還給裝置)<br/>(coherent 映射免 sync)"]
+    TRAP --> IOMMU3["IOMMU 合併:分散實體片段 → 裝置看到連續 DMA 視圖<br/>(這就是 dma_addr_t ≠ 實體位址的具體原因,P6-T01 鐵則 → P6-T04)"]
+    SYNC2 --> YOURS10["→ 你產品:bio_vec → scatterlist → dma_map_sg → SGL/PRP → 裝置 DMA<br/>漏映射數/漏 sync = 間歇性資料毀損"]
+    IOMMU3 --> YOURS10
+    style TRAP fill:#e8a33d,color:#10100e
+    style SYNC2 fill:#6fa8b8,color:#10100e
+    style YOURS10 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>你的資料分散在多個片段(bio_vec),用 scatterlist + <code>dma_map_sg</code> 一次映射做 DMA（streaming 的 SG 版，對 NVMe 轉成 SGL/PRP）；兩個致命細節——走訪映射結果要用「回傳的映射數」（IOMMU 合併會讓數量變少，但 unmap 用原始 nents，不對稱），以及 streaming 映射上 CPU/裝置交替存取要用 <code>dma_sync_*</code>（for_cpu 借給 CPU → 存取 → for_device 還給裝置）維持 cache 一致性。IOMMU 把分散實體片段呈現成連續 DMA 視圖，正是 dma_addr_t ≠ 實體位址的具體原因。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:<code>dma_map_sg</code> 後使用「原始 entry 數」而非「回傳的映射數」。</strong>
+IOMMU 合併後映射數可能變少。走訪映射結果用回傳數(<code>for_each_sg</code> 配回傳值);但 unmap 用原始 nents(不對稱,要記牢)。</p>
+<p><strong>誤區二:streaming 映射期間 CPU 直接讀寫卻不 <code>dma_sync_*</code>。</strong>
+CPU 讀到 stale 值、或裝置看到舊資料。要存取就先 <code>for_cpu</code>,存取完 <code>for_device</code> 還給裝置。</p>
+<p><strong>誤區三:映射後又改動 buffer 內容卻未重新 sync。</strong>
+改了要再 <code>dma_sync_*_for_device</code> 才讓裝置看到新內容。</p>
+<p><strong>誤區四:忘記 unmap 造成 IOMMU 映射洩漏。</strong>
+<code>dma_map_sg</code> 後傳輸完必須 <code>dma_unmap_sg</code>(用原始 nents),否則 IOMMU 映射洩漏。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機(實驗只在 VM)。</strong></p>
+<p><strong>任務 A — dma_map_sg 與映射數(驗收點,核心)</strong>
+建立一個含<strong>至少 3 段</strong> buffer 的 scatterlist(<code>sg_init_table</code> + <code>sg_set_page</code>/<code>sg_set_buf</code>),<code>dma_map_sg(dev, sg, 3, DMA_TO_DEVICE)</code>。用 <strong><code>for_each_sg</code> 配合回傳的映射數</strong> 走訪映射後的 entry(印出每段的 dma_addr 和長度)。<strong>驗收:對含至少 3 段的 scatterlist 成功 <code>dma_map_sg</code> 並用回傳的映射數(非原始數)走訪。</strong> 完成後 <code>dma_unmap_sg</code>(用原始 nents)。</p>
+<p><strong>任務 B — dma_sync 順序(驗收點)</strong>
+對一塊 streaming 映射的 buffer,示範一次:<code>dma_sync_single_for_cpu</code> → CPU 存取(讀或寫)→ <code>dma_sync_single_for_device</code> 的順序。寫一段話說明每一步的理由。<strong>驗收:正確示範順序並說明理由(for_cpu 讓 CPU 看到裝置寫的新值;for_device 讓裝置看到 CPU 的修改)。</strong></p>
+<p><strong>任務 C — 解釋 IOMMU 合併(驗收點)</strong>
+寫一段話:為什麼 <code>dma_map_sg</code> 回傳的映射數可能少於你傳入的原始 entry 數?<strong>驗收:解釋(IOMMU 把分散的實體片段合併成連續的 DMA 視圖,所以映射後的段數變少)。</strong></p>
+<p><strong>任務 D(連結)— 對應你的資料路徑</strong>
+寫一兩句話:你產品的 bio_vec 分散片段,如何經 scatterlist → <code>dma_map_sg</code> → NVMe 的 SGL/PRP?走訪映射結果時要注意什麼?(提示:用回傳的映射數建 SGL,否則多出無效 entry。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 對含至少 3 段的 scatterlist 成功 <code>dma_map_sg</code> 並用回傳的映射數(非原始數)走訪。
+2. ☐ 正確示範一次 <code>dma_sync_single_for_cpu</code>→CPU 存取→<code>dma_sync_single_for_device</code> 的順序並說明理由。
+3. ☐ 解釋為何映射數可能少於原始 entry 數(IOMMU 合併)。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用 <code>dma_map_sg</code>。
+- <strong>80(熟練)</strong>:能正確處理映射數與 sync。
+- <strong>100(精通)</strong>:能解釋 IOMMU 合併與 cache 一致性對 SG DMA 的完整影響。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——NVMe 的 PRP/SGL 與 <code>bio_vec</code> 的分散片段正是經 scatter-gather 映射做 DMA;這是你資料路徑的日常。</li>
+<li><strong>這課餵給未來的(I/O 物件流動主線)</strong>:<a class="xlink" href="P5-T02.html">P5-T02</a> bio_vec → 本課 scatterlist/dma_map_sg → <a class="xlink" href="P5-T05.html">P5-T05</a> SGL/PRP(已學)的 kernel 實作;<code>dma_sync</code> cache 一致性 → 回收 <a class="xlink" href="P1-T02.html">P1-T02</a>;IOMMU 合併 → <a class="xlink" href="P6-T04.html">P6-T04</a> IOMMU(深入轉譯與保護)。</li>
+<li><strong>下一步 → <a class="xlink" href="P6-T03.html">P6-T03</a> DMA 屏障與按門鈴(doorbell)的正確順序</strong>:你會把分散資料映射給裝置 DMA 了。下一課是 DMA <strong>正確性最易出錯之處</strong>——把你 <a class="xlink" href="P3-T11.html">P3-T11</a> 的「記憶體屏障命門」落實到 DMA:用 <strong><code>dma_wmb</code>/<code>dma_rmb</code></strong> 確保「描述子/資料對裝置可見」<strong>先於</strong>「按門鈴」(回顧 <a class="xlink" href="P5-T05.html">P5-T05</a> NVMe 提交流程的屏障)。漏一個屏障,裝置先看到門鈴、後看到描述子 → 讀到半寫資料 → <strong>間歇性資料毀損,且極難重現</strong>。這正是你產品提交 NVMe 命令、處理完成項時的正確性核心。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P6-T01.html">← P6-T01 DMA 基礎與 DMA API(coherent vs streaming)</a><a class="pn next" href="P6-T03.html">P6-T03 DMA 屏障與按門鈴(doorbell)的正確順序 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

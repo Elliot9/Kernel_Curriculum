@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T10 · 中斷與延後工作(hardirq / softirq / tasklet / workqueue / threaded IRQ)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p3-t10-hardirq-softirq-tasklet-workqueue-threaded-irq">P3-T10 · 中斷與延後工作(hardirq / softirq / tasklet / workqueue / threaded IRQ)</h1>
+<blockquote>
+<p><strong>一句話</strong>:中斷處理要「快進快出」——上半部(ISR)只做最緊急的、不可睡眠;耗時或會睡眠的重活(像你的 parity 計算、GPU 提交)必須延後到下半部,而其中只有 workqueue 能睡眠。選錯延後機制,系統死結或中斷延遲爆炸。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>這一課回到「中斷」這個 kernel 特有的維度(<a class="xlink" href="P3-T08.html">P3-T08</a> 已經讓你見識到它讓同步變複雜),深入<strong>中斷處理的結構</strong>——而它直接決定你 I/O 完成路徑該怎麼寫。</p>
+<p>核心概念是<strong>上半部/下半部(top half / bottom half)</strong>模型。當硬體中斷發生(例如 NVMe 完成一個 I/O),CPU 會跳去執行<strong>中斷處理常式(ISR,上半部)</strong>。但 ISR 有嚴格限制:
+- <strong>在中斷 context,不可睡眠</strong>(回顧 <a class="xlink" href="P3-T08.html">P3-T08</a>:不可 mutex、不可 <code>GFP_KERNEL</code>、不可任何會睡眠的事)。
+- <strong>要快</strong>:ISR 執行時,可能擋住其他中斷、增加系統延遲。所以 ISR 應該<strong>只做最緊急的事</strong>(例如確認中斷、記下「有事發生」),然後<strong>盡快返回</strong>。</p>
+<p>那些「耗時的、或會睡眠的」工作怎麼辦?<strong>延後到下半部</strong>處理。kernel 有幾種下半部機制:
+- <strong>softirq</strong>:高頻、原子 context、<strong>不可睡眠</strong>。
+- <strong>tasklet</strong>:建在 softirq 上,<strong>不可睡眠</strong>(<strong>已逐漸淘汰</strong>,新程式不該用)。
+- <strong>workqueue</strong>:在<strong>行程 context</strong> 執行,<strong>可睡眠</strong>——能做耗時、會阻塞的工作。
+- <strong>threaded IRQ</strong>:把中斷處理放到一個專屬核心執行緒裡(可睡眠)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為這是你 I/O 完成路徑的核心抉擇:<strong>NVMe I/O 完成中斷後,你要做 parity 計算、提交給 GPU——這些是耗時、會睡眠的重活,絕對不能在 ISR(中斷 context)裡做</strong>。它們必須延後到<strong>可睡眠的下半部(workqueue 或 threaded IRQ)</strong>。選錯機制(例如想在 tasklet 裡睡眠)會死結;ISR 做太多會拖垮中斷延遲。這一課讓你選對。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P3-T08.html">P3-T08</a>(中斷 context 不可睡眠、鎖的 context 規則)。也用到 <a class="xlink" href="P3-T07.html">P3-T07</a>(GFP context)、<a class="xlink" href="P1-T06.html">P1-T06</a>(中斷如何打斷執行)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P3-T08.html">P3-T08</a> 說「中斷 context 不可睡眠、不可用 mutex」嗎?這課的上半部就在中斷 context,下半部的 workqueue 則跳出中斷 context 變成可睡眠。
+  2. 你還記得 <a class="xlink" href="P3-T09.html">P3-T09</a> 的 <code>completion</code> 嗎?它常和「下半部完成後通知」搭配。</li>
+<li>環境:<strong>QEMU 虛擬機。實驗只在 VM。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 中斷與 ISR:快進快出 → (2) 上半部/下半部模型 → (3) softirq:高頻原子 → (4) tasklet:已淘汰 → (5) workqueue:可睡眠的下半部 → (6) 選型:你的 I/O 完成路徑</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-isr">1. 中斷與 ISR:為什麼要快進快出</h3>
+<p>硬體裝置(網卡、磁碟、NVMe SSD)需要通知 CPU「我有事了」(資料到了、I/O 完成了),靠的是<strong>硬體中斷(hardware interrupt, hardirq)</strong>:</p>
+<p><pre class="mermaid">flowchart LR
+    DEVICE["硬體裝置(如 NVMe)<br/>完成一個 I/O"]
+    IRQ["發出硬體中斷<br/>通知 CPU"]
+    CPU["CPU 暫停手邊工作,<br/>跳去執行該中斷的 ISR<br/>(中斷處理常式,上半部)"]
+    DEVICE --> IRQ --> CPU
+    NOTE["★ ISR 在『中斷 context』執行 ★<br/>① 不可睡眠(P3-T08)<br/>② 執行時可能擋住其他中斷、增加延遲<br/>→ 必須快進快出"]
+    CPU --> NOTE
+    style CPU fill:#e8a33d,color:#10100e
+    style NOTE fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>ISR(上半部)的兩個鐵律:
+- <strong>不可睡眠</strong>(回顧 <a class="xlink" href="P3-T08.html">P3-T08</a>):中斷 context 不能阻塞、不能讓出 CPU 去睡。所以不可 <code>mutex_lock</code>、不可 <code>kmalloc(GFP_KERNEL)</code>、不可任何會睡眠的事。
+- <strong>要快</strong>:ISR 執行時可能擋住其他中斷、增加整體延遲。<strong>ISR 應該只做最緊急的事</strong>(確認/應答中斷、記錄狀態、排入下半部),然後盡快返回。</p>
+<p><strong>常見誤區:ISR 內做大量工作而不延後</strong>——這會增加中斷延遲,影響整個系統的回應性。ISR 要短,重活延後。</p>
+<hr />
+<h3 id="2">2. 上半部/下半部模型:把工作分兩段</h3>
+<p>既然 ISR 要快又不能睡眠,但有些工作耗時或需要睡眠,解法是把中斷處理<strong>分兩段</strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    IRQ["硬體中斷發生"]
+    IRQ --> TOP["上半部(top half = ISR):<br/>★ 快、中斷 context、不可睡眠 ★<br/>只做最緊急的:<br/>確認中斷、記下『有事』、排入下半部<br/>→ 盡快返回"]
+    TOP --> SCHEDULE["排程一個下半部"]
+    SCHEDULE --> BOTTOM["下半部(bottom half):<br/>稍後執行耗時/可睡眠的工作<br/>(實際處理資料、複雜邏輯)"]
+    NOTE["分兩段的好處:<br/>ISR 快速返回(不擋中斷),<br/>重活在下半部從容處理(部分機制還可睡眠)"]
+    BOTTOM --> NOTE
+    style TOP fill:#e8a33d,color:#10100e
+    style BOTTOM fill:#8a9a5b,color:#10100e
+    style NOTE fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>模型:
+- <strong>上半部(ISR)</strong>:中斷一來立刻執行,快、不可睡眠,只做最緊急的事,然後<strong>排程一個下半部</strong>、盡快返回。
+- <strong>下半部</strong>:稍後執行真正的、耗時的處理。依機制不同,有些下半部還能睡眠(workqueue)。</p>
+<p>這讓「中斷要快」和「處理要完整」兩個需求兼顧:ISR 快速應答硬體、返回;重活延後到下半部慢慢做。接下來看下半部的幾種機制,關鍵差異在「<strong>能不能睡眠</strong>」。</p>
+<hr />
+<h3 id="3-softirq-context">3. softirq:高頻、原子 context、不可睡眠</h3>
+<p><strong>softirq(軟中斷)</strong> 是最底層的下半部機制,設計給<strong>高頻、效能關鍵</strong>的場景(例如網路、block I/O 的核心路徑)。</p>
+<p><pre class="mermaid">flowchart TB
+    SOFTIRQ["softirq:最底層的下半部"]
+    SOFTIRQ --> CHAR["特性:<br/>① 高頻、低開銷(效能關鍵路徑用)<br/>② 在『原子 context』執行 → ★ 不可睡眠 ★<br/>③ 數量固定(kernel 預定義那幾種,一般 module 不自己加)"]
+    CHAR --> WHO["誰用:網路收發、block layer(blk-mq 的完成處理部分)、計時器等核心子系統"]
+    style SOFTIRQ fill:#e8a33d,color:#10100e
+    style WHO fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>特性:
+- <strong>高頻、低開銷</strong>:適合效能關鍵、頻繁觸發的下半部。
+- <strong>原子 context、不可睡眠</strong>:雖然不是硬中斷 context,但 softirq 仍在「原子 context」執行,<strong>不可睡眠</strong>(不可 mutex、不可 <code>GFP_KERNEL</code>)。
+- <strong>數量固定</strong>:softirq 是 kernel 預定義的那幾種(網路、block、計時器等),<strong>一般 module 不自己新增 softirq</strong>——你會用上層的 tasklet 或 workqueue。</p>
+<p>softirq 是 block layer(你的領域)I/O 完成處理的底層機制之一,但你寫 module 通常不直接寫 softirq,而是用建在它之上的機制或 workqueue。</p>
+<hr />
+<h3 id="4-tasklet-softirq">4. tasklet:建在 softirq 上,但已淘汰</h3>
+<p><strong>tasklet</strong> 是建立在 softirq 之上的下半部機制,曾經很常用,但<strong>現在已逐漸淘汰</strong>——這是一個重要的「現況」提醒:</p>
+<p><pre class="mermaid">flowchart TB
+    TASKLET["tasklet:建在 softirq 上的下半部"]
+    TASKLET --> CHAR2["特性:<br/>① 也在原子 context → ★ 不可睡眠 ★(跟 softirq 一樣)<br/>② 比 softirq 易用(動態建立,同一 tasklet 不會在多核並行)"]
+    CHAR2 --> DEPRECATED["★ 但已逐漸淘汰 ★<br/>新程式碼不該用 tasklet<br/>→ 改用 workqueue,或(需原子的)用 BH workqueue 等替代"]
+    style TASKLET fill:#c2603a,color:#f4ecd8
+    style DEPRECATED fill:#e8a33d,color:#10100e
+</pre></p>
+<p>要點:
+- tasklet <strong>也不可睡眠</strong>(在原子 context,跟 softirq 一樣)。
+- <strong>它已被視為過時</strong>——kernel 社群正在移除 tasklet,<strong>新程式碼不該用 tasklet</strong>(常見誤區:<strong>仍優先選 tasklet</strong>)。
+- 替代:需要可睡眠 → 用 <strong>workqueue</strong>;需要原子的快速下半部 → 用其他現代機制(如 BH workqueue 等)。</p>
+<p><strong>這是一個「LDD3 等舊資料會教 tasklet,但現況已淘汰」的點</strong>——你看舊教材會看到 tasklet,但寫新 module 要用 workqueue。(呼應整個課程「舊書看概念、API 對照現況」的原則。)</p>
+<hr />
+<h3 id="5-workqueue">5. workqueue:可睡眠的下半部(你的重活去處)</h3>
+<p><strong>workqueue(工作佇列)</strong> 是<strong>最重要</strong>的下半部機制,因為它在<strong>行程 context</strong> 執行,所以<strong>可以睡眠</strong>——這正是你的耗時/阻塞重活的去處。</p>
+<p><pre class="mermaid">flowchart TB
+    WORKQUEUE["workqueue:在『行程 context』執行的下半部"]
+    WORKQUEUE --> CHAR3["★ 關鍵特性:可睡眠 ★<br/>因為在行程 context(由 kernel 工作執行緒跑),<br/>可以 mutex_lock、kmalloc(GFP_KERNEL)、<br/>做耗時/阻塞的工作"]
+    CHAR3 --> HOW["用法:<br/>① 定義一個 work(INIT_WORK + 處理函式)<br/>② 在 ISR(上半部)裡 schedule_work() 排入<br/>③ kernel 的工作執行緒稍後在行程 context 執行你的處理函式"]
+    HOW --> THREADED["相關:threaded IRQ(request_threaded_irq)<br/>把中斷處理直接放到一個專屬核心執行緒(可睡眠)<br/>→ 另一種『把中斷重活放到可睡眠 context』的方式"]
+    style CHAR3 fill:#8a9a5b,color:#10100e
+    style HOW fill:#6fa8b8,color:#10100e
+    style THREADED fill:#e8a33d,color:#10100e
+</pre></p>
+<p>關鍵特性與用法:
+- <strong>可睡眠</strong>:workqueue 的工作由 kernel 的<strong>工作執行緒(在行程 context)</strong>執行,所以可以 <code>mutex_lock</code>、<code>kmalloc(GFP_KERNEL)</code>、做耗時或阻塞的事。<strong>這是它和 softirq/tasklet 的根本差異</strong>(那些不可睡眠)。
+- <strong>用法</strong>:定義一個 <code>work</code>(用 <code>INIT_WORK</code> 綁定處理函式)→ 在 ISR(上半部)裡用 <code>schedule_work()</code> 把它排入 → kernel 工作執行緒稍後在行程 context 執行你的處理函式。
+- <strong>threaded IRQ</strong>(<code>request_threaded_irq</code>):另一種方式——把中斷處理直接放到一個專屬的核心執行緒裡執行(也在可睡眠 context)。適合「中斷處理本身就需要睡眠/較重」的驅動。</p>
+<p><strong>這就是你 I/O 完成路徑的關鍵</strong>:NVMe I/O 完成中斷的 ISR(上半部)只做最緊急的(確認完成、記錄),然後 <code>schedule_work</code> 把「parity 計算、GPU 提交」這些重活排入 workqueue,在可睡眠的行程 context 從容處理(可以等 GPU、可以配記憶體)。</p>
+<p>把你的 NVMe 完成路徑「上半部 vs 下半部」的分工畫清楚:</p>
+<p><pre class="mermaid">flowchart TB
+    NVMEIRQ["NVMe 發出 I/O 完成中斷"]
+    NVMEIRQ --> TH["上半部 ISR(中斷 context,不可睡眠):<br/>確認/應答中斷、記下哪個 I/O 完成、schedule_work、返回(快)"]
+    TH --> BH["下半部 workqueue(行程 context,可睡眠):"]
+    BH --> P1["parity 計算 / 提交給 GPU(可能耗時)"]
+    P1 --> P2["wait_for_completion 等 GPU 算完(P3-T09,可睡眠)"]
+    P2 --> P3["完成後續(更新狀態、釋放物件)"]
+    NOTE4["★ 重活全在下半部(可睡眠)★;ISR 只做最緊急的<br/>→ 中斷延遲短、且不違反『中斷 context 不可睡眠』"]
+    BH --> NOTE4
+    style TH fill:#e8a33d,color:#10100e
+    style BH fill:#8a9a5b,color:#10100e
+    style NOTE4 fill:#6fa8b8,color:#10100e
+</pre></p>
+<hr />
+<h3 id="6-io">6. 選型:你的 I/O 完成路徑該怎麼分配</h3>
+<p>把所有機制整合成選型,並落到你的具體場景:</p>
+<p><pre class="mermaid">flowchart TB
+    Q1{"這段工作需要睡眠嗎?<br/>(等 I/O、等 GPU、kmalloc(GFP_KERNEL)、mutex...)"}
+    Q1 -->|"需要睡眠"| WQ["★ 用 workqueue(或 threaded IRQ)★<br/>在行程 context、可睡眠<br/>→ 你的 parity 計算、GPU 提交放這裡"]
+    Q1 -->|"不需睡眠、要快"| Q2{"在 ISR 裡(最緊急的)?"}
+    Q2 -->|"是,最緊急"| TOPHALF["放上半部 ISR:確認中斷、記錄、排下半部"]
+    Q2 -->|"不睡眠但可延後的快速處理"| SOFTIRQ_PATH["softirq(核心子系統)/ 現代原子下半部機制<br/>(★ 不要用已淘汰的 tasklet ★)"]
+    style WQ fill:#8a9a5b,color:#10100e
+    style TOPHALF fill:#e8a33d,color:#10100e
+    style SOFTIRQ_PATH fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>你的 NVMe I/O 完成路徑的典型分配:
+- <strong>上半部(ISR)</strong>:NVMe 中斷一來,只做最緊急的——確認/應答中斷、記錄「哪個 I/O 完成了」、把後續處理排入下半部。<strong>快、不睡眠。</strong>
+- <strong>下半部(workqueue)</strong>:parity 計算、提交給 GPU、等 GPU 完成——這些<strong>會睡眠/耗時</strong>的重活,放 workqueue(可睡眠的行程 context)。可搭配 <a class="xlink" href="P3-T09.html">P3-T09</a> 的 <code>completion</code> 等 GPU 算完。</p>
+<p><strong>選型鐵則</strong>:
+- <strong>要睡眠/耗時</strong> → workqueue 或 threaded IRQ(可睡眠)。
+- <strong>最緊急、不睡眠</strong> → 上半部 ISR。
+- <strong>快速、不睡眠、可延後</strong> → softirq(核心子系統)/現代原子下半部;<strong>別用 tasklet(已淘汰)</strong>。</p>
+<p><strong>選錯的後果</strong>(常見誤區):在 ISR 或 softirq/tasklet(不可睡眠)裡做會睡眠的事(等 GPU、<code>GFP_KERNEL</code>)→ 死結或當機;ISR 做太多 → 中斷延遲爆炸,拖垮系統。(驗收點:正確回答「tasklet/softirq 能否睡眠」=否、「workqueue 能否睡眠」=是。)</p>
+<hr />
+<h2 id="_4">打通關:把中斷與延後工作收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    IRQ["硬體中斷(如 NVMe I/O 完成)"]
+    IRQ --> TOPHALF["上半部 ISR:★ 快、中斷 context、不可睡眠 ★<br/>只做最緊急的,排入下半部後盡快返回<br/>(ISR 做太多 → 中斷延遲爆炸)"]
+    TOPHALF --> BOTTOM["下半部:延後處理,機制差在『能否睡眠』"]
+    BOTTOM --> SOFTIRQ2["softirq:高頻原子、不可睡眠(核心子系統用)"]
+    BOTTOM --> TASKLET2["tasklet:不可睡眠、★已淘汰,新程式別用★"]
+    BOTTOM --> WQ2["★ workqueue:行程 context、可睡眠 ★<br/>(threaded IRQ 同類)→ 耗時/阻塞重活的去處"]
+    WQ2 --> YOURS["★ 你的 I/O 完成:ISR 只記錄+排程,<br/>parity 計算/GPU 提交(會睡眠)放 workqueue ★<br/>(搭 completion 等 GPU,P3-T09)"]
+    style TOPHALF fill:#e8a33d,color:#10100e
+    style WQ2 fill:#8a9a5b,color:#10100e
+    style YOURS fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>中斷處理分上半部(ISR,快、中斷 context、不可睡眠,只做最緊急的)和下半部(延後處理);下半部機制差在能否睡眠——softirq/tasklet 不可睡眠(tasklet 已淘汰)、workqueue 在行程 context 可睡眠;你的 NVMe I/O 完成路徑該讓 ISR 只記錄+排程,把會睡眠的 parity 計算/GPU 提交放進 workqueue,否則死結或中斷延遲爆炸。</strong></p>
+<hr />
+<h2 id="_5">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:在中斷 context(含 softirq/tasklet)睡眠或呼叫會睡眠的 API。</strong>
+這些是原子/不可睡眠 context,睡眠是違法的(會死結/當機)。要睡眠的工作放 workqueue(行程 context)。</p>
+<p><strong>誤區二:ISR 內做大量工作而不延後。</strong>
+增加中斷延遲、影響系統回應。ISR 只做最緊急的,重活延後到下半部。</p>
+<p><strong>誤區三:仍優先選 tasklet。</strong>
+tasklet 已逐漸淘汰,新程式碼應用 workqueue(可睡眠)或現代的原子下半部機制(BH workqueue 等)。</p>
+<p><strong>誤區四:workqueue 與 tasklet 的「可否睡眠」混淆。</strong>
+workqueue 在行程 context <strong>可睡眠</strong>;tasklet/softirq 在原子 context <strong>不可睡眠</strong>。這是選型的核心依據。</p>
+<hr />
+<h2 id="_6">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機。實驗只在 VM。</strong></p>
+<p><strong>任務 A — workqueue 執行可睡眠工作(驗收點)</strong>
+寫一個 module,定義一個 work(<code>INIT_WORK</code> 綁一個處理函式),在 module init 裡(或模擬的觸發點)用 <code>schedule_work()</code> 排入。<strong>處理函式裡放一個 <code>msleep(100)</code></strong>(模擬會睡眠的工作),<code>pr_info</code> 印出執行訊息。驗證:工作在行程 context 執行、<code>msleep</code> 不會造成崩潰。<strong>驗收:workqueue 成功在行程 context 執行含 <code>msleep</code> 的工作且不崩潰。</strong></p>
+<p><strong>任務 B — 回答 context 規則(驗收點,核心)</strong>
+寫下並回答:
+1. 「tasklet / softirq 中能否睡眠?」→ <strong>否</strong>,為什麼?(原子 context。)
+2. 「workqueue 中能否睡眠?」→ <strong>是</strong>,為什麼?(行程 context。)
+<strong>驗收:兩題都答對並能說明。</strong></p>
+<p><strong>任務 C — 說明為何 ISR 要短(驗收點)</strong>
+寫一句話:為什麼 ISR(上半部)要盡量短、把重活延後?<strong>驗收:能說明(ISR 在中斷 context、執行時擋其他中斷增加延遲;且不可睡眠)。</strong></p>
+<p><strong>任務 D(連結)— 設計你的 I/O 完成路徑</strong>
+寫一兩句話:NVMe I/O 完成後,你要做 parity 計算和 GPU 提交(會睡眠)。這些該放上半部還是下半部?用什麼機制?(提示:會睡眠 → workqueue/threaded IRQ;ISR 只做記錄+排程。)</p>
+<hr />
+<h2 id="_7">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 成功用 workqueue 在行程 context 執行一段含 <code>msleep</code> 的工作且不崩潰。
+2. ☐ 正確回答「tasklet/softirq 中能否睡眠」(否)與「workqueue 中能否睡眠」(是)。
+3. ☐ 說明為何 ISR 要盡量短、把重活延後。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用 workqueue。
+- <strong>80(熟練)</strong>:能正確區分各下半部機制的 context。
+- <strong>100(精通)</strong>:能依「是否需睡眠、頻率、延遲要求」為 I/O 完成處理選對機制。</p>
+<hr />
+<h2 id="_8">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——NVMe I/O 完成中斷後,parity 計算/GPU 提交等重活必須延後到可睡眠 context(workqueue/threaded IRQ),選錯會死結或拖垮中斷延遲。</li>
+<li><strong>這課餵給未來的(你的並行主線)</strong>:上半部/下半部、context 限制 → <span class="xlink-stub" title="待撰寫">P5</span> NVMe 驅動的中斷處理、<span class="xlink-stub" title="待撰寫">P7</span> parity/GPU 的延後提交;workqueue + completion(回收 <a class="xlink" href="P3-T09.html">P3-T09</a>)→ 等 GPU 完成;這是 <a class="xlink" href="P1-T08.html">P1-T08</a>→<a class="xlink" href="P1-T09.html">P1-T09</a>→<a class="xlink" href="P3-T08.html">P3-T08</a>→本課 並行主線的延續。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T11.html">P3-T11</a> memory barrier 與 Linux Kernel Memory Model(LKMM)</strong>:你已經掌握 kernel 的同步與中斷。下一課回到你那條「記憶體順序」主線(<a class="xlink" href="P1-T03.html">P1-T03</a>→<a class="xlink" href="P1-T10.html">P1-T10</a>→本課),把 <a class="xlink" href="P1-T10.html">P1-T10</a> 建立的「重排會發生」直覺,變成 kernel 裡的實際工具:<code>smp_mb</code>/<code>smp_wmb</code>/<code>smp_rmb</code>、<code>smp_load_acquire</code>/<code>smp_store_release</code>、<code>READ_ONCE</code>/<code>WRITE_ONCE</code>,以及 LKMM。這是 lock-free、RCU,以及<strong>你 DMA 正確性</strong>的根——描述子/資料必須在按 doorbell 前對 NVMe 裝置可見,否則裝置讀到舊資料導致資料毀損。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T09.html">← P3-T09 kernel 同步(二)—— atomic、RW lock、seqlock、per-CPU、completion</a><a class="pn next" href="P3-T11.html">P3-T11 memory barrier 與 Linux Kernel Memory Model(LKMM) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

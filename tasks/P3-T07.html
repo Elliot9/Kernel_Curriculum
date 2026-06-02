@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T07 · kernel 記憶體管理(二)—— kmalloc / slab(SLUB) / vmalloc / GFP flags</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p3-t07-kernel-kmalloc-slabslub-vmalloc-gfp-flags">P3-T07 · kernel 記憶體管理(二)—— kmalloc / slab(SLUB) / vmalloc / GFP flags</h1>
+<blockquote>
+<p><strong>一句話</strong>:<code>kmalloc</code> 配小塊且實體連續、<code>vmalloc</code> 配大塊但只虛擬連續、slab 快取重複利用同型別物件——而比「用哪個」更致命的是「<strong>用哪個 GFP flag</strong>」:在持有 spinlock 或中斷 context 裡用了會睡眠的 <code>GFP_KERNEL</code>,整個系統就死結。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>上一課 <a class="xlink" href="P3-T06.html">P3-T06</a> 講的是「以頁為單位」的底層配置。但你寫 module 時,大多數時候要的不是整頁,而是<strong>小物件</strong>——一個結構、一個緩衝區,幾十到幾百 bytes。這一課講上層的配置器,以及一個會直接造成系統死結的關鍵規則。</p>
+<p>幾個工具:
+- <strong><code>kmalloc</code>/<code>kfree</code>/<code>kzalloc</code></strong>:配置小塊記憶體,<strong>實體連續</strong>(像使用者態的 <code>malloc</code>,但在核心、且實體連續)。
+- <strong>slab / SLUB</strong>:<strong>物件快取</strong>——對「反覆配置/釋放同一型別物件」的場景,slab 預先把頁切成該型別大小的格子、重複利用,避免每次都從 buddy 切。(<strong>版本提醒:現在只剩 SLUB</strong>——SLAB 在 6.8 已移除、SLOB 在 6.4 移除。你不會再看到「選 SLAB 還是 SLUB」,只有 SLUB。)
+- <strong><code>vmalloc</code>/<code>vfree</code></strong>:配大塊,<strong>虛擬連續但實體不連續</strong>(用分頁表把分散的實體頁拼成連續的虛擬位址)。
+- <strong>GFP flags</strong>:這是<strong>最關鍵</strong>的——配置時傳的旗標,決定配置的行為,尤其「<strong>能不能睡眠</strong>」。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?兩個層面:
+1. <strong>你 I/O 路徑會大量配置小物件</strong>(用 slab/kmalloc)與 <strong>DMA buffer</strong>(需實體連續,所以用 <code>kmalloc</code>/page 而非 <code>vmalloc</code>)。
+2. <strong>GFP context 規則在中斷/工作佇列中至關重要</strong>:你的 I/O 完成處理常在中斷 context,<strong>那裡用錯 GFP flag(用了會睡眠的 <code>GFP_KERNEL</code>)會死結</strong>。這是這一課最重要、最致命的一課。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P3-T06.html">P3-T06</a>(buddy system、page 配置;slab 從 buddy 拿頁)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P3-T06.html">P3-T06</a> 的「實體連續」與「虛擬位址」嗎?這課的 <code>kmalloc</code>(實體連續)vs <code>vmalloc</code>(僅虛擬連續)直接對比。
+  2. 你還記得 <a class="xlink" href="P1-T07.html">P1-T07</a> 的「睡眠/阻塞」(行程讓出 CPU 等待)嗎?GFP flag 的核心就是「這次配置能不能睡眠等記憶體」。</li>
+<li>環境:<strong>QEMU 虛擬機。配置實驗只在 VM。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) kmalloc:配小塊、實體連續 → (2) slab/SLUB:物件快取 → (3) 自訂 slab 快取 → (4) vmalloc:虛擬連續、實體不連續 → (5) GFP flags:能不能睡眠 → (6) 致命規則:持鎖/中斷 context 不可用 GFP_KERNEL</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-kmalloc">1. <code>kmalloc</code>:配小塊、實體連續</h3>
+<p>最常用的配置函式是 <strong><code>kmalloc</code></strong>——配置一塊指定大小的記憶體,回傳指標。它像使用者態的 <code>malloc</code>,但有兩個關鍵差異:</p>
+<p><pre class="mermaid">flowchart TB
+    KMALLOC["kmalloc(size, gfp_flags)<br/>配置 size bytes,回傳指標"]
+    KMALLOC --> D1["差異①:在核心,不是 libc 的 malloc<br/>(回顧 P3-T03:module 無 libc)"]
+    KMALLOC --> D2["差異②:★ 實體連續 ★<br/>配到的記憶體在實體記憶體上是連續的<br/>(對 DMA 重要!)"]
+    KMALLOC --> D3["差異③:要傳 GFP flag(第5節)<br/>kmalloc(n, GFP_KERNEL)"]
+    FRIENDS["kzalloc(size, gfp):配置並清零(像 calloc)<br/>kfree(ptr):釋放(對應 P0-T06 的 free)"]
+    KMALLOC --> FRIENDS
+    style KMALLOC fill:#6fa8b8,color:#10100e
+    style D2 fill:#e8a33d,color:#10100e
+    style FRIENDS fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>要點:
+- <strong><code>kmalloc(size, gfp)</code></strong>:配 size bytes,回傳指標。第二個參數是 GFP flag(第 5 節)。
+- <strong>實體連續</strong>:<code>kmalloc</code> 配到的記憶體在<strong>實體記憶體上是連續的</strong>(底層從 slab/buddy 拿)。這對 DMA 很重要(裝置需要連續實體位址,<span class="xlink-stub" title="待撰寫">P6</span>)——這是 <code>kmalloc</code> 和 <code>vmalloc</code> 的關鍵分野(第 4 節)。
+- <strong><code>kzalloc</code></strong>:配置 + 清零(像使用者態 <code>calloc</code>)。
+- <strong><code>kfree(ptr)</code></strong>:釋放(資源配對,回顧 <a class="xlink" href="P0-T06.html">P0-T06</a> malloc/free——這裡是 kmalloc/kfree)。</p>
+<p><code>kmalloc</code> 適合「中小型、需要實體連續」的配置。它有大小上限(不適合配超大塊——那用 <code>vmalloc</code>)。</p>
+<hr />
+<h3 id="2-slab-slub">2. slab / SLUB:物件快取,重複利用</h3>
+<p><code>kmalloc</code> 底層靠 <strong>slab 配置器</strong>(現在的實作是 <strong>SLUB</strong>)。slab 解決一個效能問題:<strong>反覆配置/釋放「同一型別」的物件</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    PROBLEM["問題:某型別物件(如 I/O 請求結構)被反覆配置/釋放<br/>若每次都從 buddy 切一頁再切小、釋放再還,很浪費"]
+    PROBLEM --> SLAB["slab 的解法:<br/>① 從 buddy 拿幾頁(P3-T06)<br/>② 切成『該物件大小』的一格格<br/>③ 維護空閒格清單,配置=取一格,釋放=還一格"]
+    SLAB --> BENEFIT["好處:<br/>① 配置/釋放極快(就是取/還清單上的格子)<br/>② 同型別物件集中,cache 友善(P1-T02)<br/>③ 釋放的物件可保留部分初始化狀態,重用更快"]
+    style PROBLEM fill:#c2603a,color:#f4ecd8
+    style SLAB fill:#e8a33d,color:#10100e
+    style BENEFIT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>slab 的核心想法:<strong>為「某型別物件」預先準備一塊切好格子的記憶體,反覆利用</strong>。它從 buddy 拿頁(<a class="xlink" href="P3-T06.html">P3-T06</a>),切成該物件大小的格子,維護空閒格清單——配置就是取一格、釋放就是還一格,極快(不必每次找 buddy)。同型別物件集中存放也對 cache 友善(回顧 <a class="xlink" href="P1-T02.html">P1-T02</a>)。</p>
+<p><code>kmalloc</code> 底層用一組「通用大小」的 slab 快取(8、16、32、64... bytes 的快取),你 <code>kmalloc(30)</code> 它就從「32 bytes 的快取」給你一格。</p>
+<p><strong>版本提醒(重要,當現況教)</strong>:歷史上 kernel 有三個 slab 配置器(SLAB、SLOB、SLUB),但<strong>現在只剩 SLUB</strong>——SLOB 在 6.4 移除、SLAB 在 6.8 移除。所以<strong>「仍以為有 SLAB 可選」是過時的誤區</strong>;現在 slab 配置器就是 SLUB,沒得選。(這是當初 spec 標記要驗證的版本敏感點,已確認:6.8 起 SLUB-only。)</p>
+<hr />
+<h3 id="3-slab-kmem_cache_create">3. 自訂 slab 快取:<code>kmem_cache_create</code></h3>
+<p>對「你自己頻繁配置的特定型別」,可以建一個<strong>專屬的 slab 快取</strong>,而非用 <code>kmalloc</code> 的通用快取。用 <code>kmem_cache_create</code>:</p>
+<p><pre class="mermaid">flowchart LR
+    CREATE["kmem_cache_create(&quot;my_obj&quot;, sizeof(struct my_obj), ...)<br/>建立一個專屬快取(在 init 時)"]
+    ALLOC["kmem_cache_alloc(cache, gfp)<br/>從這個快取配一個物件"]
+    FREE["kmem_cache_free(cache, obj)<br/>還回去"]
+    DESTROY["kmem_cache_destroy(cache)<br/>銷毀快取(在 exit 時,要先釋放所有物件)"]
+    CREATE --> ALLOC --> FREE --> DESTROY
+    style CREATE fill:#6fa8b8,color:#10100e
+    style ALLOC fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>何時用自訂快取(而非 <code>kmalloc</code>)?當你有一個<strong>頻繁配置/釋放的特定結構</strong>(例如你 I/O 路徑裡某個請求物件),專屬快取讓這型別的物件集中管理、配置更快、cache 行為更好、還能在 <code>/proc/slabinfo</code> 看到它的統計。流程:<code>init</code> 時 <code>kmem_cache_create</code>、用時 <code>kmem_cache_alloc</code>/<code>kmem_cache_free</code>、<code>exit</code> 時 <code>kmem_cache_destroy</code>(銷毀前要確保所有物件都釋放了——資源配對,回顧 <a class="xlink" href="P0-T06.html">P0-T06</a>)。</p>
+<blockquote>
+<p><strong>連到你的產品</strong>:你 I/O 路徑裡反覆配置的請求/描述結構,適合用自訂 slab 快取,提升配置效能與可觀測性。</p>
+</blockquote>
+<hr />
+<h3 id="4-vmalloc">4. <code>vmalloc</code>:虛擬連續、實體不連續</h3>
+<p>當你需要<strong>大塊</strong>記憶體,而 <code>kmalloc</code>(要實體連續)可能因「找不到夠大的連續實體區塊」而失敗,這時用 <strong><code>vmalloc</code></strong>:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph kmalloc_layout["kmalloc 配的記憶體"]
+        K["實體上連續:<br/>[頁A][頁B][頁C](實體相鄰)<br/>虛擬也連續"]
+    end
+    subgraph vmalloc_layout["vmalloc 配的記憶體"]
+        V["實體上分散:頁X、頁Y、頁Z(實體各處)<br/>但用分頁表(P1-T04)拼成<br/>『虛擬連續』的一段位址"]
+    end
+    NOTE["★ 關鍵分野 ★<br/>kmalloc:實體連續(可給 DMA)<br/>vmalloc:僅虛擬連續、實體分散(★ 不適合 DMA ★)<br/>vmalloc 能配更大(不受『連續實體』限制),但較慢、有額外分頁表開銷"]
+    kmalloc_layout --> NOTE
+    vmalloc_layout --> NOTE
+    style K fill:#8a9a5b,color:#10100e
+    style V fill:#6fa8b8,color:#10100e
+    style NOTE fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>關鍵分野(驗收點)</strong>:
+- <strong><code>kmalloc</code></strong>:<strong>實體連續</strong>。適合中小塊、以及 <strong>DMA</strong>(裝置需連續實體位址)。
+- <strong><code>vmalloc</code></strong>:<strong>僅虛擬連續,實體分散</strong>。它用分頁表(回顧 <a class="xlink" href="P1-T04.html">P1-T04</a>)把分散在實體各處的頁,映射成一段連續的<strong>虛擬</strong>位址給你用。能配<strong>更大</strong>的塊(因為不需要連續的實體區塊),但<strong>較慢</strong>(有額外分頁表開銷)、且<strong>不適合 DMA</strong>(實體不連續,裝置沒法用)。</p>
+<p><strong>兩個常見誤區</strong>:
+- <strong>以為 <code>kmalloc</code> 給的虛擬連續就一定實體連續</strong>——<code>kmalloc</code> 確實實體連續,但別把這歸功於「虛擬連續」;<code>vmalloc</code> 也虛擬連續卻實體不連續。要記住差別在<strong>實體</strong>連續性。
+- <strong>對 DMA 用 <code>vmalloc</code> 記憶體</strong>——實體不連續,裝置無法正確存取。DMA buffer 要用 <code>kmalloc</code> 或 page 配置(實體連續)。</p>
+<p>還有 <strong><code>kvmalloc</code></strong>:先試 <code>kmalloc</code>(實體連續),失敗就退而用 <code>vmalloc</code>——適合「最好實體連續、但不強求,只要拿到夠大的塊」的場景。</p>
+<p>把「該用哪個配置器」整理成一張決策圖:</p>
+<p><pre class="mermaid">flowchart TB
+    Q3{"要配多大?需要實體連續嗎?(P3-T06)"}
+    Q3 -->|"小物件、需實體連續(如 DMA buffer)"| KM["kmalloc / 自訂 slab 快取<br/>(實體連續,可給 DMA)"]
+    Q3 -->|"大塊、不需實體連續"| VM["vmalloc(僅虛擬連續,不適合 DMA)"]
+    Q3 -->|"大塊、最好連續但不強求"| KVM["kvmalloc(先試 kmalloc,失敗退 vmalloc)"]
+    Q3 -->|"整數個頁的底層配置"| PG["alloc_pages / __get_free_pages(P3-T06)"]
+    style KM fill:#8a9a5b,color:#10100e
+    style VM fill:#6fa8b8,color:#10100e
+    style KVM fill:#e8a33d,color:#10100e
+</pre></p>
+<hr />
+<h3 id="5-gfp-flags">5. GFP flags:這次配置能不能睡眠?</h3>
+<p>現在進入這一課<strong>最關鍵</strong>的概念:<strong>GFP flags</strong>(get-free-pages flags)。你配置時都要傳一個——它決定配置的行為,核心問題是「<strong>這次配置能不能睡眠(阻塞等待)</strong>」。</p>
+<p>為什麼配置要「睡眠」?因為如果當下沒有足夠的空閒記憶體,kernel 可能需要<strong>做一些耗時的事</strong>來騰出記憶體(回收快取、把頁換出到磁碟等),這些要花時間——意味著<strong>呼叫配置的這條執行流可能被阻塞、睡眠等待</strong>(回顧 <a class="xlink" href="P1-T07.html">P1-T07</a> 睡眠的概念)。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph flags["兩個最重要的 GFP flag"]
+        KERNEL["GFP_KERNEL<br/>★ 可以睡眠 ★<br/>記憶體不足時,允許阻塞、做回收、等待<br/>→ 只能用在『可睡眠的 context』(行程 context)<br/>= 最常用的一般配置"]
+        ATOMIC["GFP_ATOMIC<br/>★ 不可睡眠 ★<br/>絕不阻塞,記憶體不足就立刻失敗(回傳 NULL)<br/>→ 用在『不可睡眠的 context』(中斷、持 spinlock)<br/>(代價:成功率較低,因為不能等)"]
+    end
+    OTHER["相關:GFP_NOWAIT(也不睡眠)、GFP_NOIO/GFP_NOFS(限制回收方式)..."]
+    flags --> OTHER
+    style KERNEL fill:#8a9a5b,color:#10100e
+    style ATOMIC fill:#e8a33d,color:#10100e
+</pre></p>
+<p>兩個最重要的:
+- <strong><code>GFP_KERNEL</code></strong>:<strong>可以睡眠</strong>。記憶體不足時允許阻塞、回收、等待。這是最常用的——但<strong>只能用在「可睡眠的 context」</strong>(一般的行程 context,例如 syscall 處理、workqueue)。
+- <strong><code>GFP_ATOMIC</code></strong>:<strong>不可睡眠</strong>。絕不阻塞,記憶體不夠就立刻失敗(回傳 NULL)。用在<strong>不可睡眠的 context</strong>(中斷處理、持有 spinlock 時)。代價是成功率較低(因為不能等待回收)。</p>
+<p>「能不能睡眠」取決於你<strong>在什麼 context</strong> 呼叫配置——這就是下一節的致命規則。</p>
+<hr />
+<h3 id="6-spinlock-context-gfp_kernel">6. 致命規則:持 spinlock / 中斷 context 不可用 <code>GFP_KERNEL</code></h3>
+<p>這是整課最重要、最容易造成系統死結的一條規則,務必刻進骨子裡。</p>
+<p><strong>規則:在「不可睡眠的 context」(持有 spinlock、或在中斷 context)裡,絕對不可以用會睡眠的 <code>GFP_KERNEL</code>——要用 <code>GFP_ATOMIC</code>。</strong></p>
+<p><pre class="mermaid">flowchart TB
+    SCENARIO["你持有一個 spinlock(P3-T08 會詳述),<br/>或正在中斷處理常式裡"]
+    SCENARIO --> WRONG["✗ 呼叫 kmalloc(size, GFP_KERNEL)"]
+    WRONG --> SLEEP["GFP_KERNEL 可能睡眠(等記憶體回收)<br/>→ 這條執行流被阻塞、讓出 CPU"]
+    SLEEP --> DEADLOCK["★ 災難 ★<br/>持 spinlock 時睡眠 → 別的 CPU 想拿這鎖會一直忙等,<br/>而持鎖者睡著了不釋放 → 死結<br/>(中斷 context 睡眠更是直接違法、當機)"]
+    SCENARIO --> RIGHT["✓ 呼叫 kmalloc(size, GFP_ATOMIC)"]
+    RIGHT --> NOSLEEP["GFP_ATOMIC 絕不睡眠<br/>→ 不阻塞,要嘛立刻拿到、要嘛立刻失敗(NULL)<br/>→ 不會死結"]
+    style WRONG fill:#c2603a,color:#f4ecd8
+    style DEADLOCK fill:#c2603a,color:#f4ecd8
+    style RIGHT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>為什麼持 spinlock 睡眠會死結</strong>(這個邏輯 <a class="xlink" href="P3-T08.html">P3-T08</a> 會更完整,先建立直覺):spinlock 是「忙等」的鎖——別的 CPU 想拿這把鎖時,會<strong>原地空轉</strong>等你釋放(<a class="xlink" href="P3-T08.html">P3-T08</a>)。如果你持著鎖卻<strong>睡著了</strong>(因為 <code>GFP_KERNEL</code> 去等記憶體回收),你就不會釋放鎖;而別的 CPU 在那邊空轉等你,永遠等不到——死結。中斷 context 睡眠更糟(直接違反規則、當機)。</p>
+<p><strong>這條規則延伸到所有「可能睡眠的操作」</strong>:持有 spinlock 或在中斷 context 時,不只 <code>GFP_KERNEL</code>,<strong>任何可能睡眠的函式都不能呼叫</strong>——包括 <code>mutex_lock</code>(可睡眠,<a class="xlink" href="P3-T08.html">P3-T08</a>)、<code>copy_from_user</code>(可能觸發缺頁而睡眠,回顧 <a class="xlink" href="P1-T06.html">P1-T06</a>)等。這是 kernel 程式設計的核心紀律之一。</p>
+<p><strong>判斷方法</strong>:問自己「我現在在什麼 context?能不能睡眠?」——
+- <strong>行程 context、沒持 spinlock</strong>(如 syscall 處理、workqueue):可睡眠 → 用 <code>GFP_KERNEL</code>。
+- <strong>持 spinlock、或中斷 context</strong>:不可睡眠 → 用 <code>GFP_ATOMIC</code>。</p>
+<p>(驗收點:正確回答「持有 spinlock 時要用哪個 GFP flag」= <code>GFP_ATOMIC</code>,並說明原因。)這條規則直接關係你的工作——<strong>你的 I/O 完成路徑常在中斷/軟中斷 context,那裡配置記憶體必須用 <code>GFP_ATOMIC</code></strong>,否則系統死結。</p>
+<hr />
+<h2 id="kernel">打通關:把 kernel 記憶體配置收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    NEED["需求:在 module 裡配置記憶體(多為小物件)"]
+    NEED --> KMALLOC["kmalloc/kzalloc/kfree:小塊、★實體連續★(可給 DMA)"]
+    KMALLOC --> SLAB["底層 slab/SLUB:物件快取,反覆利用同型別<br/>(★ 現只剩 SLUB,SLAB 6.8 已移除 ★)<br/>頻繁的特定型別 → kmem_cache_create 自訂快取"]
+    NEED --> VMALLOC["vmalloc:大塊、★僅虛擬連續、實體分散★<br/>(較慢、★不適合 DMA★);kvmalloc 先試 kmalloc 再退 vmalloc"]
+    NEED --> GFP["★ GFP flags:這次配置能不能睡眠 ★"]
+    GFP --> KERNELF["GFP_KERNEL:可睡眠 → 行程 context、沒持鎖"]
+    GFP --> ATOMICF["GFP_ATOMIC:不可睡眠 → 中斷 context、持 spinlock"]
+    ATOMICF --> RULE["★★ 致命規則:持 spinlock / 中斷 context 用 GFP_KERNEL → 死結 ★★<br/>(睡眠不釋放鎖;延伸:也不可 mutex_lock / copy_from_user)<br/>→ 你的 I/O 完成中斷路徑必須用 GFP_ATOMIC"]
+    style GFP fill:#e8a33d,color:#10100e
+    style RULE fill:#c2603a,color:#f4ecd8
+    style SLAB fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong><code>kmalloc</code> 配小塊且實體連續(可給 DMA)、底層是 SLUB 物件快取(SLAB 已於 6.8 移除)、<code>vmalloc</code> 配大塊但僅虛擬連續(不適合 DMA);而最致命的是 GFP flag——<code>GFP_KERNEL</code> 可睡眠(行程 context)、<code>GFP_ATOMIC</code> 不可睡眠(中斷/持 spinlock),在不可睡眠的 context 用了會睡眠的 <code>GFP_KERNEL</code> 就死結。你的 I/O 完成中斷路徑配置記憶體,必須用 <code>GFP_ATOMIC</code>。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一(最致命):在原子/中斷 context 或持有 spinlock 時用 <code>GFP_KERNEL</code>。</strong>
+<code>GFP_KERNEL</code> 可能睡眠 → 持鎖睡眠不釋放鎖 → 死結;中斷 context 睡眠直接違法/當機。這些 context 要用 <code>GFP_ATOMIC</code>。延伸:這些 context 也不可呼叫 <code>mutex_lock</code>、<code>copy_from_user</code> 等任何可能睡眠的函式。</p>
+<p><strong>誤區二:以為 <code>kmalloc</code> 給的虛擬連續就一定實體連續(混淆連續性)。</strong>
+<code>kmalloc</code> 確實實體連續,但要記住關鍵差別在<strong>實體</strong>連續性:<code>vmalloc</code> 也虛擬連續卻實體分散。</p>
+<p><strong>誤區三:對 DMA 用 <code>vmalloc</code> 記憶體。</strong>
+<code>vmalloc</code> 實體不連續,裝置無法正確存取。DMA buffer 要用 <code>kmalloc</code> 或 page 配置(實體連續)。</p>
+<p><strong>誤區四:仍以為有 SLAB 可選。</strong>
+SLAB 在 6.8 已移除、SLOB 在 6.4 移除。現在 slab 配置器只剩 <strong>SLUB</strong>,沒得選。</p>
+<p><strong>誤區五:配置失敗未檢查回傳。</strong>
+<code>kmalloc</code>/<code>kmem_cache_alloc</code> 失敗回傳 NULL(<code>GFP_ATOMIC</code> 尤其容易失敗,因為不能等)。務必檢查(回顧 <a class="xlink" href="P0-T06.html">P0-T06</a>)。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:<strong>QEMU 虛擬機。配置實驗只在 VM。</strong></p>
+<p><strong>任務 A — kmalloc / kzalloc(驗收點)</strong>
+寫一個 module,用 <code>kmalloc(64, GFP_KERNEL)</code> 配一塊、寫入讀回、<code>kfree</code>;再用 <code>kzalloc(64, GFP_KERNEL)</code> 配一塊,<strong>驗證內容全為 0</strong>(kzalloc 會清零),<code>kfree</code>。檢查回傳是否 NULL。<strong>驗收:kmalloc/kzalloc 配置成功,且 kzalloc 內容為 0。</strong></p>
+<p><strong>任務 B — 自訂 slab 快取(驗收點)</strong>
+在 module 裡 <code>kmem_cache_create</code> 建一個專屬快取(對某個你定義的 struct),用 <code>kmem_cache_alloc</code> 配幾個物件、<code>kmem_cache_free</code> 釋放,<code>exit</code> 時 <code>kmem_cache_destroy</code>。(可在 <code>/proc/slabinfo</code> 看到你的快取。)<strong>驗收:自訂 slab 快取配置/釋放物件成功。</strong></p>
+<p><strong>任務 C — GFP flag 的判斷(驗收點,核心)</strong>
+回答並寫下:「持有 spinlock 時,配置記憶體要用哪個 GFP flag?為什麼?」<strong>驗收:答 <code>GFP_ATOMIC</code>,並說明原因(<code>GFP_KERNEL</code> 可能睡眠,持鎖睡眠會死結)。</strong> 再寫一句:中斷 context 呢?(同樣 <code>GFP_ATOMIC</code>,因為中斷 context 不可睡眠。)</p>
+<p><strong>任務 D — kmalloc vs vmalloc(驗收點)</strong>
+用 <code>vmalloc</code> 配一塊較大的記憶體、寫入讀回、<code>vfree</code>。寫一句話說明 <code>kmalloc</code> 與 <code>vmalloc</code> 在<strong>實體連續性</strong>上的差異,以及這對 DMA 的意涵。<strong>驗收:能說出 kmalloc 實體連續(可 DMA)、vmalloc 僅虛擬連續(不適合 DMA)。</strong></p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ <code>kmalloc</code>/<code>kzalloc</code> 配置並驗證 <code>kzalloc</code> 內容為 0。
+2. ☐ 建立自訂 slab 快取配置/釋放物件成功。
+3. ☐ 正確回答「持有 spinlock 時要用哪個 GFP flag」(<code>GFP_ATOMIC</code>)並說明原因。
+4. ☐ 說出 <code>kmalloc</code> 與 <code>vmalloc</code> 在實體連續性上的差異及對 DMA 的意涵。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能用 kmalloc/vmalloc。
+- <strong>80(熟練)</strong>:能正確選 GFP flag 並建自訂快取。
+- <strong>100(精通)</strong>:能完整解釋 context 與配置器/連續性的關係並對應到 DMA。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——你產品的 I/O 路徑會大量配置/釋放小物件(用 slab)與 DMA buffer(需實體連續);GFP context 規則在中斷/工作佇列中至關重要。</li>
+<li><strong>這課餵給未來的(關鍵)</strong>:GFP/context 規則 → <a class="xlink" href="P3-T08.html">P3-T08</a> 鎖與 context(「持 spinlock 不可睡眠」的完整版)、<a class="xlink" href="P3-T10.html">P3-T10</a> 中斷與下半部(中斷 context 的限制);kmalloc 實體連續 → <span class="xlink-stub" title="待撰寫">P6</span> DMA buffer;slab → 你 I/O 路徑的物件配置。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T08.html">P3-T08</a> kernel 同步(一)——spinlock、mutex、semaphore 與選型</strong>:這一課反覆提到「持有 spinlock 不可睡眠」「中斷 context 不可用 mutex」——下一課就<strong>完整講清楚這些鎖</strong>:spinlock(忙等、不可睡眠、適合短臨界區與中斷)、mutex(可睡眠、不可用於中斷)、semaphore,以及它們的 context 限制。你會徹底搞懂「鎖 × context × 能否睡眠」的所有合法/非法組合——這是你 I/O 完成路徑(常在中斷 context、與行程 context 共享資料)選鎖的關鍵,選錯直接系統死結。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T06.html">← P3-T06 kernel 記憶體管理(一)—— page allocator 與 buddy system</a><a class="pn next" href="P3-T08.html">P3-T08 kernel 同步(一)—— spinlock、mutex、semaphore 與選型 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

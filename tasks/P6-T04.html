@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P6-T04 · IOMMU 與 VFIO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P6 · DMA、IOMMU 與 P2PDMA</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p6-t04-iommu-vfio">P6-T04 · IOMMU 與 VFIO</h1>
+<blockquote>
+<p><strong>一句話</strong>:IOMMU 是「裝置端的 MMU」——它把裝置發出的 DMA 位址做轉譯與保護(讓分散實體頁對裝置呈現連續、擋掉裝置亂存取的記憶體)。這就是 <code>dma_addr_t</code> 背後的轉譯者。而 VFIO 靠 IOMMU 的隔離,把裝置安全地直通給 user space 或 VM——但要以 IOMMU group 為單位。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P6-T01.html">P6-T01</a>/<a class="xlink" href="P6-T02.html">P6-T02</a> 你一直碰到「IOMMU 在背後轉譯 <code>dma_addr_t</code>、合併分散片段」。這一課正面講清楚 <strong>IOMMU</strong> 是什麼,以及建立在它之上的 <strong>VFIO</strong>(裝置直通)。</p>
+<p><strong>IOMMU(I/O Memory Management Unit)</strong> 是「<strong>裝置端的 MMU</strong>」——做一個漂亮的類比(回顧 <a class="xlink" href="P1-T04.html">P1-T04</a> MMU):
+- <strong>MMU</strong>:在 <strong>CPU</strong> 和記憶體之間,把 CPU 的<strong>虛擬位址</strong>轉成<strong>實體位址</strong>,並提供行程隔離保護。
+- <strong>IOMMU</strong>:在<strong>裝置</strong>和記憶體之間,把裝置的 <strong>DMA 位址(<code>dma_addr_t</code>)</strong> 轉成<strong>實體位址</strong>,並提供裝置的隔離保護。</p>
+<p>IOMMU 做兩件關鍵的事:
+- <strong>位址轉譯</strong>:把裝置看到的 DMA 位址,轉成實體位址——這就是為什麼 <code>dma_addr_t</code> ≠ 實體位址(<a class="xlink" href="P6-T01.html">P6-T01</a> 鐵則的根源)。它還能把<strong>分散的實體頁,對裝置呈現成連續</strong>(回顧 <a class="xlink" href="P6-T02.html">P6-T02</a> 的合併)。
+- <strong>保護隔離</strong>:<strong>限制裝置只能存取「被允許的」記憶體</strong>——惡意或故障的裝置不能亂 DMA 到任意記憶體(這對安全極重要)。</p>
+<p>還有兩個概念:
+- <strong>IOMMU group</strong>:<strong>隔離的最小單位</strong>——同一個 group 裡的裝置無法彼此隔離,所以要直通就得<strong>整組一起</strong>。
+- <strong>VFIO(Virtual Function I/O)</strong>:利用 IOMMU 的隔離,把裝置<strong>安全地直通給 user space 或 VM</strong>(user space 驅動、passthrough)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?三個層面:① <strong>IOMMU 影響你 DMA 的位址轉譯</strong>(<code>dma_addr_t</code> 的由來);② 若你產品涉及 <strong>user space 驅動或 VM 直通 NVMe/GPU</strong>,VFIO 與 IOMMU group 是必備知識;③ <strong>P2PDMA 的可行性與 IOMMU 設定相關</strong>(<a class="xlink" href="P6-T05.html">P6-T05</a> 出關門檻——我已查證:有 IOMMU 時 root-complex 白名單會被停用,P2P 路徑與 IOMMU 設定強相關)。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P6-T01.html">P6-T01</a>(DMA、三種位址、<code>dma_addr_t</code>)。也用到 <a class="xlink" href="P1-T04.html">P1-T04</a>(MMU——IOMMU 是它的裝置端對應)、<a class="xlink" href="P6-T02.html">P6-T02</a>(IOMMU 合併)、<a class="xlink" href="P4-T04.html">P4-T04</a>(PCI 裝置)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P1-T04.html">P1-T04</a> 的「MMU:把 CPU 虛擬位址轉成實體位址 + 行程隔離」嗎?IOMMU 是「裝置版的 MMU」(轉裝置的 DMA 位址 + 裝置隔離)。
+  2. 你還記得 <a class="xlink" href="P6-T01.html">P6-T01</a> 的鐵則「<code>dma_addr_t</code> 不是實體位址,因為可能經 IOMMU 轉譯」嗎?這課講那個轉譯者。</li>
+<li>工具:<code>/sys/kernel/iommu_groups/</code>、IOMMU 文件(https://docs.kernel.org/driver-api/iommu.html ）、VFIO 文件(https://docs.kernel.org/driver-api/vfio.html ）。</li>
+<li>環境:Linux(查 IOMMU group)+ <strong>QEMU(實驗只在 VM)</strong>。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) IOMMU 是裝置端的 MMU → (2) 位址轉譯 → (3) 保護隔離 → (4) IOMMU group → (5) VFIO:裝置直通 → (6) 與 SR-IOV 的關係</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-iommu-mmu">1. IOMMU 是裝置端的 MMU</h3>
+<p>先把核心類比立穩——這是理解 IOMMU 的鑰匙。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph cpu_side["CPU 端"]
+        CPU2["CPU 程式(虛擬位址)"]
+        MMU2["MMU:虛擬位址 → 實體位址<br/>+ 行程隔離(P1-T04)"]
+        CPU2 --> MMU2 --> MEM1["實體記憶體"]
+    end
+    subgraph dev_side["裝置端"]
+        DEV9["裝置(DMA 位址 dma_addr_t)"]
+        IOMMU4["★ IOMMU:DMA 位址 → 實體位址<br/>+ 裝置隔離 ★"]
+        DEV9 --> IOMMU4 --> MEM2["實體記憶體"]
+    end
+    cpu_side -.“IOMMU 是裝置版的 MMU<br/>(對象:裝置而非 CPU)”.-> dev_side
+    style MMU2 fill:#6fa8b8,color:#10100e
+    style IOMMU4 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>核心類比</strong>:
+- <strong>MMU</strong>(CPU 端,<a class="xlink" href="P1-T04.html">P1-T04</a>):CPU 虛擬位址 → 實體位址 + 行程隔離。
+- <strong>IOMMU</strong>(裝置端):裝置 DMA 位址 → 實體位址 + 裝置隔離。</p>
+<p>IOMMU 就是「<strong>裝置版的 MMU</strong>」——對象是裝置(而非 CPU),轉譯的是 DMA 位址(而非虛擬位址),隔離的是裝置(而非行程)。理解這個對應,IOMMU 的兩個功能(轉譯、保護)就都好懂了——它們正是 MMU 兩個功能的裝置版。</p>
+<p><strong>常見誤區:把 IOMMU 位址轉譯與 MMU 的行程分頁混為一談</strong>——它們對象不同:MMU 服務 CPU(行程的虛擬記憶體),IOMMU 服務裝置(裝置的 DMA)。兩者機制類似(都是位址轉譯 + 保護)、但作用對象完全不同。別把它們當成同一個。</p>
+<hr />
+<h3 id="2-dma_addr_t">2. 位址轉譯:dma_addr_t 的由來</h3>
+<p>IOMMU 的第一個功能:<strong>位址轉譯</strong>——這正是 <a class="xlink" href="P6-T01.html">P6-T01</a> 鐵則「<code>dma_addr_t</code> ≠ 實體位址」的根源。</p>
+<p><pre class="mermaid">flowchart TB
+    DEVICE10["裝置發出 DMA,用的是 dma_addr_t(IOMMU domain 裡的位址)"]
+    DEVICE10 --> IOMMU5["IOMMU 查它的轉譯表(類似 MMU 的分頁表,P1-T04)<br/>把 dma_addr_t 轉成實體位址"]
+    IOMMU5 --> PHYS2["實體位址 → 存取實際記憶體"]
+    IOMMU5 --> COALESCE2["★ 還能做合併(P6-T02)★<br/>把分散的實體頁,在 IOMMU domain 裡<br/>映射成『連續』的 dma_addr 範圍<br/>→ 裝置看到連續,DMA 更簡單"]
+    NOTE32["這就是為什麼:<br/>① dma_addr_t ≠ 實體位址(中間有 IOMMU 轉譯)<br/>② dma_addr_t 不能 CPU 解參考(它是 IOMMU domain 的位址,P6-T01)<br/>③ dma_map_sg 映射數變少(IOMMU 把分散頁合併成連續)"]
+    COALESCE2 --> NOTE32
+    style IOMMU5 fill:#e8a33d,color:#10100e
+    style COALESCE2 fill:#8a9a5b,color:#10100e
+    style NOTE32 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p><strong>位址轉譯</strong>:裝置發出 DMA 用 <code>dma_addr_t</code>,IOMMU 查它的轉譯表(類似 MMU 的分頁表,<a class="xlink" href="P1-T04.html">P1-T04</a>),把 <code>dma_addr_t</code> 轉成實體位址,再存取記憶體。它還能<strong>合併</strong>(回顧 <a class="xlink" href="P6-T02.html">P6-T02</a>):把分散的實體頁,在 IOMMU domain 裡映射成連續的 <code>dma_addr</code> 範圍——裝置看到連續,DMA 更簡單。</p>
+<p>這解釋了你前面碰到的所有「<code>dma_addr_t</code> 的怪事」:
+- <strong><code>dma_addr_t</code> ≠ 實體位址</strong>——中間有 IOMMU 轉譯。
+- <strong><code>dma_addr_t</code> 不能 CPU 解參考</strong>——它是 IOMMU domain 的位址,CPU 的位址空間裡無意義(<a class="xlink" href="P6-T01.html">P6-T01</a> 鐵則)。
+- <strong><code>dma_map_sg</code> 映射數變少</strong>——IOMMU 把分散頁合併成連續(<a class="xlink" href="P6-T02.html">P6-T02</a>)。</p>
+<p><strong>你「位址的真相」主線到這裡完全閉環</strong>:位址不是絕對數字,而是「誰看、經過什麼轉譯」——CPU 經 MMU、裝置經 IOMMU。<code>dma_addr_t</code> 是「裝置經 IOMMU 看到的位址」,這就是它的完整身份。</p>
+<hr />
+<h3 id="3">3. 保護隔離:擋掉裝置亂存取</h3>
+<p>IOMMU 的第二個功能,對<strong>安全</strong>極重要:<strong>保護隔離</strong>——限制裝置只能存取「被允許的」記憶體。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph noiommu["沒有 IOMMU(或關閉)"]
+        NI["裝置能 DMA 到『任意實體位址』<br/>→ 惡意/故障裝置可亂讀寫任何記憶體<br/>(讀核心機密、竄改核心)→ 安全風險"]
+    end
+    subgraph withiommu["有 IOMMU"]
+        WI["IOMMU 只在轉譯表裡建立『被允許的』映射<br/>→ 裝置只能存取『映射過的』記憶體<br/>→ 裝置 DMA 到未映射的位址 → IOMMU 擋下(fault)<br/>→ 隔離保護:裝置不能亂存取"]
+    end
+    noiommu -.“IOMMU 提供裝置的隔離保護”.-> withiommu
+    VALUE6["價值:<br/>① 安全:擋掉惡意/故障裝置的越界 DMA<br/>② 隔離:把裝置直通給 VM/user space 時,<br/>裝置只能碰被指派的記憶體(VFIO 的基礎,第5節)"]
+    withiommu --> VALUE6
+    style NI fill:#c2603a,color:#f4ecd8
+    style WI fill:#8a9a5b,color:#10100e
+    style VALUE6 fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>保護隔離</strong>:
+- <strong>沒有 IOMMU</strong>:裝置能 DMA 到任意實體位址——惡意/故障裝置可亂讀寫任何記憶體(讀核心機密、竄改核心),安全風險。
+- <strong>有 IOMMU</strong>:IOMMU 只在轉譯表裡建立「被允許的」映射——裝置只能存取映射過的記憶體;DMA 到未映射的位址 → IOMMU 擋下(fault)。</p>
+<p><strong>價值(驗收點:說明 IOMMU 如何同時提供「位址轉譯」與「保護隔離」)</strong>:
+- <strong>安全</strong>:擋掉惡意/故障裝置的越界 DMA。
+- <strong>隔離</strong>:把裝置直通給 VM/user space 時,裝置只能碰被指派的記憶體(VFIO 的基礎,第 5 節)。</p>
+<p>所以 IOMMU <strong>同時做轉譯和保護</strong>——就像 MMU 同時做轉譯和行程隔離。轉譯讓裝置用乾淨的連續位址,保護讓裝置不能亂來。這兩個功能是一體的(都靠 IOMMU 的轉譯表:表裡有的才能存取、且按表轉譯)。</p>
+<p><strong>常見誤區:以為關掉 IOMMU 一定更快</strong>——關掉 IOMMU 省了轉譯開銷,看似更快,但<strong>犧牲了隔離與保護</strong>,而且某些場景(如 P2PDMA、VM 直通)<strong>需要它</strong>。不能無腦關。是否關 IOMMU 是「效能 vs 安全/功能」的權衡,不是「關了一定好」。</p>
+<hr />
+<h3 id="4-iommu-group">4. IOMMU group:隔離的最小單位</h3>
+<p>一個實務上很關鍵的概念:<strong>IOMMU group</strong>——隔離的最小單位。</p>
+<p><pre class="mermaid">flowchart TB
+    GROUP["IOMMU group:一組『無法彼此隔離』的裝置<br/>(因為硬體拓樸——例如同一個 PCIe switch 下、<br/>或共用某些路徑的裝置,IOMMU 無法區分它們的 DMA 來源)"]
+    GROUP --> RULE4["★ 規則:隔離以 group 為單位 ★<br/>group 內的裝置無法彼此隔離<br/>→ 要把裝置直通(交給 VM/user space),<br/>必須『整個 group 一起』直通<br/>(不能只直通 group 裡的一個)"]
+    RULE4 --> CHECK7["查看:/sys/kernel/iommu_groups/<br/>每個編號目錄是一個 group,裡面列出成員裝置"]
+    NOTE33["★ 常見誤區:忽略 IOMMU group 的隔離邊界 ★<br/>想直通一個 NVMe,但它和別的裝置在同一 group<br/>→ 必須整組一起直通(否則隔離被破壞)<br/>→ 規劃直通時要先看 group 邊界"]
+    CHECK7 --> NOTE33
+    style GROUP fill:#e8a33d,color:#10100e
+    style RULE4 fill:#8a9a5b,color:#10100e
+    style NOTE33 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p><strong>IOMMU group</strong>:一組「無法彼此隔離」的裝置(因為硬體拓樸——例如同一個 PCIe switch 下、或共用某些路徑的裝置,IOMMU 無法區分它們的 DMA 來源)。</p>
+<p><strong>規則(驗收點之一):隔離以 group 為單位</strong>——group 內的裝置無法彼此隔離,所以要把裝置直通(交給 VM/user space),必須<strong>整個 group 一起</strong>直通,不能只直通其中一個。</p>
+<p><strong>查看</strong>:<code>/sys/kernel/iommu_groups/</code>——每個編號目錄是一個 group,裡面列出成員裝置(驗收點:列出系統至少一個 IOMMU group 及其成員)。</p>
+<p><strong>常見誤區:忽略 IOMMU group 的隔離邊界</strong>——你想直通一個 NVMe,但它和別的裝置在同一 group → 必須整組一起直通(否則隔離被破壞)。規劃直通時要先看 group 邊界。</p>
+<p>這對你產品很實際:若你要把某個 NVMe 或 GPU 直通給 VM/user space 驅動,得先確認它的 IOMMU group——同 group 的裝置要一起處理。這也影響 P2PDMA 的拓樸規劃(<a class="xlink" href="P6-T05.html">P6-T05</a>)。</p>
+<p>把「位址的真相」主線一路走來的四種轉譯,收攏成一張對照圖(你的主線到此閉環):</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph cpu_path["CPU 看記憶體(P1-T04)"]
+        CP["虛擬位址 --MMU 轉譯--> 實體位址<br/>(行程隔離)"]
+    end
+    subgraph dev_path["裝置看記憶體(本課)"]
+        DP["dma_addr_t --IOMMU 轉譯--> 實體位址<br/>(裝置隔離 + 合併分散頁)"]
+    end
+    SAME["★ 同一塊實體記憶體,三種視角 ★<br/>CPU 用虛擬位址、記憶體在實體位址、裝置用 dma_addr_t<br/>→ 位址 = 誰看 + 經過什麼轉譯(位址的真相主線終點)"]
+    cpu_path --> SAME
+    dev_path --> SAME
+    style CP fill:#6fa8b8,color:#10100e
+    style DP fill:#e8a33d,color:#10100e
+    style SAME fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h3 id="5-vfio-user-space">5. VFIO:把裝置安全地直通給 user space</h3>
+<p>建立在 IOMMU 隔離之上的就是 <strong>VFIO(Virtual Function I/O)</strong>——把裝置<strong>安全地直通給 user space 或 VM</strong>。</p>
+<p><pre class="mermaid">flowchart TB
+    NEED5["需求:讓 user space 程式(或 VM)直接驅動一個裝置<br/>(user space 驅動、把 NVMe/GPU 直通給 VM)"]
+    NEED5 --> RISK2["風險:user space/VM 直接控制裝置 → 能讓裝置 DMA<br/>→ 若無保護,裝置可亂 DMA 到任意記憶體(危險)"]
+    RISK2 --> VFIO2["★ VFIO 的解法:用 IOMMU 提供安全保證 ★<br/>① IOMMU 限制這個裝置只能 DMA 到<br/>『user space/VM 被指派的記憶體』<br/>② user space 透過 VFIO 介面安全地操作裝置<br/>→ 即使 user space 出錯/惡意,裝置也碰不到別的記憶體"]
+    VFIO2 --> REQUIRE["★ 要求(驗收點):裝置要直通,需屬於可隔離的 IOMMU group ★<br/>(整個 group 一起綁到 VFIO,第4節)"]
+    style RISK2 fill:#c2603a,color:#f4ecd8
+    style VFIO2 fill:#8a9a5b,color:#10100e
+    style REQUIRE fill:#e8a33d,color:#10100e
+</pre></p>
+<p><strong>VFIO</strong> 解決「讓 user space/VM 直接驅動裝置」的安全問題:
+- <strong>需求</strong>:user space 程式(或 VM)直接驅動一個裝置(user space 驅動、把 NVMe/GPU 直通給 VM)。
+- <strong>風險</strong>:user space/VM 直接控制裝置 → 能讓裝置 DMA → 若無保護,裝置可亂 DMA 到任意記憶體(危險)。
+- <strong>VFIO 的解法</strong>:<strong>用 IOMMU 提供安全保證</strong>——IOMMU 限制這個裝置只能 DMA 到「user space/VM 被指派的記憶體」;即使 user space 出錯/惡意,裝置也碰不到別的記憶體。</p>
+<p><strong>要求(驗收點:說明 VFIO 直通對 IOMMU group 的要求)</strong>:裝置要直通,<strong>需屬於可隔離的 IOMMU group</strong>——整個 group 一起綁到 VFIO(第 4 節)。沒有 IOMMU 的隔離,VFIO 的安全保證就不成立。</p>
+<p><strong>對你產品</strong>:如果你的產品架構用 <strong>user space 驅動</strong>(在 user space 直接操作 NVMe,類似 SPDK 的做法)或 <strong>VM 直通</strong>,VFIO 就是核心機制——它讓 user space 安全地控制裝置 + 做 DMA。這也是高效能儲存常見的架構(繞過 kernel 的開銷)。理解 VFIO + IOMMU group,你才能評估這條路。</p>
+<hr />
+<h3 id="6-sr-iov">6. 與 SR-IOV 的關係</h3>
+<p>最後一個相關概念(概念層即可):<strong>SR-IOV</strong>——讓一個實體裝置「分身」成多個虛擬裝置。</p>
+<p><pre class="mermaid">flowchart TB
+    SRIOV["SR-IOV(Single Root I/O Virtualization):<br/>一個實體 PCIe 裝置(PF,Physical Function)<br/>能分出多個輕量的虛擬裝置(VF,Virtual Function)"]
+    SRIOV --> USE4["用途:<br/>每個 VF 看起來像獨立的 PCIe 裝置,<br/>可各自直通給不同的 VM/user space<br/>→ 一張卡服務多個 VM(如網卡、某些 NVMe)"]
+    USE4 --> RELATION["與 IOMMU/VFIO 的關係:<br/>每個 VF 可有自己的 IOMMU 隔離,<br/>透過 VFIO 直通給不同 VM<br/>→ SR-IOV 提供『多個可直通的虛擬裝置』,<br/>IOMMU/VFIO 提供『安全直通的機制』"]
+    style SRIOV fill:#6fa8b8,color:#10100e
+    style RELATION fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>SR-IOV(Single Root I/O Virtualization)</strong>:一個實體 PCIe 裝置(<strong>PF</strong>,Physical Function)能分出多個輕量的虛擬裝置(<strong>VF</strong>,Virtual Function)。每個 VF 看起來像獨立的 PCIe 裝置,可各自直通給不同的 VM/user space——一張卡服務多個 VM。</p>
+<p><strong>與 IOMMU/VFIO 的關係</strong>:每個 VF 可有自己的 IOMMU 隔離,透過 VFIO 直通給不同 VM。所以 <strong>SR-IOV 提供「多個可直通的虛擬裝置」,IOMMU/VFIO 提供「安全直通的機制」</strong>——兩者配合,實現「一張實體卡安全地服務多個 VM」。</p>
+<p>(這是概念層的認識,你產品不一定用到 SR-IOV;但理解它有助於完整理解「裝置虛擬化/直通」的全貌——VF 是被直通的對象,IOMMU/VFIO 是直通的安全機制。)</p>
+<hr />
+<h2 id="iommu-vfio">打通關:把 IOMMU 與 VFIO 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    IOMMU6["★ IOMMU = 裝置端的 MMU(P1-T04)★<br/>對象:裝置(而非 CPU)"]
+    IOMMU6 --> TRANSLATE["① 位址轉譯:dma_addr_t → 實體位址(+ 合併分散頁)<br/>= dma_addr_t ≠ 實體位址、不能 CPU 解參考、map_sg 數變少 的根源(P6-T01/T02)"]
+    IOMMU6 --> PROTECT["② 保護隔離:裝置只能存取被允許的記憶體<br/>(擋惡意/故障裝置越界 DMA)"]
+    PROTECT --> GROUP2["IOMMU group:隔離的最小單位<br/>(同 group 無法彼此隔離 → 直通要整組一起)<br/>查 /sys/kernel/iommu_groups/"]
+    GROUP2 --> VFIO3["★ VFIO:用 IOMMU 隔離,把裝置安全直通 user space/VM ★<br/>(需屬於可隔離的 IOMMU group)<br/>→ 你產品若用 user space 驅動/VM 直通,這是核心"]
+    VFIO3 --> SRIOV2["SR-IOV:一卡分多個 VF;VF 經 VFIO 直通不同 VM"]
+    TRANSLATE --> P2P3["→ P2PDMA 可行性與 IOMMU 設定相關(P6-T05)"]
+    style IOMMU6 fill:#e8a33d,color:#10100e
+    style VFIO3 fill:#8a9a5b,color:#10100e
+    style P2P3 fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>IOMMU 是「裝置端的 MMU」——做位址轉譯（dma_addr_t → 實體位址、合併分散頁，正是 dma_addr_t ≠ 實體位址的根源）和保護隔離（擋裝置越界 DMA）；隔離以 IOMMU group 為單位（同 group 要直通就整組一起，查 /sys/kernel/iommu_groups/）；VFIO 利用 IOMMU 隔離把裝置安全直通給 user space/VM（需可隔離的 group），SR-IOV 則讓一卡分多個可直通的 VF。這影響你 DMA 的位址轉譯、user space 驅動/VM 直通的可行性，以及 P2PDMA 的設定。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:以為關掉 IOMMU 一定更快。</strong>
+關掉省轉譯開銷,但犧牲隔離與保護,且某些場景(P2PDMA、VM 直通)需要它。是「效能 vs 安全/功能」的權衡,不是「關了一定好」。</p>
+<p><strong>誤區二:忽略 IOMMU group 的隔離邊界。</strong>
+同 group 的裝置無法彼此隔離,要直通就得整組一起。規劃直通(VM/user space)前先看 group 邊界。</p>
+<p><strong>誤區三:把 IOMMU 位址轉譯與 MMU 的行程分頁混為一談。</strong>
+對象不同:MMU 服務 CPU(行程虛擬記憶體),IOMMU 服務裝置(裝置 DMA)。機制類似但作用對象完全不同。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:Linux(查 IOMMU group,<strong>安全</strong>)+ <strong>QEMU(實驗只在 VM)</strong>。</p>
+<p><strong>任務 A — 列出 IOMMU group(驗收點)</strong>
+在 Linux 上(需開啟 IOMMU,如 <code>intel_iommu=on</code>/<code>amd_iommu=on</code>)查看 <code>/sys/kernel/iommu_groups/</code>——列出<strong>至少一個 IOMMU group 及其成員裝置</strong>(<code>ls /sys/kernel/iommu_groups/&lt;N&gt;/devices/</code>)。<strong>驗收:列出系統至少一個 IOMMU group 及其成員裝置。</strong>(若你的環境沒開 IOMMU,理解結構與意義即可。)</p>
+<p><strong>任務 B — 說明轉譯與保護(驗收點,核心)</strong>
+用一段話說明:IOMMU 如何<strong>同時</strong>提供「位址轉譯」與「保護隔離」?<strong>驗收:說明(轉譯:把裝置 DMA 位址轉成實體位址、可合併分散頁;保護:只允許裝置存取映射過的記憶體,擋越界 DMA;兩者都靠 IOMMU 的轉譯表)。</strong></p>
+<p><strong>任務 C — VFIO 對 IOMMU group 的要求(驗收點)</strong>
+閱讀 VFIO 文件(https://docs.kernel.org/driver-api/vfio.html ），寫一段話:一個裝置要直通(VFIO),為什麼需先屬於可隔離的 IOMMU group?<strong>驗收:說明 VFIO 直通對 IOMMU group 的要求(需整組可隔離,否則安全保證不成立)。</strong></p>
+<p><strong>任務 D(連結)— 對應你的產品</strong>
+寫一兩句話:IOMMU 如何解釋你前面碰到的「<code>dma_addr_t</code> ≠ 實體位址、<code>dma_map_sg</code> 映射數變少」?若你產品用 user space 驅動操作 NVMe,VFIO/IOMMU 扮演什麼角色?</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 列出系統至少一個 IOMMU group 及其成員裝置。
+2. ☐ 用一段話說明 IOMMU 如何同時提供「位址轉譯」與「保護隔離」。
+3. ☐ 說明 VFIO 直通對 IOMMU group 的要求。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能查 IOMMU group。
+- <strong>80(熟練)</strong>:能解釋 IOMMU 的轉譯與保護。
+- <strong>100(精通)</strong>:能說明 VFIO/passthrough 與 IOMMU group 隔離的關係。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——IOMMU 影響你 DMA 的位址轉譯;若產品涉及 user space 驅動或 VM 直通 NVMe/GPU,VFIO 與 IOMMU group 是必備知識;且 P2PDMA 的可行性與 IOMMU 設定相關。</li>
+<li><strong>這課收束了(位址的真相主線)</strong>:<a class="xlink" href="P0-T05.html">P0-T05</a> 指標 → <a class="xlink" href="P1-T04.html">P1-T04</a> 虛擬/實體 + MMU → <a class="xlink" href="P3-T06.html">P3-T06</a> 線性映射 → <a class="xlink" href="P6-T01.html">P6-T01</a> 三種位址 + <code>dma_addr_t</code> → 本課 IOMMU(<code>dma_addr_t</code> 的轉譯者)。你完全理解了「位址 = 誰看、經過什麼轉譯」。VFIO → 你產品若走 user space 驅動;IOMMU 設定 → <a class="xlink" href="P6-T05.html">P6-T05</a> P2PDMA 可行性。</li>
+<li><strong>下一步 → <a class="xlink" href="P6-T05.html">P6-T05</a> Peer-to-Peer DMA(p2pdma)——NVMe↔GPU 直通的核心</strong>:這是 Phase 6 的<strong>出關門檻</strong>,也是<strong>你產品的關鍵技術</strong>。你已經懂 DMA、屏障、IOMMU——下一課把它們用到產品的核心場景:<strong>P2PDMA</strong>,讓 <strong>NVMe 和 GPU 直接互傳資料,不經過 host DRAM</strong>(回顧 <a class="xlink" href="P5-T07.html">P5-T07</a> 預告的前沿)。你會學:P2PDMA 原理(兩個 PCIe 裝置間直接 DMA)、NVMe CMB 與裝置 BAR、kernel p2pdma 子系統(<code>pci_p2pdma_add_resource</code>)、以及<strong>關鍵的限制</strong>(拓樸:需共同 switch/root port 支援;IOMMU 設定;user space p2pdma 自 6.2 進 mainline、僅 NVMe O_DIRECT——我已查證)。這直接決定你產品「DMA 把 NVMe queue I/O 餵給 GPU」資料路徑的設計。</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P6-T03.html">← P6-T03 DMA 屏障與按門鈴(doorbell)的正確順序</a><a class="pn next" href="P6-T05.html">P6-T05 Peer-to-Peer DMA(p2pdma)—— NVMe↔GPU 直通的核心 →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

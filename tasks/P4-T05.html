@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P4-T05 · 平台裝置與 device tree(概覽)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P4 · 裝置驅動與 Device Model</span>
+  <span class="scope-pill indirect">間接相關</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p4-t05-device-tree">P4-T05 · 平台裝置與 device tree(概覽)</h1>
+<blockquote>
+<p><strong>一句話</strong>:PCI 裝置能「自我介紹」(系統掃匯流排就發現它);但很多嵌入式裝置不能,得靠一份叫 device tree 的靜態描述告訴 kernel「有什麼裝置、在哪個位址、用哪個中斷」。這是裝置被發現的另一種模型——補完你對 device model 的全貌理解。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p>你已經通過 Phase 4 的硬體端門檻——<a class="xlink" href="P4-T04.html">P4-T04</a> 的 PCI 驅動。這最後一課是個<strong>補充視角</strong>,讓你的裝置模型理解更完整。</p>
+<p>回顧 <a class="xlink" href="P4-T01.html">P4-T01</a>/<a class="xlink" href="P4-T04.html">P4-T04</a>:PCI 裝置怎麼被發現?系統<strong>列舉(enumerate)</strong> PCI 匯流排——掃描每條 bus,讀每個裝置的 config space,就知道「這裡有個 vendor X、device Y 的裝置」。PCI 裝置能<strong>自我描述</strong>(透過 config space),所以系統一掃就發現它們。這是一種「<strong>動態探索</strong>」的模型。</p>
+<p>但<strong>很多裝置不能自我描述</strong>,尤其嵌入式系統(手機、路由器、開發板)上的周邊——一個 I2C 溫度感測器、一個記憶體映射的 UART——它們沒有像 PCI config space 那樣的標準自我介紹機制。系統怎麼知道它們存在、在什麼位址、用哪個中斷?</p>
+<p>答案是 <strong>device tree(DT,裝置樹)</strong>:一份<strong>靜態的硬體描述檔</strong>,在開機時告訴 kernel「這塊板子上有什麼裝置、各在什麼記憶體位址、用哪個中斷號、相容於哪個驅動」。kernel 讀這份描述,就知道要建立哪些裝置、配給哪些驅動。這些「靠 DT/板子描述而非匯流排列舉」的裝置,在 Linux 裡是 <strong>platform device</strong>,由 <strong>platform_driver</strong> 驅動。</p>
+<p>為什麼這對你是 <code>scope: indirect</code>(間接對應)?因為<strong>你的核心硬體(NVMe、GPU)走 PCI,不走 DT</strong>——它們能自我描述,靠列舉。所以你日常不太會直接寫 DT/platform 驅動。但理解這個模型能<strong>補完 device model 的全貌</strong>:你會明白「裝置被發現有兩種方式——動態列舉(PCI)和靜態描述(DT)」,而且某些周邊(板子上的雜項硬體)可能用到 platform/DT。這讓你對 <a class="xlink" href="P4-T01.html">P4-T01</a> 的裝置模型有更完整的圖像。</p>
+<p>(書本:Madieu 2e Ch.5 講 Device Tree、Ch.7 講 Platform Devices and Drivers。)</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P4-T01.html">P4-T01</a>(裝置模型、match/probe、bus)。對比 <a class="xlink" href="P4-T04.html">P4-T04</a>(PCI 的列舉模型)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P4-T04.html">P4-T04</a> 的「PCI 列舉:系統掃 bus、讀 config space 發現裝置」嗎?這課的 DT 是相反的思路——裝置不會自我介紹,要靠一份描述檔告訴 kernel。
+  2. 你還記得 <a class="xlink" href="P4-T01.html">P4-T01</a> 的 match(compatible/ID 比對)→ probe 嗎?platform driver 也走 match→probe,只是 match 的依據是 DT 的 compatible 字串。</li>
+<li>環境:Linux/閱讀 DT 片段 + <strong>QEMU(若做 platform driver 實驗,只在 VM)</strong>。</li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) 兩種「裝置被發現」的模型 → (2) device tree 是什麼 → (3) DT 基本語法:node、reg、interrupts → (4) platform device 與 platform_driver → (5) compatible:DT 與驅動的 match → (6) DT vs PCI:根本差異</strong>,最後打通關。</p>
+<hr />
+<h3 id="1">1. 兩種「裝置被發現」的模型</h3>
+<p>先把核心對比立起來:裝置怎麼被 kernel「發現」?有兩種根本不同的模型。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph dynamic["① 動態列舉(PCI、USB)"]
+        D1["裝置能自我描述(PCI config space)<br/>系統掃匯流排 → 讀到裝置身份<br/>→ 動態發現『這裡有個 vendor X device Y』<br/>(插上就被發現,P4-T04)"]
+    end
+    subgraph static["② 靜態描述(device tree)"]
+        S1["裝置不能自我描述(嵌入式周邊)<br/>靠一份 DT 檔事先寫好:<br/>『這塊板子有 UART 在位址 0x..., 用中斷 N』<br/>→ kernel 讀 DT,照著建立裝置"]
+    end
+    dynamic -.“兩種互補的發現方式”.-> static
+    style D1 fill:#6fa8b8,color:#10100e
+    style S1 fill:#8a9a5b,color:#10100e
+</pre></p>
+<ul>
+<li><strong>動態列舉(PCI/USB)</strong>:裝置<strong>能自我描述</strong>(PCI 用 config space,<a class="xlink" href="P4-T04.html">P4-T04</a>)。系統掃匯流排,讀到裝置身份,<strong>動態發現</strong>它們。插上就被發現。</li>
+<li><strong>靜態描述(device tree)</strong>:裝置<strong>不能自我描述</strong>(很多嵌入式周邊)。靠一份 <strong>DT 檔</strong>事先寫好「這塊板子上有什麼裝置、在什麼位址、用哪個中斷」,kernel 讀 DT,照著建立裝置。</li>
+</ul>
+<p>兩者互補:有自我描述能力的高速裝置(PCI)用列舉;固定在板子上、無自我描述的周邊用 DT。<strong>你的 NVMe/GPU 屬於前者</strong>(PCI,列舉);DT 主要用於後者(嵌入式周邊)。</p>
+<p>DT 還有一個重要好處——同一份 kernel 配不同的 DT,就能跑在不同的板子上:</p>
+<p><pre class="mermaid">flowchart TB
+    KERNEL2["同一份 kernel 映像(不含板子專屬硬體配置)"]
+    KERNEL2 --> BOARD_A["+ board A 的 DT → 知道 A 有哪些周邊、在哪些位址"]
+    KERNEL2 --> BOARD_B["+ board B 的 DT → 知道 B 有哪些周邊、在哪些位址"]
+    BOARD_A --> RUN_A["在 board A 正確跑"]
+    BOARD_B --> RUN_B["在 board B 正確跑"]
+    NOTE11["硬體配置從 kernel 程式碼分離成 DT 資料<br/>→ 不必為每塊板子改 kernel(ARM 海量板子生態的關鍵)"]
+    RUN_A --> NOTE11
+    style KERNEL2 fill:#6fa8b8,color:#10100e
+    style NOTE11 fill:#8a9a5b,color:#10100e
+</pre></p>
+<hr />
+<h3 id="2-device-tree">2. device tree 是什麼</h3>
+<p><strong>device tree(DT)</strong> 是一份<strong>描述硬體的資料結構</strong>,以樹狀組織,在開機時傳給 kernel。它不是程式碼,而是<strong>資料</strong>——描述「這個系統有哪些硬體、它們的屬性」。</p>
+<p><pre class="mermaid">flowchart TB
+    DT["device tree:一份靜態的硬體描述(樹狀資料)"]
+    DT --> CONTENT["描述:<br/>有哪些裝置(node)<br/>每個裝置在什麼記憶體位址(reg)<br/>用哪個中斷(interrupts)<br/>相容於哪個驅動(compatible)<br/>其他屬性(時脈、GPIO...)"]
+    CONTENT --> FLOW2["開機流程:<br/>bootloader 把編譯好的 DT(.dtb)傳給 kernel<br/>→ kernel 解析 DT<br/>→ 為 DT 描述的每個裝置建立 platform device(第4節)<br/>→ 等對應的 platform_driver 來 match"]
+    style DT fill:#6fa8b8,color:#10100e
+    style FLOW2 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>DT 的角色:它把「這塊硬體板子的配置」從 kernel 程式碼裡<strong>分離出來</strong>,變成一份資料描述。好處:<strong>同一份 kernel 可以支援很多不同的板子</strong>——只要給不同的 DT,kernel 就知道每塊板子有什麼硬體,不必為每塊板子改 kernel 程式碼(這對 ARM 等有海量不同板子的生態極重要)。</p>
+<p>開機流程:bootloader 把編譯好的 DT(<code>.dtb</code>,device tree blob)傳給 kernel → kernel 解析它 → 為 DT 描述的裝置建立 <strong>platform device</strong> → 等驅動來 match。</p>
+<hr />
+<h3 id="3-dt-nodereginterrupts">3. DT 基本語法:node、reg、interrupts</h3>
+<p>DT 用一種類似巢狀大括號的語法描述裝置。你不必會寫複雜的 DT,但要<strong>讀得懂基本片段</strong>——尤其 <code>reg</code>(位址)和 <code>interrupts</code>(中斷)。</p>
+<pre><code>uart0: serial@10000000 {
+    compatible = &quot;vendor,my-uart&quot;;
+    reg = &lt;0x10000000 0x1000&gt;;      // 位址 0x10000000,大小 0x1000
+    interrupts = &lt;5&gt;;                // 用中斷號 5
+};
+</code></pre>
+<p><pre class="mermaid">flowchart TB
+    NODE["一個 DT node(描述一個裝置)<br/>serial@10000000 { ... }"]
+    NODE --> COMPAT["compatible = &quot;vendor,my-uart&quot;<br/>★ 相容字串:用來和驅動 match(第5節)★"]
+    NODE --> REG["reg = <0x10000000 0x1000><br/>★ 裝置的記憶體位址 + 大小 ★<br/>(裝置的暫存器在這個實體位址)"]
+    NODE --> IRQ["interrupts = <5><br/>★ 裝置用哪個中斷號 ★"]
+    NODE --> OTHER2["其他屬性(時脈、GPIO、自訂參數...)"]
+    style COMPAT fill:#e8a33d,color:#10100e
+    style REG fill:#6fa8b8,color:#10100e
+    style IRQ fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>讀 DT 片段時,認得這幾個關鍵屬性(驗收點:對給定 DT 片段指出 reg 與 interrupt 號):
+- <strong><code>compatible</code></strong>:相容字串(如 <code>"vendor,my-uart"</code>)——<strong>用來和驅動 match</strong>(第 5 節)。
+- <strong><code>reg</code></strong>:裝置的<strong>記憶體位址 + 大小</strong>(裝置的暫存器在這個實體位址)。例如 <code>&lt;0x10000000 0x1000&gt;</code> 表示位址 0x10000000、大小 0x1000。
+- <strong><code>interrupts</code></strong>:裝置用<strong>哪個中斷號</strong>。
+- 其他屬性:時脈、GPIO、自訂參數等。</p>
+<p>對照 <a class="xlink" href="P4-T04.html">P4-T04</a> 的 PCI:PCI 裝置的這些資訊(位址 = BAR、中斷 = MSI-X)是<strong>從 config space 讀出來的</strong>(裝置自己報告);而 DT 裝置的這些資訊是<strong>寫在 DT 裡的</strong>(人事先描述)。同樣是「位址、中斷」,來源不同——一個動態讀、一個靜態寫。</p>
+<hr />
+<h3 id="4-platform-device-platform_driver">4. platform device 與 platform_driver</h3>
+<p>DT 描述的裝置,在 Linux 裡成為 <strong>platform device</strong>,掛在一條虛擬的 <strong>platform bus</strong> 上,由 <strong>platform_driver</strong> 驅動。</p>
+<p><pre class="mermaid">flowchart TB
+    DT2["DT 描述一個裝置"]
+    DT2 --> PDEV["kernel 解析 DT → 建立一個 platform_device<br/>(掛在 platform bus 上,P4-T01 的 bus 概念)"]
+    PDEV --> PBUS["platform bus:一條『虛擬匯流排』<br/>(不是實體匯流排,是給『非列舉式裝置』的容身處)"]
+    PDRV["你寫 platform_driver:<br/>.driver.of_match_table(聲明相容哪些 compatible 字串)<br/>.probe / .remove"]
+    PBUS --> MATCH4["platform bus 的 match:<br/>比對 platform_device 的 compatible(來自 DT)<br/>和 platform_driver 的 of_match_table(第5節)"]
+    PDRV --> MATCH4
+    MATCH4 --> PROBE5["match 成功 → probe(platform_device)<br/>(在 probe 裡用 platform 資源 API 取得 reg/interrupts)"]
+    style PDEV fill:#6fa8b8,color:#10100e
+    style MATCH4 fill:#e8a33d,color:#10100e
+    style PROBE5 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>機制(呼應 <a class="xlink" href="P4-T01.html">P4-T01</a> 的裝置模型):
+- kernel 解析 DT,為每個裝置建立一個 <strong>platform_device</strong>,掛在 <strong>platform bus</strong>(一條虛擬匯流排,專門給「非列舉式」的裝置容身)。
+- 你寫 <strong>platform_driver</strong>,用 <code>of_match_table</code> 聲明「我相容哪些 compatible 字串」。
+- platform bus 用 match 比對(compatible)→ 成功就呼叫你的 <strong>probe(platform_device)</strong>。
+- 在 probe 裡,用 platform 資源 API 取得 DT 裡寫的 <strong>reg(位址)和 interrupts(中斷)</strong>,然後 map 暫存器、註冊中斷——和 PCI 驅動的 probe 結構類似,只是資源來源是 DT 而非 config space。</p>
+<p>這就是 <a class="xlink" href="P4-T01.html">P4-T01</a> 裝置模型的另一個實例:一樣是 device/driver/bus/match/probe,只是這裡的 bus 是 platform bus、match 依據是 compatible 字串、裝置來源是 DT。</p>
+<hr />
+<h3 id="5-compatibledt-match">5. compatible:DT 與驅動的 match</h3>
+<p>platform 世界的 match,靠 <strong>compatible 字串</strong>——DT node 裡的 <code>compatible</code> 和 driver 的 <code>of_match_table</code> 比對。</p>
+<p><pre class="mermaid">flowchart TB
+    DTNODE["DT node:compatible = &quot;vendor,my-uart&quot;"]
+    DRIVER4["platform_driver 的 of_match_table:<br/>{ .compatible = &quot;vendor,my-uart&quot; }"]
+    DTNODE --> MATCH5{"compatible 字串相符?"}
+    DRIVER4 --> MATCH5
+    MATCH5 -->|"相符"| PROBE6["✓ match 成功 → probe 被呼叫"]
+    MATCH5 -->|"不符"| NOMATCH["✗ 不 match → probe 不被呼叫<br/>(裝置沒有驅動接管)"]
+    NOTE10["★ 常見誤區:DT 與驅動的 compatible 字串不符 → 不 match ★<br/>(打錯字、版本不符...)→ 你的 probe 不被呼叫<br/>(呼應 P4-T01:probe 需 match 成功才被呼叫)"]
+    NOMATCH --> NOTE10
+    style MATCH5 fill:#e8a33d,color:#10100e
+    style PROBE6 fill:#8a9a5b,color:#10100e
+    style NOTE10 fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>機制:DT node 的 <code>compatible</code>(如 <code>"vendor,my-uart"</code>)和 platform_driver 的 <code>of_match_table</code> 裡的 compatible 字串<strong>比對</strong>——相符就 match 成功、呼叫 probe;不符就不 match。</p>
+<p><strong>常見誤區:DT 與驅動的 compatible 字串不符導致不 match</strong>——如果 DT 寫 <code>"vendor,my-uart"</code> 但驅動的 of_match_table 寫成別的(打錯字、版本字串不同),就 match 不上,你的 <strong>probe 不會被呼叫</strong>(裝置沒有驅動接管)。這完全呼應 <a class="xlink" href="P4-T01.html">P4-T01</a> 的核心規則:<strong>probe 需 match 成功才被呼叫</strong>——只是 PCI 的 match 比對 vendor/device ID,platform 的 match 比對 compatible 字串。「probe 沒被呼叫」在 platform 世界,最常見原因就是 compatible 字串對不上。</p>
+<hr />
+<h3 id="6-dt-vs-pci">6. DT vs PCI:根本差異</h3>
+<p>把整課收束到最核心的對比——這是驗收的重點。</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph pci_model["PCI device:動態列舉"]
+        P1["裝置怎麼被發現:<br/>系統掃 PCI bus → 讀裝置的 config space<br/>(裝置自我報告身份)→ 動態發現"]
+        P2["位址/中斷哪來:<br/>從 config space 讀(BAR、MSI-X 能力)<br/>(裝置自己提供)"]
+        P3["match 依據:vendor/device ID(來自裝置)"]
+    end
+    subgraph dt_model["platform device:靜態描述"]
+        T1["裝置怎麼被發現:<br/>kernel 讀 device tree(人事先寫的描述)<br/>→ 照著建立裝置(裝置不會自我報告)"]
+        T2["位址/中斷哪來:<br/>從 DT 讀(reg、interrupts)<br/>(人事先寫在 DT 裡)"]
+        T3["match 依據:compatible 字串(來自 DT)"]
+    end
+    pci_model -.“核心差異:<br/>『誰來描述裝置』<br/>—裝置自己 vs 人事先寫”.-> dt_model
+    style P1 fill:#6fa8b8,color:#10100e
+    style T1 fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><strong>根本差異(驗收點:說明 platform device 與 PCI device 在「如何被發現」上的根本差異)</strong>:核心在於「<strong>誰來描述這個裝置</strong>」:
+- <strong>PCI device</strong>:裝置<strong>自己描述自己</strong>(config space)。系統掃匯流排就能動態發現它、讀出它的位址(BAR)、中斷能力。<strong>插上就被發現。</strong>
+- <strong>platform device</strong>:裝置<strong>不會自我描述</strong>,靠<strong>人事先寫的 device tree</strong> 描述它(在哪、用哪個中斷、相容哪個驅動)。kernel 讀 DT 才知道它存在。</p>
+<p>兩者的 match→probe 流程(<a class="xlink" href="P4-T01.html">P4-T01</a>)是一樣的(都是 bus 媒合 device 與 driver),差別只在「裝置資訊的來源」——一個是裝置動態自報(PCI),一個是 DT 靜態描述(platform)。</p>
+<p><strong>常見誤區:把 platform device 與 PCI device 混為一談</strong>——它們是不同的發現模型(列舉 vs DT/板子描述)。你的 NVMe/GPU 是 PCI(列舉);嵌入式周邊常是 platform(DT)。理解這個區別,你對「kernel 如何認識硬體」就有了完整的圖像。</p>
+<hr />
+<h2 id="platformdt">打通關:把 platform/DT 收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    TWO2["裝置被發現的兩種模型(都走 P4-T01 的 match→probe)"]
+    TWO2 --> PCI4["PCI/USB:動態列舉<br/>裝置自我描述(config space)→ 系統掃 bus 發現<br/>(你的 NVMe/GPU,P4-T04)"]
+    TWO2 --> DT3["device tree:靜態描述<br/>裝置不自我描述 → 靠 DT 檔事先寫好<br/>(嵌入式周邊)"]
+    DT3 --> SYNTAX["DT 語法:node + reg(位址)+ interrupts(中斷)+ compatible"]
+    SYNTAX --> PLATFORM["platform_device(掛 platform bus)+ platform_driver<br/>probe 裡用 platform 資源 API 取 reg/interrupts"]
+    PLATFORM --> COMPAT2["match 依據:compatible 字串(DT) vs of_match_table(driver)<br/>(★ 不符 → probe 不被呼叫,呼應 P4-T01 ★)"]
+    PCI4 -.“核心差異:誰描述裝置<br/>—裝置自己 vs 人事先寫”.-> DT3
+    style PCI4 fill:#6fa8b8,color:#10100e
+    style DT3 fill:#8a9a5b,color:#10100e
+    style COMPAT2 fill:#e8a33d,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>裝置被 kernel 發現有兩種模型——PCI/USB 靠動態列舉(裝置用 config space 自我描述,你的 NVMe/GPU 屬此),嵌入式周邊靠 device tree 靜態描述(一份事先寫好的硬體描述,給 platform_device/platform_driver 用,match 依 compatible 字串);兩者都走 P4-T01 的 match→probe,差別只在裝置資訊來源——裝置自報 vs 人事先寫。理解這個補完了你對 device model 的全貌。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:把 platform device 與 PCI device 混為一談。</strong>
+它們是不同的發現模型:PCI 靠匯流排列舉(裝置自我描述),platform 靠 DT/板子描述(人事先寫)。你的 NVMe/GPU 是 PCI;嵌入式周邊常是 platform。</p>
+<p><strong>誤區二:DT 與驅動的 compatible 字串不符導致不 match。</strong>
+DT node 的 compatible 和 driver 的 of_match_table 要完全相符才 match。打錯字、版本不符就 match 不上,probe 不被呼叫(呼應 <a class="xlink" href="P4-T01.html">P4-T01</a>:probe 需 match 成功)。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:閱讀 DT 片段(安全)+ <strong>QEMU(若做 platform driver,只在 VM)</strong>。</p>
+<p><strong>任務 A — 讀 DT 片段(驗收點)</strong>
+給定一個 DT node 片段(可參考 https://docs.kernel.org/devicetree/usage-model.html 或自己取一個範例),正確指出:
+- 該裝置的 <strong>reg</strong>(記憶體位址)是什麼?
+- 該裝置用的 <strong>interrupt 號</strong>是什麼?
+- 它的 <strong>compatible 字串</strong>是什麼?
+<strong>驗收:對給定 DT 片段正確指出某裝置的 reg(位址)與 interrupt 號。</strong></p>
+<p><strong>任務 B — 最小 platform driver probe(概念性,選做)</strong>
+寫一個最小的 platform_driver:定義 <code>of_match_table</code>(一個 compatible 字串)、寫 probe(在裡面 <code>pr_info</code>、並嘗試用 platform 資源 API 取得 reg/interrupts)。(在 QEMU 裡若有對應 DT 的虛擬裝置可實測;否則概念性完成即可。)觀察 probe 在 compatible match 時被呼叫。</p>
+<p><strong>任務 C — 說明 DT vs PCI 的根本差異(驗收點,核心)</strong>
+用文字說明:<strong>platform device 與 PCI device 在「如何被發現」上的根本差異</strong>是什麼?<strong>驗收:能說出核心差異(PCI 裝置自我描述、靠匯流排列舉動態發現;platform 裝置不自我描述、靠 device tree 靜態描述)。</strong></p>
+<p><strong>任務 D(連結)— 對照 PCI 的 BAR/MSI-X</strong>
+寫一兩句話:DT 的 <code>reg</code>/<code>interrupts</code>,對應到 PCI 裝置的什麼?(提示:reg ↔ BAR 指向的位址、interrupts ↔ MSI-X;但 PCI 的是從 config space 動態讀,DT 的是人事先寫。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 對給定 DT 片段正確指出某裝置的 reg(位址)與 interrupt 號。
+2. ☐ 說明 platform device 與 PCI device 在「如何被發現」上的根本差異。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能讀 DT 片段。
+- <strong>80(熟練)</strong>:能寫最小 platform probe。
+- <strong>100(精通)</strong>:能清楚對比 DT/platform 與 PCI 列舉模型。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>間接對應</strong>——你的核心硬體(NVMe/GPU)走 PCI 而非 DT,但理解 platform/DT 能補完 device model 全貌,且部分周邊可能用到。</li>
+<li><strong>這課收束了</strong>:整個 Phase 4——裝置模型(<a class="xlink" href="P4-T01.html">P4-T01</a>)、字元驅動(<a class="xlink" href="P4-T02.html">P4-T02</a>)、ioctl/mmap(<a class="xlink" href="P4-T03.html">P4-T03</a>)、PCI(<a class="xlink" href="P4-T04.html">P4-T04</a>)、platform/DT(本課)。你現在理解「kernel 如何抽象裝置與匯流排、如何發現裝置(列舉 vs DT)、如何寫驅動操作硬體」。</li>
+<li><strong>下一步 → <a class="xlink" href="P5-T01.html">P5-T01</a> 進入 Phase 5(Block Layer、儲存堆疊與 NVMe)</strong>:恭喜你完成 Phase 4——你的 module 現在能跟硬體裝置打交道了!接下來 <strong>Phase 5 是你產品的核心領域</strong>:深入從 VFS 到裝置的整條<strong>儲存堆疊</strong>、<strong>blk-mq</strong>(多佇列區塊層,你 <a class="xlink" href="P2-T07.html">P2-T07</a> sbitmap、<a class="xlink" href="P3-T09.html">P3-T09</a> per-CPU 的用武之地)、以及 <strong>NVMe 協定與 Linux NVMe 驅動</strong>(正是建立在你這課學的 <a class="xlink" href="P4-T04.html">P4-T04</a> pci_driver + BAR + MSI-X 之上)。你前面所有的鋪墊——資料結構、同步、中斷、DMA 基礎、PCI——都將在這裡匯聚成「讀懂並修改 block layer 與 NVMe 驅動」的能力。(提醒:到 P5/P6/P7 我會重新查證 NVMe/DMA/P2PDMA/GDS 的版本敏感細節。)</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P4-T04.html">← P4-T04 PCI 子系統(pci_driver / BAR / config space / MSI-X)</a><a class="pn next" href="P5-T01.html">P5-T01 儲存堆疊總覽與 Linux Storage Stack Diagram →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>

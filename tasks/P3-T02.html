@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P3-T02 · 從原始碼編譯與設定 kernel(Kconfig / menuconfig / make)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>:root{
+  --ink:#10100e; --ink-2:#1a1916; --ink-3:#24221d;
+  --paper:#f4ecd8; --paper-dim:#cfc6b0;
+  --amber:#e8a33d; --amber-bright:#ffb84d; --rust:#c2603a;
+  --sage:#8a9a5b; --sky:#6fa8b8;
+  --line:#3a372f; --line-soft:#2c2a24;
+  --mono:'JetBrains Mono',monospace; --serif:'Newsreader',Georgia,serif; --tc:'Noto Sans TC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink); color:var(--paper); font-family:var(--tc);
+  line-height:1.85; -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% 8%, rgba(232,163,61,.045), transparent 42%),
+                   radial-gradient(circle at 88% 96%, rgba(111,168,184,.035), transparent 46%);
+}
+::selection{background:var(--amber);color:var(--ink)}
+
+/* top bar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.5rem;background:rgba(16,16,14,.92);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:.78rem;
+}
+.topbar .home{color:var(--amber);text-decoration:none;font-weight:700}
+.topbar .home:hover{color:var(--amber-bright)}
+.topbar .crumb{color:var(--paper-dim)}
+.scope-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;margin-left:auto}
+.scope-pill.direct{background:var(--rust);color:var(--paper)}
+.scope-pill.indirect{background:var(--sky);color:var(--ink)}
+.scope-pill.base{background:var(--line);color:var(--paper-dim)}
+.gate-pill{padding:.15rem .6rem;border-radius:3px;font-size:.68rem;font-weight:700;background:var(--amber);color:var(--ink)}
+
+/* article */
+.paper{max-width:820px;margin:2.5rem auto;padding:0 1.6rem 2rem}
+.paper h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(1.9rem,4vw,2.8rem);
+  line-height:1.12;letter-spacing:-.02em;color:var(--paper);
+  margin:.5rem 0 1.4rem;padding-bottom:1rem;border-bottom:2px solid var(--amber);
+}
+.paper h2{
+  font-family:var(--serif);font-weight:600;font-size:1.5rem;color:var(--amber-bright);
+  margin:2.6rem 0 1rem;padding-left:.7rem;border-left:4px solid var(--amber);
+}
+.paper h3{
+  font-family:var(--tc);font-weight:700;font-size:1.15rem;color:var(--paper);
+  margin:1.8rem 0 .7rem;
+}
+.paper p{margin:.9rem 0;color:var(--paper)}
+.paper ul,.paper ol{margin:.8rem 0 .8rem 1.4rem}
+.paper li{margin:.4rem 0}
+.paper strong{color:var(--amber-bright);font-weight:700}
+.paper em{color:var(--paper-dim)}
+
+/* blockquote = the "一句話" / callouts */
+.paper blockquote{
+  margin:1.4rem 0;padding:1rem 1.3rem;background:var(--ink-2);
+  border-left:4px solid var(--sage);border-radius:0 4px 4px 0;color:var(--paper-dim);
+}
+.paper blockquote strong{color:var(--sage)}
+.paper blockquote p{margin:.3rem 0}
+
+/* inline + block code */
+.paper code{
+  font-family:var(--mono);font-size:.86em;background:var(--ink-3);
+  padding:.12rem .4rem;border-radius:3px;color:var(--amber-bright);
+}
+.paper pre{
+  background:#0c0c0a;border:1px solid var(--line);border-radius:6px;
+  padding:1.1rem 1.3rem;overflow-x:auto;margin:1.2rem 0;
+  font-family:var(--mono);font-size:.82rem;line-height:1.65;
+}
+.paper pre code{background:none;padding:0;color:#e4dcc6;font-size:inherit}
+
+/* tables */
+.paper table{
+  width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.9rem;
+  border:1px solid var(--line);
+}
+.paper th{
+  background:var(--ink-3);color:var(--amber);font-family:var(--mono);
+  font-size:.78rem;text-align:left;padding:.6rem .8rem;border:1px solid var(--line);
+}
+.paper td{padding:.55rem .8rem;border:1px solid var(--line-soft);vertical-align:top}
+.paper tr:nth-child(even) td{background:var(--ink-2)}
+
+/* cross-links */
+.xlink{color:var(--sky);text-decoration:none;border-bottom:1px dotted var(--sky);font-family:var(--mono);font-size:.92em}
+.xlink:hover{color:var(--amber-bright);border-bottom-color:var(--amber-bright)}
+.xlink-stub{color:var(--paper-dim);font-family:var(--mono);font-size:.92em;opacity:.6;border-bottom:1px dotted var(--line)}
+
+/* mermaid */
+.mermaid{
+  margin:1.6rem auto;padding:1.2rem;background:var(--ink-2);
+  border:1px solid var(--line-soft);border-radius:8px;text-align:center;overflow-x:auto;
+}
+
+/* horizontal rule */
+.paper hr{border:none;border-top:1px solid var(--line-soft);margin:2.2rem 0}
+
+/* checkboxes in 驗收 */
+.paper li:has(input),.paper li{list-style:inherit}
+
+/* bottom nav */
+.botnav{
+  max-width:820px;margin:1rem auto 4rem;padding:1.6rem 1.6rem 0;
+  display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  border-top:1px solid var(--line);
+}
+.pn{
+  font-family:var(--mono);font-size:.8rem;text-decoration:none;color:var(--paper-dim);
+  padding:.7rem 1rem;border:1px solid var(--line-soft);border-radius:4px;transition:all .2s;max-width:48%;
+}
+.pn:hover{border-color:var(--amber);color:var(--amber)}
+.pn.next{margin-left:auto;text-align:right}
+
+@media(max-width:640px){
+  .paper{padding:0 1.1rem 2rem;margin-top:1.5rem}
+  .pn{max-width:100%}
+  .topbar{font-size:.7rem;gap:.6rem}
+}
+</style>
+</head><body>
+<nav class="topbar">
+  <a href="../index.html" class="home">← 總索引</a>
+  <span class="crumb">P3 · 核心 kernel 內部機制與 module 開發</span>
+  <span class="scope-pill direct">直接對應產品</span>
+  
+</nav>
+<article class="paper">
+<h1 id="p3-t02-kernelkconfig-menuconfig-make">P3-T02 · 從原始碼編譯與設定 kernel(Kconfig / menuconfig / make)</h1>
+<blockquote>
+<p><strong>一句話</strong>:kernel 有上萬個可開關的功能,記錄在 <code>.config</code> 裡;每個功能可選「編進核心(=y)、編成可載入模組(=m)、或不編(=n)」。學會用 Kconfig 調整、<code>make</code> 編譯,你才能為自己產品的 module 配好相依的 kernel 選項(如 P2PDMA、IOMMU、NVMe)。</p>
+</blockquote>
+<hr />
+<h2 id="_1">為什麼要先學這個(導讀)</h2>
+<p><a class="xlink" href="P1-T11.html">P1-T11</a> 你已經編過一次 kernel、在 QEMU 開機、接過 GDB。那一課的重點是「打通整條鏈」。這一課回到其中<strong>設定與編譯</strong>的環節,把它學深——因為配置 kernel 是你日後天天要做的事。</p>
+<p>核心是 <strong>Kconfig 系統</strong>:kernel 有上萬個可開關的功能選項(支援哪些硬體、哪些檔案系統、哪些特性),這些開關記錄在一個叫 <code>.config</code> 的檔案裡。而每個功能有<strong>三種狀態</strong>,這是這一課最重要的概念:
+- <strong><code>=y</code></strong>:編進核心映像(built-in,開機就在)。
+- <strong><code>=m</code></strong>:編成<strong>可載入模組</strong>(LKM,需要時才 <code>modprobe</code> 載入)。
+- <strong><code>=n</code></strong>:不編(這個功能不存在於這個 kernel)。</p>
+<p>為什麼這對你是 <code>scope: direct</code>?因為<strong>你產品的 module 需要特定的 kernel 選項開啟才能運作</strong>。例如:
+- <strong>P2PDMA</strong>(PCIe peer-to-peer DMA,讓 NVMe 直接和 GPU 傳資料——你產品的核心)需要 <code>CONFIG_PCI_P2PDMA=y</code>。
+- <strong>IOMMU</strong>(影響 DMA 的位址轉換,<span class="xlink-stub" title="待撰寫">P6</span>)有對應的設定。
+- <strong>NVMe</strong> 驅動本身是個選項(<code>=y</code> 或 <code>=m</code>)。</p>
+<p>如果你不懂 Kconfig,就配不出能跑你產品的 kernel——你會遇到「我的 module 用的功能 kernel 沒開」這種問題。這一課讓你掌握配置產品執行環境的基礎。</p>
+<hr />
+<h2 id="_2">開始之前(前置確認)</h2>
+<ul>
+<li>依賴:<a class="xlink" href="P3-T01.html">P3-T01</a>(kernel 架構與目錄)、<a class="xlink" href="P1-T11.html">P1-T11</a>(你已建好 QEMU 環境、編過一次 kernel)。</li>
+<li>自我檢測:
+  1. 你還記得 <a class="xlink" href="P1-T11.html">P1-T11</a> 的 <code>make defconfig</code>、<code>CONFIG_DEBUG_INFO</code>、<code>vmlinux</code>/<code>bzImage</code> 嗎?這課深入這些。
+  2. 你還記得 <a class="xlink" href="P0-T08.html">P0-T08</a> 的 <code>#ifdef</code> 條件編譯嗎?<code>.config</code> 的 <code>=y/=n</code> 本質就是大規模的條件編譯開關。</li>
+<li>環境:你的開發主機(編譯)+ QEMU(驗證)。<strong>編譯本身與在 QEMU 驗證都不碰你的主機核心。</strong></li>
+</ul>
+<hr />
+<h2 id="_3">核心內容</h2>
+<p>拆成這幾節:<strong>(1) Kconfig 與 .config → (2) 三種狀態 =y/=m/=n → (3) 設定的入口:defconfig/menuconfig/olddefconfig → (4) 編譯與產出 → (5) 安裝模組與映像 → (6) 為你的產品配選項</strong>,最後打通關。</p>
+<hr />
+<h3 id="1-kconfig-config">1. Kconfig 與 <code>.config</code>:設定的真相來源</h3>
+<p>kernel 的可設定選項由 <strong>Kconfig 系統</strong>管理。每個選項有個名字(<code>CONFIG_XXX</code>),它們的值集中記錄在原始碼樹根目錄的 <strong><code>.config</code></strong> 檔案裡。</p>
+<p><pre class="mermaid">flowchart TB
+    KCONFIG["Kconfig 檔案(散布在各目錄)<br/>定義有哪些選項、選項的說明、<br/>選項之間的相依關係"]
+    CONFIG[".config(原始碼樹根)<br/>記錄每個選項的當前值<br/>CONFIG_NVME=m<br/>CONFIG_PCI_P2PDMA=y<br/>CONFIG_XXX=n ..."]
+    BUILD["編譯時:Kbuild 讀 .config,<br/>決定編譯哪些程式碼、<br/>每段編成什麼(built-in/模組/不編)"]
+    KCONFIG --> CONFIG --> BUILD
+    style CONFIG fill:#e8a33d,color:#10100e
+    style BUILD fill:#8a9a5b,color:#10100e
+</pre></p>
+<p><code>.config</code> 本質上是一大堆 <code>CONFIG_XXX=y/m/n</code> 的開關(回顧 <a class="xlink" href="P1-T11.html">P1-T11</a>)。它是整個 build 的「<strong>設定真相來源</strong>」——編譯時,Kbuild 讀它來決定「編哪些程式碼、每段編成什麼」。這正是 <a class="xlink" href="P0-T08.html">P0-T08</a> 條件編譯的大規模應用:kernel 程式碼裡滿是 <code>#ifdef CONFIG_XXX</code>,<code>.config</code> 的值決定哪些程式碼被包含進這次編譯。</p>
+<p>Kconfig 還處理<strong>相依關係</strong>:有些選項依賴別的選項(例如某功能需要先開另一個)。當你開一個選項,Kconfig 會提示或自動處理它的相依。</p>
+<hr />
+<h3 id="2-yvs-mvs-n">2. 三種狀態:<code>=y</code>(內建)vs <code>=m</code>(模組)vs <code>=n</code>(不編)</h3>
+<p>這是這一課最核心的概念。每個功能選項可以是三種狀態之一,差別在「<strong>編不編、以及編成什麼形式</strong>」:</p>
+<p><pre class="mermaid">flowchart TB
+    OPTION["一個功能選項(如 NVMe 驅動)"]
+    OPTION --> Y["=y(built-in 內建)<br/>編進核心映像 vmlinux/bzImage<br/>→ 開機時就載入、一直在<br/>→ 不能卸載"]
+    OPTION --> M["=m(module 模組)<br/>編成獨立的 .ko 檔(LKM)<br/>→ 需要時才 modprobe/insmod 載入<br/>→ 可卸載(rmmod)、可傳參數"]
+    OPTION --> N["=n(不編)<br/>這個功能完全不編進來<br/>→ 這個 kernel 沒有這個功能"]
+    style Y fill:#6fa8b8,color:#10100e
+    style M fill:#e8a33d,color:#10100e
+    style N fill:#c2603a,color:#f4ecd8
+</pre></p>
+<p>三者的實際差異:
+- <strong><code>=y</code></strong>:功能編進核心映像,開機就在、不能卸載。適合「一定要有、核心啟動就需要」的功能(例如開機要用的根檔案系統驅動)。
+- <strong><code>=m</code></strong>:功能編成獨立的 <code>.ko</code> 模組檔,<strong>不在核心映像裡</strong>,要用 <code>modprobe</code>/<code>insmod</code> 才載入。適合「不一定要有、或想動態管理」的功能。<strong>你自己寫的 module 天生就是這種</strong>(out-of-tree 模組,<a class="xlink" href="P3-T03.html">P3-T03</a>)。
+- <strong><code>=n</code></strong>:不編。這個 kernel 裡沒有這個功能。</p>
+<p>驗證差異的方法:<code>=m</code> 的功能,開機後用 <code>lsmod</code> 看得到(載入後)、可以 <code>modprobe</code> 載入/<code>rmmod</code> 卸載;<code>=y</code> 的功能直接在核心裡,<code>lsmod</code> 看不到它(因為它不是模組)。<strong>這個區別你會在動手實作裡親眼驗證。</strong></p>
+<blockquote>
+<p><strong>跟你產品的關聯</strong>:你日後可能把產品的某些功能編成 <code>=m</code>(方便開發、更新),某些依賴的 kernel 功能設成 <code>=y</code>(確保一定在)。理解三態,你才能做這些決定。</p>
+</blockquote>
+<hr />
+<h3 id="3-defconfig-menuconfig-olddefconfig">3. 設定的入口:defconfig / menuconfig / olddefconfig</h3>
+<p>你不會手動編輯 <code>.config</code>(上萬行)。kernel 提供幾個 <code>make</code> 目標來產生/修改它:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph targets["產生/修改 .config 的主要方式"]
+        DEFCONFIG["make defconfig<br/>產生一個合理的預設 .config<br/>(針對你的架構,如 x86-64)<br/>→ 通常從這裡起步"]
+        MENUCONFIG["make menuconfig<br/>文字選單介面,<br/>逐項瀏覽/開關選項<br/>(有搜尋、有選項說明)"]
+        OLDDEFCONFIG["make olddefconfig<br/>基於現有 .config,<br/>把『沒設定的新選項』補上預設值<br/>(改了 .config 或換版本後用)"]
+    end
+    style DEFCONFIG fill:#6fa8b8,color:#10100e
+    style MENUCONFIG fill:#e8a33d,color:#10100e
+    style OLDDEFCONFIG fill:#8a9a5b,color:#10100e
+</pre></p>
+<ul>
+<li><strong><code>make defconfig</code></strong>:產生一份合理的預設設定(回顧 <a class="xlink" href="P1-T11.html">P1-T11</a> 你用過)。起步點。</li>
+<li><strong><code>make menuconfig</code></strong>:開一個文字選單介面,讓你逐項瀏覽、搜尋、開關選項——每個選項有說明,還顯示相依關係。這是手動調整的主要工具。<code>defconfig</code> 和 <code>menuconfig</code> 的差別(驗收點):前者是「一鍵產生預設」,後者是「互動式逐項調整」。</li>
+<li><strong><code>make olddefconfig</code></strong>:當你改了 <code>.config</code>、或換了 kernel 版本,有些「新選項」還沒設定值——這個指令把它們補上預設值,避免編譯時被一堆問題卡住(常見誤區:<strong>改了 <code>.config</code> 卻沒補預設</strong>,導致編譯中斷或行為怪異)。</li>
+</ul>
+<hr />
+<h3 id="4-make">4. 編譯與產出:make 與兩個產物</h3>
+<p>設定好 <code>.config</code>,就編譯(回顧 <a class="xlink" href="P1-T11.html">P1-T11</a>,這裡複習要點):</p>
+<p><pre class="mermaid">flowchart LR
+    MAKE["make -j$(nproc)<br/>(用所有核心平行編譯)"]
+    KBUILD["Kbuild 依 .config 編譯:<br/>=y 的編進映像,=m 的編成 .ko"]
+    OUTPUT["產出兩類:<br/>① vmlinux/bzImage(核心映像,含所有 =y)<br/>② 各個 .ko 模組檔(所有 =m)"]
+    MAKE --> KBUILD --> OUTPUT
+    NOTE["記得 CONFIG_DEBUG_INFO=y(P1-T11):<br/>編入除錯符號,後續 gdb/KASAN 需要"]
+    OUTPUT --> NOTE
+    style KBUILD fill:#e8a33d,color:#10100e
+    style NOTE fill:#6fa8b8,color:#10100e
+</pre></p>
+<p>編譯產出兩類東西:<strong>核心映像</strong>(<code>vmlinux</code>/<code>bzImage</code>,包含所有 <code>=y</code> 的功能)和<strong>模組檔</strong>(各個 <code>.ko</code>,對應所有 <code>=m</code> 的功能)。</p>
+<p>把「同一份 <code>.config</code> 如何決定每段程式碼的去向」畫成一張流動圖:</p>
+<p><pre class="mermaid">flowchart TB
+    CONFIG2[".config(=y / =m / =n)"]
+    CONFIG2 --> KBUILD2["make:Kbuild 依每個選項的值分流"]
+    KBUILD2 --> YBRANCH["=y 的程式碼 → 編進核心映像"]
+    KBUILD2 --> MBRANCH["=m 的程式碼 → 各自編成 .ko"]
+    KBUILD2 --> NBRANCH["=n 的程式碼 → 根本不編(#ifdef 排除,P0-T08)"]
+    YBRANCH --> VMLINUX["vmlinux / bzImage(含所有 =y)"]
+    MBRANCH --> KOS["一堆 .ko 模組檔(所有 =m)"]
+    VMLINUX --> BOOT2["QEMU 用 bzImage 開機"]
+    KOS --> INSTALL2["modules_install → /lib/modules,modprobe 載入"]
+    style CONFIG2 fill:#e8a33d,color:#10100e
+    style VMLINUX fill:#6fa8b8,color:#10100e
+    style KOS fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>幾個要點(部分回顧 <a class="xlink" href="P1-T11.html">P1-T11</a>):
+- 用 <code>make -j$(nproc)</code> 平行編譯加速。
+- <strong>記得開 <code>CONFIG_DEBUG_INFO</code></strong>(常見誤區:忘了它,後續 <a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a> 的 gdb/KASAN 就沒符號)。
+- <strong>別把所有東西都編成 <code>=y</code></strong>(常見誤區):映像會過大、編譯過久。只把必要的設 <code>=y</code>,其餘該 <code>=m</code> 或 <code>=n</code>。</p>
+<hr />
+<h3 id="5">5. 安裝模組與映像</h3>
+<p>編好之後,模組和映像要「安裝」到對的位置,系統才找得到:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph install["安裝"]
+        MODINSTALL["make modules_install<br/>把編好的 .ko 模組<br/>裝到 /lib/modules/<版本>/<br/>→ modprobe 才找得到"]
+        IMGINSTALL["make install(或手動複製)<br/>把核心映像裝到開機位置<br/>(QEMU 場景:直接用 bzImage 路徑啟動,P1-T11)"]
+    end
+    DEPMOD["depmod:<br/>計算模組間的相依關係<br/>(modules_install 通常會自動跑)<br/>→ modprobe 靠它解析相依"]
+    MODINSTALL --> DEPMOD
+    style MODINSTALL fill:#e8a33d,color:#10100e
+    style DEPMOD fill:#8a9a5b,color:#10100e
+</pre></p>
+<ul>
+<li><strong><code>make modules_install</code></strong>:把 <code>.ko</code> 模組裝到 <code>/lib/modules/&lt;版本&gt;/</code>,這樣 <code>modprobe</code> 才找得到它們。它通常會自動跑 <code>depmod</code>(計算模組間相依,<code>modprobe</code> 靠它知道「載入 A 前要先載 B」——這個相依機制 <a class="xlink" href="P3-T04.html">P3-T04</a> 會深入)。</li>
+<li><strong><code>make install</code></strong>:把核心映像裝到開機位置。(在 QEMU 學習場景,你常直接用 <code>bzImage</code> 的路徑啟動,不必正式安裝——回顧 <a class="xlink" href="P1-T11.html">P1-T11</a>。)</li>
+</ul>
+<p>在你的 QEMU 開發循環裡,通常是「編譯 → 用 bzImage 啟動 QEMU → 在 VM 裡 insmod 你的 module 測試」。<code>modules_install</code> 在「要讓 VM 內的系統能 modprobe 內建模組」時用。</p>
+<hr />
+<h3 id="6-p2pdmaiommunvme">6. 為你的產品配選項:P2PDMA、IOMMU、NVMe</h3>
+<p>這是這一課對你最關鍵的應用。你產品依賴一些特定的 kernel 選項,要在 <code>.config</code> 裡開對:</p>
+<p><pre class="mermaid">flowchart TB
+    subgraph yourconfig["你產品相關的關鍵選項(示意)"]
+        NVME["CONFIG_NVME_CORE / CONFIG_BLK_DEV_NVME<br/>= NVMe 驅動<br/>(=y 或 =m,跟你的 NVMe SSD 溝通)"]
+        P2P["CONFIG_PCI_P2PDMA=y<br/>= PCIe peer-to-peer DMA<br/>(讓 NVMe 直接和 GPU 傳資料,你產品核心,P6/P7)"]
+        IOMMU["IOMMU 相關選項<br/>(影響 DMA 位址轉換,P6)"]
+        DEBUG["CONFIG_DEBUG_INFO=y +<br/>後續 KASAN/lockdep 等 debug 選項<br/>(開發期用,P3-T13/T14)"]
+    end
+    NOTE["配置原則:<br/>① 開啟產品功能需要的選項<br/>② 注意選項的相依(Kconfig 會提示)<br/>③ 缺 QEMU 對應的 virtio/檔案系統選項會開不了機(P1-T11 誤區)"]
+    yourconfig --> NOTE
+    style P2P fill:#e8a33d,color:#10100e
+    style NOTE fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>實際配置時:
+- <strong>NVMe 驅動</strong>:<code>CONFIG_BLK_DEV_NVME</code> 等,設 <code>=y</code> 或 <code>=m</code>(看你要內建還是模組)。
+- <strong>P2PDMA</strong>:<code>CONFIG_PCI_P2PDMA=y</code>——這是讓 NVMe 直接和 GPU 傳資料的關鍵(你產品的核心能力,<span class="xlink-stub" title="待撰寫">P6</span>/<span class="xlink-stub" title="待撰寫">P7</span> 會深入)。<strong>注意</strong>(這是當初 spec 標記要驗證的版本敏感點):P2PDMA 對 NVMe 的支援有條件(例如與 RAID0/multipath、KASLR 的互動限制),這些到 <span class="xlink-stub" title="待撰寫">P6</span> 會詳查。
+- <strong>IOMMU</strong> 相關:影響 DMA 的位址轉換(<span class="xlink-stub" title="待撰寫">P6</span>)。
+- <strong>開發期 debug 選項</strong>:<code>CONFIG_DEBUG_INFO</code>、後續的 KASAN/lockdep(<a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a>)。</p>
+<p><strong>配置時要注意相依</strong>(Kconfig 會提示)和<strong>別漏 QEMU 需要的選項</strong>(virtio 裝置、檔案系統——漏了會開不了機,回顧 <a class="xlink" href="P1-T11.html">P1-T11</a> 誤區)。你現在有能力為產品配出一個能跑的 kernel 環境。</p>
+<hr />
+<h2 id="kernel">打通關:把 kernel 設定與編譯收攏成一個心智模型</h2>
+<p><pre class="mermaid">flowchart TB
+    KCONFIG["Kconfig 系統:上萬選項,值記在 .config<br/>(= 大規模的 #ifdef 條件編譯開關,P0-T08)"]
+    KCONFIG --> THREE["★ 三態:=y(內建,開機就在)/<br/>=m(模組 .ko,需時載入,你的 module 是這種)/<br/>=n(不編)★"]
+    KCONFIG --> ENTRY["設定入口:defconfig(預設)/<br/>menuconfig(互動調整)/olddefconfig(補新選項預設)"]
+    THREE --> BUILD["make -j → 產出 vmlinux/bzImage(=y) + 各 .ko(=m)<br/>(記得 CONFIG_DEBUG_INFO;別全設 =y)"]
+    BUILD --> INSTALL["modules_install(→/lib/modules,depmod 解相依)+ install"]
+    KCONFIG --> PRODUCT["★ 為你產品配選項:<br/>NVMe、CONFIG_PCI_P2PDMA=y、IOMMU、debug 選項 ★<br/>(注意相依 + 別漏 QEMU 需要的選項)"]
+    style THREE fill:#e8a33d,color:#10100e
+    style PRODUCT fill:#8a9a5b,color:#10100e
+</pre></p>
+<p>一句話總結:<strong>kernel 的上萬功能由 Kconfig 管理、記在 <code>.config</code>,每個功能可選 <code>=y</code>(內建)、<code>=m</code>(模組)、<code>=n</code>(不編);用 <code>defconfig</code>/<code>menuconfig</code>/<code>olddefconfig</code> 設定、<code>make</code> 編譯產出映像與 <code>.ko</code>、<code>modules_install</code> 安裝;掌握這套,你才能為產品開對選項(NVMe、P2PDMA、IOMMU、debug),配出能跑你 module 的 kernel 環境。</strong></p>
+<hr />
+<h2 id="_4">常見誤區與踩雷提醒</h2>
+<p><strong>誤區一:改了 <code>.config</code> 卻沒重編相依項。</strong>
+改動後用 <code>make olddefconfig</code> 把新選項補上預設值,避免編譯中斷或行為怪異。</p>
+<p><strong>誤區二:缺少 QEMU 對應的 virtio/檔案系統選項導致開不了機。</strong>
+確認虛擬裝置驅動與所需檔案系統有編進去(回顧 <a class="xlink" href="P1-T11.html">P1-T11</a>)。</p>
+<p><strong>誤區三:把所有東西都編成 <code>=y</code>。</strong>
+映像過大、編譯過久。只把必要的設 <code>=y</code>,其餘 <code>=m</code> 或 <code>=n</code>。</p>
+<p><strong>誤區四:忘記 <code>CONFIG_DEBUG_INFO</code>。</strong>
+後續 <a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a> 的 gdb/KASAN 需要除錯符號。開發用的 kernel 務必開它。</p>
+<p><strong>誤區五:混淆 <code>=y</code> 與 <code>=m</code> 的行為。</strong>
+<code>=y</code> 編進映像、開機就在、<code>lsmod</code> 看不到、不能卸載;<code>=m</code> 是獨立 <code>.ko</code>、需 <code>modprobe</code> 載入、<code>lsmod</code> 看得到、可卸載。</p>
+<hr />
+<h2 id="_5">動手實作</h2>
+<p><strong>環境</strong>:開發主機(編譯)+ QEMU(驗證)。<strong>不碰主機核心。</strong></p>
+<p><strong>任務 A — 把一個功能從 <code>=y</code> 改成 <code>=m</code> 並驗證(驗收點)</strong>
+挑一個適合做模組的功能(例如某個檔案系統如 <code>CONFIG_BTRFS_FS</code>,或某個非開機必需的驅動)。用 <code>make menuconfig</code> 把它從 <code>=y</code> 改成 <code>=m</code>(在選單裡找到它,按鍵切換成 <code>M</code>)。重編(<code>make -j$(nproc)</code> + <code>make modules_install</code>)。在 QEMU 開機後:
+- 用 <code>lsmod</code> 看它(載入後)。
+- 用 <code>modprobe &lt;模組名&gt;</code> 載入它。
+<strong>驗收:該模組能在 QEMU 中被 <code>lsmod</code> 看到並 <code>modprobe</code>。</strong> 對比它原本 <code>=y</code> 時 <code>lsmod</code> 看不到(因為內建)。</p>
+<p><strong>任務 B — 說明 defconfig vs menuconfig(驗收點)</strong>
+用一句話說明 <code>make defconfig</code> 和 <code>make menuconfig</code> 的差異。(提示:一鍵預設 vs 互動式逐項調整。)<strong>驗收:能說出差異。</strong></p>
+<p><strong>任務 C — 編出帶 debug info 的 kernel(驗收點)</strong>
+確認 <code>.config</code> 裡 <code>CONFIG_DEBUG_INFO=y</code>(用 menuconfig 搜尋,或檢查 <code>.config</code>)。編譯出帶除錯符號的 kernel,供 <a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a> 的 gdb/KASAN 使用。<strong>驗收:編出的 kernel 含 debug info(後續能用 gdb 看符號,回顧 <a class="xlink" href="P1-T11.html">P1-T11</a>)。</strong></p>
+<p><strong>任務 D — 找你產品的選項</strong>
+用 <code>make menuconfig</code> 的搜尋功能(按 <code>/</code>),搜尋 <code>P2PDMA</code>、<code>NVME</code>、<code>IOMMU</code>,看看它們在選單的哪裡、目前是什麼狀態、有什麼相依。寫一兩句:<code>CONFIG_PCI_P2PDMA</code> 對你產品為什麼重要?(提示:NVMe↔GPU 直接傳資料。)</p>
+<hr />
+<h2 id="_6">驗收與自我評分</h2>
+<p><strong>驗收檢核點(量化,逐項通過)</strong>:
+1. ☐ 用 <code>menuconfig</code> 將某模組從 <code>=y</code> 改為 <code>=m</code>,重編後在 QEMU 中以 <code>lsmod</code> 看到它、並可 <code>modprobe</code>。
+2. ☐ 說出 <code>make defconfig</code> 與 <code>make menuconfig</code> 的差異。
+3. ☐ 編出帶 debug info 的 kernel 供 Phase 3 後續 gdb 使用。</p>
+<p><strong>評分量表</strong>:
+- <strong>60(及格)</strong>:能編出可開機 kernel。
+- <strong>80(熟練)</strong>:能用 Kconfig 調整選項並驗證。
+- <strong>100(精通)</strong>:能解釋 <code>=y/=m/=n</code> 對開機流程與記憶體的影響。</p>
+<hr />
+<h2 id="_7">延伸與銜接</h2>
+<ul>
+<li><strong>對應工作場景</strong>:<strong>直接對應</strong>——你需要為自家 module 設定相依的 kernel 選項(P2PDMA、IOMMU、NVMe);理解 Kconfig 才能正確配置產品執行環境。</li>
+<li><strong>這課餵給未來的</strong>:<code>=m</code> 的概念 → <a class="xlink" href="P3-T03.html">P3-T03</a> 你寫的 out-of-tree module;<code>depmod</code>/模組相依 → <a class="xlink" href="P3-T04.html">P3-T04</a>;debug 選項 → <a class="xlink" href="P3-T13.html">P3-T13</a>/<a class="xlink" href="P3-T14.html">P3-T14</a>;P2PDMA/IOMMU 選項 → <span class="xlink-stub" title="待撰寫">P6</span> DMA。</li>
+<li><strong>下一步 → <a class="xlink" href="P3-T03.html">P3-T03</a> 第一個 Loadable Kernel Module</strong>:你已經會設定、編譯 kernel,也理解了 <code>=m</code>(模組)的概念。下一課終於要<strong>親手寫你的第一個 kernel module</strong>!從一個 hello-world 開始:<code>module_init</code>/<code>module_exit</code>、out-of-tree 的 Makefile、用 <code>printk</code> 跟核心溝通、<code>insmod</code>/<code>rmmod</code> 載入卸載。<strong>這就是你公司產品的核心交付物形式</strong>——你日後所有 kernel 工作都從這個骨架開始。(再次提醒:module 只在 QEMU 裡測試!)</li>
+</ul>
+</article>
+<nav class="botnav"><a class="pn prev" href="P3-T01.html">← P3-T01 kernel 架構總覽與原始碼樹佈局</a><a class="pn next" href="P3-T03.html">P3-T03 第一個 Loadable Kernel Module(init/exit、Kbuild、printk) →</a></nav>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:true, theme:'base', themeVariables:{
+  primaryColor:'#1a1916', primaryTextColor:'#f4ecd8', primaryBorderColor:'#3a372f',
+  lineColor:'#8a9a5b', secondaryColor:'#24221d', tertiaryColor:'#10100e',
+  fontFamily:'JetBrains Mono, monospace', fontSize:'14px'
+}});
+</script>
+</body></html>
